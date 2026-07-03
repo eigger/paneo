@@ -32,3 +32,12 @@ export function applyGridItem(el, w) {
   el.style.gridColumn = `${w.x + 1} / span ${w.w}`;
   el.style.gridRow = `${w.y + 1} / span ${w.h}`;
 }
+
+// Per-instance style override (docs/design.md D16): `css` is a CSS *declaration
+// list* (e.g. "border-radius:12px; opacity:.9;"), not a stylesheet with selectors.
+// Applying it as inline style on the widget's own content element means it can only
+// ever affect that one widget — there's no selector to leak into other widgets or
+// the app chrome, so no sandboxing/escaping is needed beyond what inline style already is.
+export function applyCustomCss(el, css) {
+  el.style.cssText = css || '';
+}

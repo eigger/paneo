@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { effectiveRows, applyGridContainer, applyGridItem } from '../public/shared/gridlayout.js';
+import { effectiveRows, applyGridContainer, applyGridItem, applyCustomCss } from '../public/shared/gridlayout.js';
 
 test('effectiveRows uses configured minimum when widgets fit inside', () => {
   const layout = { grid: { cols: 12, rows: 7 }, widgets: [{ x: 0, y: 0, w: 3, h: 2 }] };
@@ -26,4 +26,16 @@ test('applyGridItem maps widget coordinates to grid placement', () => {
   applyGridItem(el, { x: 2, y: 3, w: 4, h: 2 });
   assert.equal(el.style.gridColumn, '3 / span 4');
   assert.equal(el.style.gridRow, '4 / span 2');
+});
+
+test('applyCustomCss sets the declaration list as inline style', () => {
+  const el = { style: { cssText: '' } };
+  applyCustomCss(el, 'border-radius:12px; opacity:.9;');
+  assert.equal(el.style.cssText, 'border-radius:12px; opacity:.9;');
+});
+
+test('applyCustomCss clears inline style when css is empty/undefined', () => {
+  const el = { style: { cssText: 'opacity:.5;' } };
+  applyCustomCss(el, undefined);
+  assert.equal(el.style.cssText, '');
 });

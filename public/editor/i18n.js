@@ -45,6 +45,7 @@ const catalogs = {
     categoryBasic: '기본',
     categoryData: '데이터',
     categoryMedia: '미디어',
+    categoryPlugin: '서드파티',
     applied: (n) => `적용됨 · 연결된 디스플레이 ${n}대`,
     loadFail: (m) => `로드 실패: ${m}`,
     minSizeWarn: (min) => `⚠ 권장 최소 크기: ${min}`,
@@ -53,6 +54,8 @@ const catalogs = {
     permission: '권한',
     sandbox: '샌드박스',
     sandboxNote: '외부 페이지는 iframe 샌드박스 안에서만 표시됩니다. 신뢰한 사이트에만 trusted 모드를 사용하세요.',
+    customCssLabel: '커스텀 CSS',
+    customCssHint: 'CSS 속성:값 형태로 입력 (예: border-radius:12px; opacity:.9;) — 이 위젯에만 적용됩니다.',
     // §M4 companion-agent & power schedule
     powerLabel: '화면 전원 스케줄',
     powerOn: '화면 켜기',
@@ -125,6 +128,7 @@ const catalogs = {
     categoryBasic: 'Basic',
     categoryData: 'Data',
     categoryMedia: 'Media',
+    categoryPlugin: 'Third-party',
     applied: (n) => `Applied · ${n} display(s) connected`,
     loadFail: (m) => `Load failed: ${m}`,
     minSizeWarn: (min) => `⚠ Recommended minimum: ${min}`,
@@ -133,6 +137,8 @@ const catalogs = {
     permission: 'Permission',
     sandbox: 'Sandbox',
     sandboxNote: 'External pages render only inside an iframe sandbox. Use trusted mode only for sites you trust.',
+    customCssLabel: 'Custom CSS',
+    customCssHint: 'Enter CSS property:value pairs (e.g. border-radius:12px; opacity:.9;) — applies only to this widget.',
     // §M4 companion-agent & power schedule
     powerLabel: 'Screen power schedule',
     powerOn: 'Screen on',

@@ -38,7 +38,7 @@ test('fieldLabel resolves localized config labels', () => {
 });
 
 test('category order matches palette groups', () => {
-  assert.deepEqual(CATEGORY_ORDER, ['basic', 'data', 'media']);
+  assert.deepEqual(CATEGORY_ORDER, ['basic', 'data', 'media', 'plugin']);
   for (const id of EXPECTED_WIDGETS) {
     assert.ok(CATEGORY_ORDER.includes(widgets[id].category));
   }

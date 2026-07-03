@@ -47,7 +47,7 @@ Shared options: `PANEO_REF=master`, `PANEO_INSTALL_DIR=/opt/paneo`, `PANEO_USER=
 
 ### Server Pi
 
-**Installs:** Node.js and the Paneo server (`paneo` systemd service). This device hosts the editor, API, and SQLite data.
+**Installs:** Docker (if missing) and the Paneo server as a container, managed by a `paneo` systemd unit. This device hosts the editor, API, and SQLite data.
 
 **Run only on the server device:**
 
@@ -55,13 +55,14 @@ Shared options: `PANEO_REF=master`, `PANEO_INSTALL_DIR=/opt/paneo`, `PANEO_USER=
 curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=server bash
 ```
 
-If you already have the source tree:
+Pin a specific released version instead of `latest`:
 
 ```sh
-sudo env PANEO_MODE=server PANEO_DIR=$PWD bash scripts/install-pi.sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh \
+  | sudo env PANEO_MODE=server PANEO_IMAGE=ghcr.io/eigger/paneo:0.1.0 bash
 ```
 
-After install: editor at `http://<server-ip>:4321/` · check status with `systemctl status paneo`
+After install: editor at `http://<server-ip>:4321/` · check status with `systemctl status paneo` (or `docker logs -f paneo`)
 
 ---
 
@@ -129,13 +130,13 @@ curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh \
   | sudo env PANEO_MODE=all PANEO_DEVICE_NAME="Living Room" bash
 ```
 
-If you already have the source tree:
+If you already have `scripts/install-pi.sh` locally (the server role doesn't need the rest of the source tree — it runs the prebuilt image):
 
 ```sh
-sudo env PANEO_MODE=all PANEO_DIR=$PWD PANEO_DEVICE_NAME="Living Room" bash scripts/install-pi.sh
+sudo env PANEO_MODE=all PANEO_DEVICE_NAME="Living Room" bash scripts/install-pi.sh
 ```
 
-Options: `PANEO_PORT=8080`, `PANEO_TOKEN=<token>`, `PANEO_ENABLE_AGENT=0`, `PANEO_ENABLE_KIOSK=0`
+Options: `PANEO_PORT=8080`, `PANEO_TOKEN=<token>`, `PANEO_IMAGE=ghcr.io/eigger/paneo:0.1.0`, `PANEO_ENABLE_AGENT=0`, `PANEO_ENABLE_KIOSK=0`
 
 ---
 
@@ -143,65 +144,51 @@ The manual steps below are for fine-tuning or when you do not use the one-click 
 
 ## 3. Server install
 
+The one-click `PANEO_MODE=server` install (§2) does exactly this for you — this section is for
+setting it up by hand or understanding what it does.
+
 ### 3.1 Prerequisites
 
-Node.js is required. Paneo uses `node:sqlite`, so Node.js **22.5+** or **24+** is recommended.
+Docker. Install it if missing:
 
 ```sh
-node --version
+curl -fsSL https://get.docker.com | sh
+sudo systemctl enable --now docker
 ```
 
-On Raspberry Pi OS or Debian, install a current Node release via NodeSource if the system package is too old.
-
-### 3.2 Get the source
+### 3.2 Run with Docker Compose
 
 ```sh
 git clone https://github.com/eigger/paneo.git
 cd paneo
-npm install
+docker compose pull   # fetch the released image (ghcr.io/eigger/paneo)
+docker compose up -d
 ```
-
-If you already have the repo, run `npm install` from the project root.
-
-### 3.3 Run the server
-
-```sh
-npm start
-```
-
-Default port: `4321`.
 
 - Editor: `http://<server-ip>:4321/`
 - Display: `http://<server-ip>:4321/d/<token>`
 
-Custom port:
+`docker-compose.yml` persists SQLite/photos/plugins in a named volume (`paneo-data:/data`) and
+restarts the container automatically (`restart: unless-stopped`) — no separate systemd unit
+needed when you manage it this way.
 
-```sh
-PORT=8080 npm start
-```
+### 3.3 Or: register a systemd service around `docker run`
 
-### 3.4 Register a systemd service
-
-On the server device, create `/etc/systemd/system/paneo.service`:
-
-```sh
-sudo nano /etc/systemd/system/paneo.service
-```
-
-Example:
+This is what the one-click installer writes to `/etc/systemd/system/paneo.service` — useful if you
+want `systemctl`/`journalctl` instead of Compose:
 
 ```ini
 [Unit]
-Description=Paneo Server
-After=network-online.target
+Description=Paneo Server (Docker)
+After=network-online.target docker.service
 Wants=network-online.target
+Requires=docker.service
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/paneo
-Environment=PORT=4321
-ExecStart=/usr/bin/npm start
+ExecStartPre=-/usr/bin/docker rm -f paneo
+ExecStart=/usr/bin/docker run --rm --name paneo -p 4321:4321 -v paneo-data:/data ghcr.io/eigger/paneo:latest
+ExecStop=/usr/bin/docker stop -t 10 paneo
 Restart=always
 RestartSec=5
 
@@ -209,19 +196,29 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-Adjust paths and user for your environment.
-
 ```sh
 sudo systemctl daemon-reload
 sudo systemctl enable --now paneo
 sudo systemctl status paneo
 ```
 
-Logs:
+Logs: `journalctl -u paneo -f` or `docker logs -f paneo`.
+
+### 3.4 Alternative: run directly with Node.js (no Docker)
+
+Not the recommended path, but the server has no hard Docker dependency — useful on hardware Docker
+doesn't support well, or if you'd rather manage Node yourself. Requires Node.js **22.5+** or
+**24+** (Paneo uses the built-in `node:sqlite`):
 
 ```sh
-journalctl -u paneo -f
+git clone https://github.com/eigger/paneo.git
+cd paneo
+npm install
+PORT=4321 npm start
 ```
+
+For a systemd unit, swap `ExecStart` above for `ExecStart=/usr/bin/npm start` with
+`WorkingDirectory=` set to the cloned repo and `User=` set to a non-root account.
 
 ## 4. Register your first display
 
@@ -426,6 +423,8 @@ Server won't start:
 ```sh
 systemctl status paneo
 journalctl -u paneo -f
+docker logs -f paneo       # if running under Docker
+docker ps -a --filter name=paneo   # confirm the container itself started
 ```
 
 Check the port:
@@ -463,14 +462,23 @@ External page widget empty:
 
 ## 12. Updates
 
-On the server device:
+On the server device, pull the latest released image and restart:
 
 ```sh
-cd /home/pi/paneo
-git pull
-npm install
+docker pull ghcr.io/eigger/paneo:latest
 sudo systemctl restart paneo
 ```
+
+If you're running it with Docker Compose instead of the systemd unit:
+
+```sh
+cd /path/to/paneo   # wherever docker-compose.yml is
+docker compose pull
+docker compose up -d
+```
+
+(If you set up the server without Docker per §3.4: `cd` into the repo, `git pull`, `npm install`,
+`sudo systemctl restart paneo`.)
 
 If the agent changed, reinstall or update `/opt/paneo-agent/agent.js` and `version.json`, then:
 

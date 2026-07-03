@@ -1,0 +1,10 @@
+node_modules
+data
+.git
+.github
+.claude
+docs
+test
+*.md
+.DS_Store
+npm-debug.log

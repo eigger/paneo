@@ -7,6 +7,7 @@
 [![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-supported-C51A4A?logo=raspberrypi&logoColor=white)](docs/install-device.md)
 [![Self-hosted](https://img.shields.io/badge/hosting-self--hosted-2563EB)](docs/design.md)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-widget-41BDF5?logo=home-assistant&logoColor=white)](docs/install-device.md#83-home-assistant)
+[![Docker](https://img.shields.io/badge/docker-ghcr.io%2Feigger%2Fpaneo-2496ED?logo=docker&logoColor=white)](https://github.com/eigger/paneo/pkgs/container/paneo)
 
 [English](README.md) · [한국어](README.ko.md)
 
@@ -63,6 +64,13 @@ Regenerate with `node scripts/capture-screenshots.mjs` (widgets only: `PANEO_SCR
 ```sh
 npm install
 npm start          # http://localhost:4321
+```
+
+Or with Docker (single portable container, `data/` persisted in a volume — see [docs/design.md](docs/design.md) §10). Every [GitHub Release](https://github.com/eigger/paneo/releases) publishes a prebuilt image to GHCR (`linux/amd64` + `linux/arm64`, so it runs on the Pi itself too):
+
+```sh
+docker compose pull && docker compose up -d   # released image
+# or: docker compose up -d --build            # build from local source
 ```
 
 - **Editor**: http://localhost:4321/ (a default device is seeded on first run)

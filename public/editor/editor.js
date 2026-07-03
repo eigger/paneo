@@ -1,6 +1,6 @@
-import { widgets, renderWidget, widgetLabel, fieldLabel, CATEGORY_ORDER } from '/shared/widgets.js';
+import { widgets, renderWidget, widgetLabel, fieldLabel, CATEGORY_ORDER, loadPlugins } from '/shared/widgets.js';
 import { t, getLang, setLang, LANGS, LOCALES, RESOLUTIONS } from '/editor/i18n.js';
-import { effectiveRows, applyGridContainer, applyGridItem } from '/shared/gridlayout.js';
+import { effectiveRows, applyGridContainer, applyGridItem, applyCustomCss } from '/shared/gridlayout.js';
 
 let device = null;
 let layout = null;
@@ -94,7 +94,7 @@ async function loadVersions() {
   applyVersionUI();
 }
 
-const CATEGORY_KEY = { basic: 'categoryBasic', data: 'categoryData', media: 'categoryMedia' };
+const CATEGORY_KEY = { basic: 'categoryBasic', data: 'categoryData', media: 'categoryMedia', plugin: 'categoryPlugin' };
 
 function buildPalette() {
   const lang = getLang();
@@ -464,6 +464,7 @@ function render() {
     content.className = 'widget-content';
     node.appendChild(content);
     renderWidget(content, w.type, w.config, ctx());
+    applyCustomCss(content, w.customCss);
     const handle = document.createElement('div');
     handle.className = 'resize-handle';
     node.appendChild(handle);
@@ -600,6 +601,14 @@ function renderInspector() {
       html += `<div class="field"><label>${fieldLabel(c, lang)}</label><input type="text" data-config="${c.key}" value="${esc(w.config?.[c.key])}"></div>`;
     }
   }
+  // Generic per-instance style override (docs/design.md D16) — not part of the
+  // widget's own config schema, so it lives outside the `def.config` loop above,
+  // next to the x/y/w/h fields that are likewise generic to every widget type.
+  html += `<div class="field"><label>${t('customCssLabel')}</label>
+    <textarea id="custom-css-input" rows="4" placeholder="border-radius:12px; opacity:.9;">${escHtml(w.customCss || '')}</textarea>
+    <p class="field-hint">${t('customCssHint')}</p>
+  </div>`;
+
   html += `<button id="del-widget" class="danger">${t('delete')}</button>`;
   inspectorBody.innerHTML = html;
 
@@ -653,6 +662,13 @@ function renderInspector() {
       scheduleSave();
     })
   );
+  inspectorBody.querySelector('#custom-css-input').addEventListener('input', (e) => {
+    w.customCss = e.target.value;
+    const node = canvas.querySelector(`.ed-widget[data-id="${w.id}"] .widget-content`);
+    if (node) applyCustomCss(node, w.customCss);
+    scheduleSave();
+  });
+
   inspectorBody.querySelector('#del-widget').addEventListener('click', () => {
     layout.widgets = layout.widgets.filter((x) => x.id !== selectedId);
     selectedId = null;
@@ -757,6 +773,10 @@ document.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePalette(); });
 
 // ---- wire up ----
+// Plugins must be merged into the widgets registry before the palette/inspector
+// (built by applyI18n -> buildPalette) render, or third-party widgets would be
+// missing until the next language toggle happened to rebuild it.
+await loadPlugins().catch((err) => console.error('[plugins] load failed', err));
 initSelectors();
 applyI18n();
 deviceSelect.addEventListener('change', () => selectDevice(deviceSelect.value));

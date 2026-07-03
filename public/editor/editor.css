@@ -129,6 +129,8 @@ main { flex: 1; display: flex; min-height: 0; }
 .field .val { font-size: 14px; }
 .field input[type="text"], .field input[type="number"], .field textarea { width: 100%; }
 .field textarea { font: inherit; resize: vertical; }
+.field-hint { font-size: 11px; opacity: 0.45; margin: 4px 0 0; line-height: 1.35; }
+#custom-css-input { font-family: ui-monospace, monospace; font-size: 12px; }
 .field.check label { display: flex; align-items: center; gap: 8px; opacity: 0.9; font-size: 14px; cursor: pointer; }
 .field.check input { width: auto; }
 .list-field { display: flex; flex-direction: column; gap: 6px; }

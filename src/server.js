@@ -9,6 +9,7 @@ import { COMPONENTS, getVersionManifest } from './version.js';
 import * as store from './store.js';
 import { registerDataProxy } from './dataproxy.js';
 import { setAgentPresent } from './store.js';
+import * as plugins from './plugins.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -21,8 +22,14 @@ const app = Fastify({ logger: { level: 'info', transport: undefined } });
 
 await app.register(fastifyWebsocket);
 await app.register(fastifyStatic, { root: PUBLIC, prefix: '/' });
+// §7/D17: third-party "module" plugins are filesystem-installed (admin trust,
+// same level as the server's own code) — served as plain static files so the
+// client can `import()` them directly. decorateReply:false because the first
+// registration above already added reply.sendFile.
+await app.register(fastifyStatic, { root: plugins.pluginsDir(), prefix: '/plugins/', decorateReply: false });
 await registerDataProxy(app);
 await store.load();
+plugins.scan();
 
 // --- live display connections: Map<deviceId, Set<socket>> ---
 const displays = new Map();
@@ -123,6 +130,7 @@ app.get('/ws/agent', { websocket: true }, (socket, req) => {
 // --- REST API ---
 app.get('/api/brand', async () => BRAND);
 app.get('/api/version', async () => getVersionManifest());
+app.get('/api/plugins', async () => plugins.listPlugins());
 app.get('/api/devices', async () => store.listDevices().map(publicDevice));
 
 app.post('/api/devices', async (req) => publicDevice(await store.createDevice(req.body?.name)));

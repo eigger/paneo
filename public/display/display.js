@@ -1,5 +1,5 @@
-import { renderWidget } from '/shared/widgets.js';
-import { applyGridContainer, applyGridItem } from '/shared/gridlayout.js';
+import { renderWidget, loadPlugins } from '/shared/widgets.js';
+import { applyGridContainer, applyGridItem, applyCustomCss } from '/shared/gridlayout.js';
 
 const stage = document.getElementById('stage');
 const statusEl = document.getElementById('status');
@@ -48,6 +48,7 @@ function applyLayout(layout, ctx) {
     node.appendChild(content);
     stage.appendChild(node);
     renderWidget(content, w.type, w.config, lastCtx);
+    applyCustomCss(content, w.customCss);
   }
 
   try {
@@ -60,6 +61,15 @@ try {
   const cached = localStorage.getItem(CACHE_KEY);
   if (cached) { const c = JSON.parse(cached); applyLayout(c.layout, c.ctx); }
 } catch { /* ignore */ }
+
+// §7/D17: fetch + register third-party plugins in the background — deliberately
+// NOT awaited before the cached-layout paint above, or an unreachable server
+// (the exact "offline" case §6 exists to survive) would stall the first paint.
+// If the cache held a plugin widget, it shows "? type" for a moment, then this
+// repaint (once plugins are registered) fills it in.
+loadPlugins()
+  .catch((err) => console.error('[plugins] load failed', err))
+  .finally(() => { if (lastLayout) applyLayout(lastLayout, lastCtx); });
 
 function setStatus(text, cls, fade) {
   statusEl.textContent = text;

@@ -7,6 +7,7 @@
 [![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-supported-C51A4A?logo=raspberrypi&logoColor=white)](docs/install-device.ko.md)
 [![Self-hosted](https://img.shields.io/badge/hosting-self--hosted-2563EB)](docs/design.md)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-widget-41BDF5?logo=home-assistant&logoColor=white)](docs/install-device.ko.md#83-home-assistant)
+[![Docker](https://img.shields.io/badge/docker-ghcr.io%2Feigger%2Fpaneo-2496ED?logo=docker&logoColor=white)](https://github.com/eigger/paneo/pkgs/container/paneo)
 
 [English](README.md) · [한국어](README.ko.md)
 
@@ -60,6 +61,13 @@
 ```sh
 npm install
 npm start          # http://localhost:4321
+```
+
+또는 Docker로 (단일 컨테이너, `data/`는 볼륨에 영속화 — [docs/design.md](docs/design.md) §10 참고). [GitHub Release](https://github.com/eigger/paneo/releases)가 나올 때마다 GHCR에 빌드된 이미지가 자동으로 올라갑니다(`linux/amd64` + `linux/arm64` — 라즈베리 파이 본체에서도 그대로 실행 가능):
+
+```sh
+docker compose pull && docker compose up -d   # 릴리즈 이미지 사용
+# 또는: docker compose up -d --build          # 로컬 소스에서 직접 빌드
 ```
 
 - **편집기**: http://localhost:4321/ (최초 실행 시 기본 화면이 자동 생성됩니다)

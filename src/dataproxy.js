@@ -69,12 +69,30 @@ async function fetchWeather(location, locale) {
   };
 }
 
-async function fetchCalendarSource(url) {
+// `range` (optional): { from, to } epoch ms, used by paneo.calendar.month to fetch
+// every event overlapping the visible grid instead of just "upcoming" ones. Without
+// it, this keeps the original "next N events from now" behavior for paneo.calendar
+// (an event *list* widget, where an unbounded fetch would be pointless — nothing
+// past the top ~10 could ever be shown anyway).
+export async function fetchCalendarSource(url, range) {
   const events = await ical.async.fromURL(url);
-  const now = Date.now();
-  return Object.values(events)
+  const all = Object.values(events)
     .filter((e) => e.type === 'VEVENT' && e.start)
-    .map((e) => ({ summary: e.summary || '(제목 없음)', start: e.start.toISOString(), end: e.end?.toISOString() }))
+    .map((e) => ({ summary: e.summary || '(제목 없음)', start: e.start.toISOString(), end: e.end?.toISOString() }));
+
+  if (range) {
+    return all
+      .filter((e) => {
+        const start = new Date(e.start).getTime();
+        const end = e.end ? new Date(e.end).getTime() : start;
+        return end >= range.from && start < range.to; // overlaps [from, to)
+      })
+      .sort((a, b) => new Date(a.start) - new Date(b.start));
+      // no cap here — already bounded to a single month's worth of events by the range
+  }
+
+  const now = Date.now();
+  return all
     .filter((e) => new Date(e.start).getTime() >= now - 24 * 3600 * 1000)
     .sort((a, b) => new Date(a.start) - new Date(b.start))
     .slice(0, 10); // per-source cap; the merged multi-source result is capped separately below
@@ -119,9 +137,26 @@ export async function registerDataProxy(app) {
     const raw = req.query?.url;
     const urls = Array.isArray(raw) ? raw : raw ? [raw] : [];
     if (!urls.length) return reply.code(400).send({ error: 'at least one url required' });
+
+    // §D8 fix: paneo.calendar.month passes from/to (the visible grid's date span) so
+    // it gets every event in that range, not just the next ~15 upcoming ones.
+    const { from, to } = req.query || {};
+    let range = null;
+    if (from || to) {
+      const fromMs = Date.parse(from);
+      const toMs = Date.parse(to);
+      if (isNaN(fromMs) || isNaN(toMs)) return reply.code(400).send({ error: 'invalid from/to' });
+      range = { from: fromMs, to: toMs };
+    }
+
     try {
-      const events = await fetchMerged(urls, 'ical', 15 * 60_000, fetchCalendarSource, (all) =>
-        all.sort((a, b) => new Date(a.start) - new Date(b.start)).slice(0, 15)
+      const cacheKeyPrefix = range ? `ical:range:${from}:${to}` : 'ical';
+      const events = await fetchMerged(
+        urls, cacheKeyPrefix, 15 * 60_000,
+        (u) => fetchCalendarSource(u, range),
+        (all) => range
+          ? all.sort((a, b) => new Date(a.start) - new Date(b.start)).slice(0, 300) // generous safety cap, not a "top N" cap
+          : all.sort((a, b) => new Date(a.start) - new Date(b.start)).slice(0, 15),
       );
       return { events };
     } catch (err) {
