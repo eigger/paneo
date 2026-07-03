@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # Paneo Raspberry Pi bootstrap — clone latest from GitHub, then run install-pi.sh.
 #
-# All-in-one (server + kiosk + agent on one Pi):
-#   curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=all bash
+# Pick ONE role (do not run every example):
 #
-# Server only:
+# Server Pi:
 #   curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=server bash
 #
-# Display only (pair to an existing server):
+# Display Pi (kiosk + agent; needs PANEO_SERVER and PANEO_TOKEN):
 #   curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh \
 #     | sudo env PANEO_MODE=display PANEO_SERVER=http://<server-ip>:4321 PANEO_TOKEN=<token> bash
+#
+# All-in-one Pi (server + display + agent — replaces server + display steps):
+#   curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=all bash
 #
 # Environment (optional):
 #   PANEO_REPO      Git URL (default: https://github.com/eigger/paneo.git)

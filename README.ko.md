@@ -53,25 +53,31 @@ GitHub Actions(`.github/workflows/ci.yml`)에서 Node.js 22·24 환경으로 동
 - 컴패니언 에이전트(화면 전원 제어) 선택 설치
 - 첫 대시보드 구성, Home Assistant, 사진 액자, 문제 해결
 
-라즈베리 파이 원클릭 명령:
+라즈베리 파이 설치 — **역할에 맞는 블록 하나만** 실행하세요.
+
+**서버 Pi** (`paneo` 서비스만):
 
 ```sh
-# GitHub 최신 소스로 설치 (권장)
-curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=all bash
-
-# 서버 Pi — 프로젝트 루트에서
-sudo env PANEO_MODE=server PANEO_DIR=$PWD bash scripts/install-pi.sh
-
-# 디스플레이 Pi — 편집기에서 화면 생성 후 토큰 복사
-curl -sSL http://<server-ip>:4321/install/pi.sh \
-  | sudo env PANEO_MODE=display \
-    PANEO_SERVER=http://<server-ip>:4321 \
-    PANEO_TOKEN=<token> \
-    bash
-
-# 서버+디스플레이 한 대에 설치
-sudo env PANEO_MODE=all PANEO_DIR=$PWD PANEO_DEVICE_NAME="거실" bash scripts/install-pi.sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=server bash
 ```
+
+**디스플레이 Pi** (kiosk + 에이전트, 서버·토큰 필요):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh \
+  | sudo env PANEO_MODE=display \
+      PANEO_SERVER=http://<server-ip>:4321 \
+      PANEO_TOKEN=<token> \
+      bash
+```
+
+**올인원 Pi** (서버 + 디스플레이 + 에이전트 한 번에 — 위 두 절차를 따로 실행하지 않음):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=all bash
+```
+
+자세한 내용: [`docs/install-device.ko.md`](docs/install-device.ko.md)
 
 ## 구조
 

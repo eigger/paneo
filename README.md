@@ -56,25 +56,31 @@ See [`docs/install-device.md`](docs/install-device.md) ([한국어](docs/install
 - optional companion-agent installation for screen power control
 - first dashboard setup, Home Assistant, photo frame, and troubleshooting
 
-Quick Raspberry Pi commands:
+Raspberry Pi install — run **only the block for your role**.
+
+**Server Pi** (`paneo` service only):
 
 ```sh
-# Install from GitHub latest (recommended)
-curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=all bash
-
-# Server Pi, from the Paneo repo root
-sudo env PANEO_MODE=server PANEO_DIR=$PWD bash scripts/install-pi.sh
-
-# Display Pi, after creating a display in the editor and copying its token
-curl -sSL http://<server-ip>:4321/install/pi.sh \
-  | sudo env PANEO_MODE=display \
-    PANEO_SERVER=http://<server-ip>:4321 \
-    PANEO_TOKEN=<token> \
-    bash
-
-# Single Pi running both server and display
-sudo env PANEO_MODE=all PANEO_DIR=$PWD PANEO_DEVICE_NAME="Living Room" bash scripts/install-pi.sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=server bash
 ```
+
+**Display Pi** (kiosk + agent; requires a running server and token):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh \
+  | sudo env PANEO_MODE=display \
+      PANEO_SERVER=http://<server-ip>:4321 \
+      PANEO_TOKEN=<token> \
+      bash
+```
+
+**All-in-one Pi** (server + display + agent in one step — do not also run the sections above):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=all bash
+```
+
+Full guide: [`docs/install-device.md`](docs/install-device.md)
 
 ## Layout / stack
 

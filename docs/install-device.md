@@ -26,85 +26,118 @@ Editing device:
 
 ## 2. One-click install
 
-On Raspberry Pi, a single `install.sh` command clones the latest source from GitHub and installs Node.js, the server service, Chromium kiosk autostart, and the companion agent.
+These are **role-based** instructions. Run **only the section that matches your device** — not every section in order.
 
-### 2.0 Install from GitHub (recommended)
+| Setup | Sections to run |
+|-------|-----------------|
+| One server + multiple display Pis (recommended) | Server Pi → each Display Pi |
+| Everything on one Pi | All-in-one Pi |
+| Edit from a PC only | No install (open the editor in a browser) |
 
-Run one of these on the Pi. The script shallow-clones the `master` branch to `/opt/paneo`, then runs `scripts/install-pi.sh`.
+Common: when installing from GitHub, `install.sh` clones to `/opt/paneo` and runs `scripts/install-pi.sh`.
 
 ```sh
-# All-in-one server + display (Pi 4+)
-curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=all bash
+# Example GitHub bootstrap (pick role via PANEO_MODE)
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=<server|display|all> ... bash
+```
 
-# Server only
+Shared options: `PANEO_REF=master`, `PANEO_INSTALL_DIR=/opt/paneo`, `PANEO_USER=pi`
+
+---
+
+### Server Pi
+
+**Installs:** Node.js and the Paneo server (`paneo` systemd service). This device hosts the editor, API, and SQLite data.
+
+**Run only on the server device:**
+
+```sh
 curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=server bash
 ```
 
-Optional environment variables:
-
-- `PANEO_REF=master` — branch or tag (default: `master`)
-- `PANEO_INSTALL_DIR=/opt/paneo` — clone destination
-- `PANEO_DEVICE_NAME="Living Room"` — display name when `all` mode auto-creates a token
-
-If the install directory already exists as a git clone, the script fetches the same branch before installing.
-
-### 2.1 Server Pi (when you already have the source)
-
-Clone Paneo, then run from the project root:
+If you already have the source tree:
 
 ```sh
 sudo env PANEO_MODE=server PANEO_DIR=$PWD bash scripts/install-pi.sh
 ```
 
-The server starts automatically on boot.
+After install: editor at `http://<server-ip>:4321/` · check status with `systemctl status paneo`
+
+---
+
+### Display Pi
+
+**Installs:** Chromium kiosk autostart and the companion agent (`paneo-agent` systemd). Opens your `/d/<token>` page fullscreen after boot.
+
+**Prerequisites:** the server must already be running. Create a display in the editor and copy the token from **Open display**.
+
+**Run only on each display device:**
 
 ```sh
-systemctl status paneo
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh \
+  | sudo env PANEO_MODE=display \
+      PANEO_SERVER=http://<server-ip>:4321 \
+      PANEO_TOKEN=<token> \
+      bash
 ```
 
-Open the editor at:
-
-```text
-http://<server-ip>:4321/
-```
-
-### 2.2 Display Pi
-
-Create a display in the editor first and copy the `/d/<token>` value from **Open display**. Then run on the display Pi:
+If the server is already up, you can fetch the installer from it:
 
 ```sh
 curl -sSL http://<server-ip>:4321/install/pi.sh \
   | sudo env PANEO_MODE=display \
-    PANEO_SERVER=http://<server-ip>:4321 \
-    PANEO_TOKEN=<token> \
-    bash
+      PANEO_SERVER=http://<server-ip>:4321 \
+      PANEO_TOKEN=<token> \
+      bash
 ```
 
-This registers Chromium kiosk autostart and the `paneo-agent` systemd service. After reboot, the display opens Paneo automatically.
+Add `PANEO_ENABLE_AGENT=0` for kiosk only without screen power control. Reboot to start kiosk: `sudo reboot`
+
+---
+
+### Companion agent only (optional)
+
+**Installs:** the `paneo-agent` service only — screen power on/off and browser watchdog.
+
+Already included in the Display Pi install (`PANEO_MODE=display`). **No separate step** if you used that section.
+
+Install agent alone when kiosk is set up manually:
 
 ```sh
-sudo reboot
+curl -sSL http://<server-ip>:4321/agent/install.sh \
+  | sudo env PANEO_SERVER=http://<server-ip>:4321 PANEO_TOKEN=<token> bash
 ```
 
-### 2.3 All-in-one on a single Pi
+---
 
-On a Pi 4+ that runs both server and browser, use `all` mode. If no token is provided, a new display is created during install.
+### All-in-one Pi (server + display + agent)
+
+**Installs:** everything from the Server Pi, Display Pi, and agent sections in **one command**. Good for Pi 4+ demos and small single-device setups.
+
+**You do not need to run the server and display sections separately.**
+
+**Run only on that one device:**
 
 ```sh
-sudo env PANEO_MODE=all \
-  PANEO_DIR=$PWD \
-  PANEO_DEVICE_NAME="Living Room" \
-  bash scripts/install-pi.sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=all bash
 ```
 
-Options:
+Custom display name (auto-creates a token if omitted):
 
-- `PANEO_PORT=8080` — change server port
-- `PANEO_USER=pi` — systemd service user
-- `PANEO_TOKEN=<token>` — use an existing display token
-- `PANEO_ENABLE_AGENT=0` — skip agent install
-- `PANEO_ENABLE_KIOSK=0` — skip kiosk autostart
-- `PANEO_REPO=<git-url>` — clone source when not present locally
+```sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh \
+  | sudo env PANEO_MODE=all PANEO_DEVICE_NAME="Living Room" bash
+```
+
+If you already have the source tree:
+
+```sh
+sudo env PANEO_MODE=all PANEO_DIR=$PWD PANEO_DEVICE_NAME="Living Room" bash scripts/install-pi.sh
+```
+
+Options: `PANEO_PORT=8080`, `PANEO_TOKEN=<token>`, `PANEO_ENABLE_AGENT=0`, `PANEO_ENABLE_KIOSK=0`
+
+---
 
 The manual steps below are for fine-tuning or when you do not use the one-click script.
 

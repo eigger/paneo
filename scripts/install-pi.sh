@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
 # Paneo Raspberry Pi one-click installer.
 #
-# Modes:
-#   PANEO_MODE=server   Install Paneo server + systemd service.
-#   PANEO_MODE=display  Install Chromium kiosk autostart + companion agent.
-#   PANEO_MODE=all      Install server, create a display token if needed, then install kiosk + agent.
+# Modes (pick ONE per device — do not run all examples):
+#   PANEO_MODE=server   Paneo server + systemd service only.
+#   PANEO_MODE=display  Chromium kiosk + companion agent (needs PANEO_SERVER, PANEO_TOKEN).
+#   PANEO_MODE=all      Server + kiosk + agent on one Pi (replaces server + display steps).
 #
 # Examples:
-#   sudo env PANEO_MODE=server PANEO_DIR=$PWD bash scripts/install-pi.sh
+#   curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=server bash
 #   curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=all bash
-#   curl -sSL http://<server-ip>:4321/install/pi.sh | sudo env PANEO_MODE=display PANEO_SERVER=http://<server-ip>:4321 PANEO_TOKEN=<token> bash
-#   sudo env PANEO_MODE=all PANEO_DIR=$PWD PANEO_DEVICE_NAME="Living Room" bash scripts/install-pi.sh
 
 set -euo pipefail
 

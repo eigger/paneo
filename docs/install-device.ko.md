@@ -26,85 +26,118 @@
 
 ## 2. 원클릭 설치
 
-Raspberry Pi에서는 `install.sh` 한 줄로 GitHub 최신 소스를 받아 Node.js, 서버 서비스, Chromium kiosk 자동실행, 컴패니언 에이전트까지 설치할 수 있습니다.
+아래는 **역할별 설치**입니다. 구성에 맞는 **문단 하나만** 실행하세요. 위에서부터 순서대로 모두 돌릴 필요는 없습니다.
 
-### 2.0 GitHub에서 바로 설치 (권장)
+| 구성 | 실행할 문단 |
+|------|-------------|
+| 서버 1대 + 디스플레이 Pi 여러 대 (권장) | 서버 Pi → 각 디스플레이 Pi |
+| Pi 한 대에 전부 | 올인원 Pi |
+| PC에서 편집만 | 설치 없음 (브라우저 접속) |
 
-Pi 터미널에 아래 명령만 입력하면 됩니다. `master` 브랜치 최신 커밋을 `/opt/paneo`에 clone한 뒤 `scripts/install-pi.sh`를 실행합니다.
+공통: GitHub에서 받을 때는 `install.sh`가 `/opt/paneo`에 clone한 뒤 `scripts/install-pi.sh`를 호출합니다.
 
 ```sh
-# 서버 + 디스플레이 한 대 (Pi 4+)
-curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=all bash
+# 예: GitHub bootstrap (역할은 PANEO_MODE로 선택)
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=<server|display|all> ... bash
+```
 
-# 서버만
+공통 환경 변수: `PANEO_REF=master`, `PANEO_INSTALL_DIR=/opt/paneo`, `PANEO_USER=pi`
+
+---
+
+### 서버 Pi
+
+**설치 내용:** Node.js, Paneo 서버(`paneo` systemd 서비스). 편집기·API·SQLite를 이 장치에서 제공합니다.
+
+**이 장치에서만 실행:**
+
+```sh
 curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=server bash
 ```
 
-선택 환경 변수:
-
-- `PANEO_REF=master` — 브랜치 또는 태그 (기본: `master`)
-- `PANEO_INSTALL_DIR=/opt/paneo` — clone 경로
-- `PANEO_DEVICE_NAME="거실"` — `all` 모드에서 자동 생성할 화면 이름
-
-이미 clone된 경로가 있으면 `git fetch`로 같은 브랜치를 갱신한 뒤 설치를 진행합니다.
-
-### 2.1 서버 Pi (소스를 직접 받은 경우)
-
-Paneo 소스를 받은 뒤 프로젝트 루트에서 실행합니다.
+소스를 이미 받아 둔 경우:
 
 ```sh
 sudo env PANEO_MODE=server PANEO_DIR=$PWD bash scripts/install-pi.sh
 ```
 
-설치 후 서버는 부팅 시 자동 실행됩니다.
+설치 후 편집기: `http://<server-ip>:4321/` · 상태 확인: `systemctl status paneo`
+
+---
+
+### 디스플레이 Pi
+
+**설치 내용:** Chromium kiosk 자동실행 + 컴패니언 에이전트(`paneo-agent` systemd). 서버에 등록된 `/d/<token>` 화면을 부팅 후 전체화면으로 엽니다.
+
+**사전 준비:** 서버가 이미 동작 중이어야 합니다. 편집기에서 화면을 만들고 **디스플레이 열기** URL의 토큰을 복사합니다.
+
+**이 장치에서만 실행:**
 
 ```sh
-systemctl status paneo
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh \
+  | sudo env PANEO_MODE=display \
+      PANEO_SERVER=http://<server-ip>:4321 \
+      PANEO_TOKEN=<token> \
+      bash
 ```
 
-편집기는 다음 주소로 접속합니다.
-
-```text
-http://<server-ip>:4321/
-```
-
-### 2.2 디스플레이 Pi
-
-먼저 편집기에서 화면을 만들고 **디스플레이 열기** URL의 `/d/<token>` 값을 확인합니다. 그 다음 디스플레이 Pi에서 실행합니다.
+서버가 이미 떠 있으면 설치 스크립트만 받아도 됩니다:
 
 ```sh
 curl -sSL http://<server-ip>:4321/install/pi.sh \
   | sudo env PANEO_MODE=display \
-    PANEO_SERVER=http://<server-ip>:4321 \
-    PANEO_TOKEN=<token> \
-    bash
+      PANEO_SERVER=http://<server-ip>:4321 \
+      PANEO_TOKEN=<token> \
+      bash
 ```
 
-이 명령은 Chromium kiosk 자동실행과 `paneo-agent` systemd 서비스를 함께 등록합니다. 재부팅하면 디스플레이가 자동으로 Paneo 화면을 엽니다.
+kiosk만 필요하고 에이전트(화면 전원 제어)는 빼려면 `PANEO_ENABLE_AGENT=0`을 추가합니다. 재부팅 후 kiosk가 뜹니다: `sudo reboot`
+
+---
+
+### 컴패니언 에이전트만 (선택)
+
+**설치 내용:** `paneo-agent` 서비스만 추가합니다. 화면 전원 켜기/끄기·watchdog용입니다.
+
+디스플레이 Pi 설치(`PANEO_MODE=display`)에 **이미 포함**되어 있어, 위 절차를 했다면 **별도 실행 불필요**합니다.
+
+kiosk는 수동으로 쓰고 에이전트만 붙일 때:
 
 ```sh
-sudo reboot
+curl -sSL http://<server-ip>:4321/agent/install.sh \
+  | sudo env PANEO_SERVER=http://<server-ip>:4321 PANEO_TOKEN=<token> bash
 ```
 
-### 2.3 서버와 디스플레이를 같은 Pi에 설치
+---
 
-Pi 4 이상처럼 서버와 브라우저를 같이 돌릴 장치라면 `all` 모드를 사용할 수 있습니다. 토큰을 지정하지 않으면 설치 중 새 화면을 자동 생성합니다.
+### 올인원 Pi (서버 + 디스플레이 + 에이전트)
+
+**설치 내용:** 위 **서버 Pi + 디스플레이 Pi + 에이전트**를 한 명령으로 처리합니다. Pi 4 이상 한 대에서 시험·소규모 구성에 적합합니다.
+
+**위의 서버·디스플레이 절차를 따로 실행할 필요 없습니다.**
+
+**이 장치에서만 실행:**
 
 ```sh
-sudo env PANEO_MODE=all \
-  PANEO_DIR=$PWD \
-  PANEO_DEVICE_NAME="거실" \
-  bash scripts/install-pi.sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=all bash
 ```
 
-옵션:
+화면 이름 지정 (토큰 없으면 설치 중 자동 생성):
 
-- `PANEO_PORT=8080`: 서버 포트 변경
-- `PANEO_USER=pi`: 서비스를 실행할 사용자 지정
-- `PANEO_TOKEN=<token>`: 기존 화면 토큰 사용
-- `PANEO_ENABLE_AGENT=0`: 에이전트 설치 생략
-- `PANEO_ENABLE_KIOSK=0`: kiosk 자동실행 등록 생략
-- `PANEO_REPO=<git-url>`: 소스가 없을 때 지정 경로로 clone
+```sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh \
+  | sudo env PANEO_MODE=all PANEO_DEVICE_NAME="거실" bash
+```
+
+소스를 이미 받아 둔 경우:
+
+```sh
+sudo env PANEO_MODE=all PANEO_DIR=$PWD PANEO_DEVICE_NAME="거실" bash scripts/install-pi.sh
+```
+
+옵션: `PANEO_PORT=8080`, `PANEO_TOKEN=<token>`(기존 화면), `PANEO_ENABLE_AGENT=0`, `PANEO_ENABLE_KIOSK=0`
+
+---
 
 아래 수동 설치 절차는 원클릭 스크립트를 쓰지 않거나 세부 설정을 직접 조정할 때 참고하세요.
 
