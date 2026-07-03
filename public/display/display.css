@@ -14,10 +14,19 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
   overflow: hidden;
 }
 
-.w-clock { display: flex; align-items: baseline; justify-content: center; gap: 0.35em;
-  width: 100%; height: 100%; padding: 0 8px; font-variant-numeric: tabular-nums; }
-.clock-hm { font-size: clamp(18px, 32cqmin, 40px); font-weight: 600; letter-spacing: 0.02em; line-height: 1; }
-.clock-sec { font-size: 0.42em; opacity: 0.55; }
+.w-clock {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3em;
+  width: 100%;
+  height: 100%;
+  padding: 8px 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.clock-hm { font-size: clamp(28px, 58cqmin, 84px); font-weight: 600; letter-spacing: 0.02em; }
+.clock-sec { font-size: 0.36em; opacity: 0.55; align-self: flex-end; margin-bottom: 0.14em; }
 .w-date { text-align: center; }
 .w-date .date-main { font-size: clamp(16px, 3vw, 40px); font-weight: 500; }
 .w-date .date-weekday { font-size: clamp(13px, 2vw, 24px); opacity: 0.6; margin-top: 4px; }
