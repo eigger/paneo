@@ -398,12 +398,16 @@ export const widgets = {
       const urls = cleanUrlList(config.icsUrls);
       const now = new Date();
       const todayStr = isoDate(now);
+      // Hoisted so the ICS fetch below can bound its request to exactly the
+      // dates this grid shows (including the leading/trailing adjacent-month
+      // padding cells) — see the `range` fix in src/dataproxy.js.
+      const gridCells = buildMonthGrid(now);
 
       // Month header
       const monthFmt = new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'long', timeZone: tz });
 
       function renderGrid(eventsByDate = {}) {
-        const cells = buildMonthGrid(now);
+        const cells = gridCells;
         const curMonth = now.getMonth();
         const showWN = !!config.showWeekNumber;
         const cols = showWN ? 8 : 7;
@@ -467,8 +471,17 @@ export const widgets = {
 
       if (!urls.length) return;
 
+      // Bound the fetch to exactly the span this grid shows (first cell's start of
+      // day .. day after the last cell) so every event in the visible month comes
+      // back, not just the next ~15 upcoming ones (that "upcoming" cap is correct
+      // for paneo.calendar's list view, but silently dropped events on later days
+      // of a busy month here).
+      const rangeFrom = gridCells[0];
+      const rangeTo = new Date(gridCells[gridCells.length - 1].getTime() + 24 * 3600 * 1000);
+      const rangeQuery = `&from=${encodeURIComponent(rangeFrom.toISOString())}&to=${encodeURIComponent(rangeTo.toISOString())}`;
+
       pollJson(
-        el, `/api/proxy/ical?${multiUrlQuery(urls)}`, pollInterval(30 * 60_000, ctx),
+        el, `/api/proxy/ical?${multiUrlQuery(urls)}${rangeQuery}`, pollInterval(30 * 60_000, ctx),
         (data) => {
           // Index events by their local date string
           const byDate = {};
@@ -726,8 +739,76 @@ export const widgets = {
   },
 };
 
+// Third-party plugin loading (docs/design.md §7, D17). Fetches /api/plugins
+// (server-discovered manifests, src/plugins.js) and merges each one straight
+// into the `widgets` registry above — every other function in this file
+// (renderWidget/widgetLabel/fieldLabel/buildPalette in editor.js) then works
+// on plugin widgets exactly like built-ins, with zero extra call sites.
+//
+// Two plugin types, matching the trust boundary already established by
+// paneo.iframe's sandboxing (§7.3):
+//   "module" — filesystem-installed ES module (server admin's trust act,
+//              same level as in-tree code) — dynamically imported and run
+//              directly, contract identical to every widget def's render().
+//   "iframe" — remote URL, no filesystem access — rendered through the same
+//              sandboxed <iframe> as paneo.iframe; config is passed as a
+//              query string since there's no in-tree postMessage channel yet.
+// Both types are always bucketed into the 'plugin' category (not spoofable
+// via manifest) so the palette visibly separates built-in from third-party.
+export async function loadPlugins() {
+  let manifests = [];
+  try {
+    manifests = await (await fetch('/api/plugins')).json();
+  } catch {
+    return; // offline first paint — built-ins still work, plugins just won't show
+  }
+  for (const m of manifests) {
+    const key = `plugin.${m.id}`;
+    if (widgets[key]) continue;
+    try {
+      if (m.type === 'module') {
+        const mod = await import(`/plugins/${m.id}/${m.entry}`);
+        if (typeof mod.render !== 'function') throw new Error(`${m.entry} does not export render()`);
+        widgets[key] = pluginWidgetDef(m, mod.render);
+      } else if (m.type === 'iframe') {
+        widgets[key] = pluginWidgetDef(m, iframePluginRender(m));
+      } else {
+        throw new Error(`unknown plugin type "${m.type}"`);
+      }
+    } catch (err) {
+      console.error(`[plugins] failed to load "${m.id}":`, err);
+    }
+  }
+}
+
+function pluginWidgetDef(m, render) {
+  return {
+    version: m.version,
+    label: m.label || { ko: m.id, en: m.id },
+    icon: m.icon || '🔌',
+    category: 'plugin',
+    defaultSize: m.defaultSize,
+    minSize: m.minSize || m.defaultSize,
+    requires: m.requires || [],
+    permissions: m.permissions || [],
+    sandbox: m.type === 'iframe' ? 'iframe' : undefined,
+    config: m.config || [],
+    render,
+  };
+}
+
+function iframePluginRender(m) {
+  return (el, config, ctx = {}) => {
+    const qs = new URLSearchParams({ ...(config || {}), locale: ctx.locale || '', timezone: ctx.timezone || '' }).toString();
+    const url = safeHttpUrl(`${m.url}${m.url.includes('?') ? '&' : '?'}${qs}`);
+    if (!url) { errorBox(el, 'invalid plugin url'); return; }
+    const sandbox = sandboxTokens(m.sandboxMode || 'scripts');
+    el.innerHTML = `<iframe class="w-iframe" src="${escapeAttr(url)}" sandbox="${escapeAttr(sandbox)}" referrerpolicy="no-referrer" loading="lazy"></iframe>`;
+  };
+}
+
 // Display order for the add-widget popover's category groups (editor.js).
-export const CATEGORY_ORDER = ['basic', 'data', 'media'];
+export const CATEGORY_ORDER = ['basic', 'data', 'media', 'plugin'];
 
 // Resolve a localized widget label for the given UI language.
 export function widgetLabel(type, lang = 'ko') {

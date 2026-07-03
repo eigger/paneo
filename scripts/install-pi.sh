@@ -2,13 +2,18 @@
 # Paneo Raspberry Pi one-click installer.
 #
 # Modes (pick ONE per device — do not run all examples):
-#   PANEO_MODE=server   Paneo server + systemd service only.
+#   PANEO_MODE=server   Paneo server, as a Docker container managed by systemd (docs/design.md D18/D19).
 #   PANEO_MODE=display  Chromium kiosk + companion agent (needs PANEO_SERVER, PANEO_TOKEN).
+#                        These run directly on the host (not containerized) — they need
+#                        OS-level access (vcgencmd/wlr-randr/xset, the display server itself)
+#                        that a container can't reach.
 #   PANEO_MODE=all      Server + kiosk + agent on one Pi (replaces server + display steps).
 #
 # Examples:
 #   curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=server bash
 #   curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=all bash
+#
+# Server mode installs Docker (via get.docker.com) if it isn't already present.
 
 set -euo pipefail
 
@@ -17,9 +22,7 @@ PORT="${PANEO_PORT:-4321}"
 SERVER="${PANEO_SERVER:-http://localhost:${PORT}}"
 TOKEN="${PANEO_TOKEN:-}"
 DEVICE_NAME="${PANEO_DEVICE_NAME:-Raspberry Pi}"
-APP_DIR="${PANEO_DIR:-}"
-REPO="${PANEO_REPO:-https://github.com/eigger/paneo.git}"
-INSTALL_DIR="${PANEO_INSTALL_DIR:-/opt/paneo}"
+IMAGE="${PANEO_IMAGE:-ghcr.io/eigger/paneo:latest}"
 AGENT_DIR="${PANEO_AGENT_DIR:-/opt/paneo-agent}"
 SERVICE_USER="${PANEO_USER:-${SUDO_USER:-pi}}"
 ENABLE_AGENT="${PANEO_ENABLE_AGENT:-1}"
@@ -38,15 +41,14 @@ user_home() {
   getent passwd "$SERVICE_USER" | cut -d: -f6
 }
 
-run_as_user() {
-  sudo -u "$SERVICE_USER" -H bash -lc "$*"
-}
-
 node_ok() {
   command -v node >/dev/null 2>&1 || return 1
   node -e "const [maj,min]=process.versions.node.split('.').map(Number); process.exit(maj > 22 || (maj === 22 && min >= 5) ? 0 : 1)"
 }
 
+# Only the companion agent needs Node on the host (§4.1 D) — it needs
+# vcgencmd/wlr-randr/xset, which a container can't reach. The server itself
+# no longer needs Node here at all; it runs as the prebuilt Docker image.
 install_node() {
   if node_ok; then
     log "Node.js OK: $(node --version)"
@@ -61,64 +63,43 @@ install_node() {
   node_ok || fail "Node.js 22.5+ is required"
 }
 
-resolve_app_dir() {
-  if [ -n "$APP_DIR" ]; then
-    return
+install_docker() {
+  if command -v docker >/dev/null 2>&1; then
+    log "Docker OK: $(docker --version)"
+  else
+    log "Installing Docker"
+    curl -fsSL https://get.docker.com | sh
   fi
-
-  if [ -f "./package.json" ] && [ -f "./src/server.js" ]; then
-    APP_DIR="$(pwd)"
-    return
-  fi
-
-  APP_DIR="$INSTALL_DIR"
-}
-
-ensure_source() {
-  resolve_app_dir
-
-  if [ -f "$APP_DIR/package.json" ] && [ -f "$APP_DIR/src/server.js" ]; then
-    log "Using Paneo source at $APP_DIR"
-    return
-  fi
-
-  if [ -z "$REPO" ]; then
-    fail "Paneo source not found at $APP_DIR. Run inside the repo, set PANEO_DIR, or set PANEO_REPO."
-  fi
-
-  log "Cloning $REPO to $APP_DIR"
-  apt-get update
-  apt-get install -y git
-  mkdir -p "$(dirname "$APP_DIR")"
-  git clone "$REPO" "$APP_DIR"
-  chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
+  systemctl enable --now docker
 }
 
 install_server() {
   need_root
-  install_node
-  ensure_source
+  install_docker
 
-  log "Installing server dependencies"
-  chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
-  run_as_user "cd '$APP_DIR' && npm install"
+  log "Pulling $IMAGE"
+  docker pull "$IMAGE"
 
-  local node_bin
-  node_bin="$(command -v node)"
-
-  log "Writing systemd service: paneo"
+  # Runs as root (not $SERVICE_USER) — controlling the Docker daemon needs
+  # root or docker-group membership either way, and this keeps the unit
+  # simple. `--rm` + foreground `docker run` (no -d) so the docker CLI
+  # process IS the service's main PID — systemd tracks/restarts it directly,
+  # and the ExecStartPre cleans up a same-named container left behind by an
+  # unclean stop. Data (SQLite/photos/plugins) lives in the `paneo-data`
+  # named volume, not the container, so `docker rm` between restarts is safe.
+  log "Writing systemd service: paneo (Docker)"
   cat > /etc/systemd/system/paneo.service <<EOF
 [Unit]
-Description=Paneo Server
-After=network-online.target
+Description=Paneo Server (Docker)
+After=network-online.target docker.service
 Wants=network-online.target
+Requires=docker.service
 
 [Service]
 Type=simple
-User=$SERVICE_USER
-WorkingDirectory=$APP_DIR
-Environment=PORT=$PORT
-ExecStart=$node_bin $APP_DIR/src/server.js
+ExecStartPre=-/usr/bin/docker rm -f paneo
+ExecStart=/usr/bin/docker run --rm --name paneo -p ${PORT}:4321 -v paneo-data:/data ${IMAGE}
+ExecStop=/usr/bin/docker stop -t 10 paneo
 Restart=always
 RestartSec=5
 
@@ -129,7 +110,7 @@ EOF
   systemctl daemon-reload
   systemctl enable --now paneo
   wait_for_server
-  log "Paneo server is running at $SERVER"
+  log "Paneo server is running at $SERVER (image: $IMAGE)"
 }
 
 wait_for_server() {
@@ -151,10 +132,13 @@ create_token_if_needed() {
 
   wait_for_server
   log "Creating display device: $DEVICE_NAME"
+  # grep/sed, not `node -e` — this runs before we know whether install_agent
+  # will need Node at all (ENABLE_AGENT could be 0), and the server itself is
+  # Docker-only now, so nothing else here guarantees Node is on the host.
   TOKEN="$(curl -fsS -X POST "$SERVER/api/devices" \
     -H 'content-type: application/json' \
     --data "{\"name\":\"$DEVICE_NAME\"}" \
-    | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>console.log(JSON.parse(s).token || ''))")"
+    | grep -o '"token":"[^"]*"' | head -1 | sed -E 's/.*:"([^"]*)"/\1/')"
 
   if [ -z "$TOKEN" ]; then
     fail "failed to create or read display token"
@@ -273,7 +257,7 @@ print_summary() {
   if curl -fsS "$SERVER/api/version" >/dev/null 2>&1; then
     log "Versions: $(curl -fsS "$SERVER/api/version")"
   fi
-  log "Server logs: systemctl status paneo && journalctl -u paneo -f"
+  log "Server logs: systemctl status paneo (or: docker logs -f paneo)"
   log "Agent logs:  systemctl status paneo-agent && journalctl -u paneo-agent -f"
 }
 
@@ -285,7 +269,6 @@ main() {
       install_server
       ;;
     display)
-      install_node
       create_token_if_needed
       install_kiosk
       install_agent

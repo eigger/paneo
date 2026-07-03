@@ -154,6 +154,10 @@ export async function load() {
   if (stmt.count.get().c === 0) {
     stmt.insert.run(newDeviceRow('거실'));
   }
+  // agentPresent reflects a live WS connection (§M4) — a prior process's agents
+  // aren't connected to *this* process yet, so a value left over from before a
+  // crash/restart would lie until the agent's own reconnect loop catches up.
+  db.exec('UPDATE devices SET agentPresent = 0');
 }
 
 export function listDevices() {

@@ -1,0 +1,16 @@
+{
+  "id": "hello-badge",
+  "version": "1.0.0",
+  "type": "module",
+  "entry": "widget.js",
+  "label": { "ko": "안내 배지 (예제)", "en": "Hello badge (example)" },
+  "icon": "🔌",
+  "defaultSize": { "w": 3, "h": 2 },
+  "minSize": { "w": 2, "h": 1 },
+  "requires": [],
+  "permissions": [],
+  "config": [
+    { "key": "text", "label": { "ko": "문구", "en": "Text" }, "type": "text", "default": "Hello, Paneo!" },
+    { "key": "color", "label": { "ko": "배경색 (hex)", "en": "Background color (hex)" }, "type": "text", "default": "#2563eb" }
+  ]
+}

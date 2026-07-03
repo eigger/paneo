@@ -1,0 +1,18 @@
+# docs/design.md §10 (B1): self-hosted, single portable container. Works the
+# same whether this runs on the display Pi itself or on separate always-on
+# hardware — only the volume needs to move with it.
+services:
+  paneo:
+    # Same file serves two purposes: `docker compose pull && docker compose up -d`
+    # runs the published release image (.github/workflows/docker-release.yml,
+    # D18/D19); `docker compose up -d --build` builds from local source instead.
+    image: ghcr.io/eigger/paneo:latest
+    build: .
+    ports:
+      - "4321:4321"
+    volumes:
+      - paneo-data:/data
+    restart: unless-stopped
+
+volumes:
+  paneo-data:

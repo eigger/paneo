@@ -47,7 +47,7 @@ curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | su
 
 ### 서버 Pi
 
-**설치 내용:** Node.js, Paneo 서버(`paneo` systemd 서비스). 편집기·API·SQLite를 이 장치에서 제공합니다.
+**설치 내용:** Docker(없으면 설치) + Paneo 서버를 컨테이너로 실행하는 `paneo` systemd 서비스. 편집기·API·SQLite를 이 장치에서 제공합니다.
 
 **이 장치에서만 실행:**
 
@@ -55,13 +55,14 @@ curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | su
 curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=server bash
 ```
 
-소스를 이미 받아 둔 경우:
+`latest` 대신 특정 릴리즈 버전을 고정하려면:
 
 ```sh
-sudo env PANEO_MODE=server PANEO_DIR=$PWD bash scripts/install-pi.sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh \
+  | sudo env PANEO_MODE=server PANEO_IMAGE=ghcr.io/eigger/paneo:0.1.0 bash
 ```
 
-설치 후 편집기: `http://<server-ip>:4321/` · 상태 확인: `systemctl status paneo`
+설치 후 편집기: `http://<server-ip>:4321/` · 상태 확인: `systemctl status paneo` (또는 `docker logs -f paneo`)
 
 ---
 
@@ -129,13 +130,13 @@ curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh \
   | sudo env PANEO_MODE=all PANEO_DEVICE_NAME="거실" bash
 ```
 
-소스를 이미 받아 둔 경우:
+`scripts/install-pi.sh`를 이미 받아 둔 경우(서버 역할은 나머지 소스 트리가 필요 없습니다 — 미리 빌드된 이미지를 그대로 씁니다):
 
 ```sh
-sudo env PANEO_MODE=all PANEO_DIR=$PWD PANEO_DEVICE_NAME="거실" bash scripts/install-pi.sh
+sudo env PANEO_MODE=all PANEO_DEVICE_NAME="거실" bash scripts/install-pi.sh
 ```
 
-옵션: `PANEO_PORT=8080`, `PANEO_TOKEN=<token>`(기존 화면), `PANEO_ENABLE_AGENT=0`, `PANEO_ENABLE_KIOSK=0`
+옵션: `PANEO_PORT=8080`, `PANEO_TOKEN=<token>`(기존 화면), `PANEO_IMAGE=ghcr.io/eigger/paneo:0.1.0`, `PANEO_ENABLE_AGENT=0`, `PANEO_ENABLE_KIOSK=0`
 
 ---
 
@@ -143,65 +144,50 @@ sudo env PANEO_MODE=all PANEO_DIR=$PWD PANEO_DEVICE_NAME="거실" bash scripts/i
 
 ## 3. 서버 설치
 
+원클릭 `PANEO_MODE=server` 설치(§2)가 아래 내용을 그대로 대신 해줍니다 — 이 절은 직접 손으로
+설정하거나 내부 동작을 이해하고 싶을 때 참고하세요.
+
 ### 3.1 준비
 
-서버에는 Node.js가 필요합니다. `node:sqlite`를 사용하므로 Node.js 22.5 이상 또는 Node.js 24 이상을 권장합니다.
+Docker가 필요합니다. 없으면 설치합니다.
 
 ```sh
-node --version
+curl -fsSL https://get.docker.com | sh
+sudo systemctl enable --now docker
 ```
 
-Raspberry Pi OS 또는 Debian 계열에서 Node.js가 너무 오래된 경우 NodeSource 등으로 최신 LTS/Current 버전을 설치하세요.
-
-### 3.2 소스 받기
+### 3.2 Docker Compose로 실행
 
 ```sh
 git clone https://github.com/eigger/paneo.git
 cd paneo
-npm install
+docker compose pull   # 릴리즈 이미지(ghcr.io/eigger/paneo) 받기
+docker compose up -d
 ```
-
-이미 소스를 복사해 둔 경우에는 프로젝트 루트에서 `npm install`만 실행하면 됩니다.
-
-### 3.3 서버 실행
-
-```sh
-npm start
-```
-
-기본 포트는 `4321`입니다.
 
 - 편집기: `http://<server-ip>:4321/`
 - 디스플레이: `http://<server-ip>:4321/d/<token>`
 
-다른 포트를 쓰려면:
+`docker-compose.yml`은 SQLite·사진·플러그인을 named volume(`paneo-data:/data`)에 영속화하고
+`restart: unless-stopped`로 자동 재시작합니다 — 이 방식으로 관리하면 별도 systemd 유닛이 필요 없습니다.
 
-```sh
-PORT=8080 npm start
-```
+### 3.3 또는: `docker run`을 감싸는 systemd 서비스 등록
 
-### 3.4 systemd 서비스로 등록
-
-서버를 부팅 시 자동 실행하려면 서버 장치에서 다음 파일을 만듭니다.
-
-```sh
-sudo nano /etc/systemd/system/paneo.service
-```
-
-예시:
+원클릭 설치 스크립트가 `/etc/systemd/system/paneo.service`에 실제로 써주는 내용입니다 —
+Compose 대신 `systemctl`/`journalctl`로 관리하고 싶을 때 씁니다.
 
 ```ini
 [Unit]
-Description=Paneo Server
-After=network-online.target
+Description=Paneo Server (Docker)
+After=network-online.target docker.service
 Wants=network-online.target
+Requires=docker.service
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/paneo
-Environment=PORT=4321
-ExecStart=/usr/bin/npm start
+ExecStartPre=-/usr/bin/docker rm -f paneo
+ExecStart=/usr/bin/docker run --rm --name paneo -p 4321:4321 -v paneo-data:/data ghcr.io/eigger/paneo:latest
+ExecStop=/usr/bin/docker stop -t 10 paneo
 Restart=always
 RestartSec=5
 
@@ -209,19 +195,27 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-경로와 사용자는 실제 설치 위치에 맞게 바꾸세요.
-
 ```sh
 sudo systemctl daemon-reload
 sudo systemctl enable --now paneo
 sudo systemctl status paneo
 ```
 
-로그 확인:
+로그: `journalctl -u paneo -f` 또는 `docker logs -f paneo`
+
+### 3.4 대안: Docker 없이 Node.js로 직접 실행
+
+권장 경로는 아니지만, 서버 자체가 Docker에 강하게 의존하진 않습니다 — Docker 지원이 약한 하드웨어이거나 Node를 직접 관리하고 싶을 때 사용하세요. Node.js 22.5 이상 또는 24 이상이 필요합니다(`node:sqlite` 내장 모듈 사용):
 
 ```sh
-journalctl -u paneo -f
+git clone https://github.com/eigger/paneo.git
+cd paneo
+npm install
+PORT=4321 npm start
 ```
+
+systemd로 등록하려면 위 유닛의 `ExecStart`를 `ExecStart=/usr/bin/npm start`로 바꾸고,
+`WorkingDirectory=`는 clone한 경로로, `User=`는 root가 아닌 계정으로 지정하세요.
 
 ## 4. 첫 화면 등록
 
@@ -426,6 +420,8 @@ curl http://<server-ip>:4321/api/version
 ```sh
 systemctl status paneo
 journalctl -u paneo -f
+docker logs -f paneo                # Docker로 실행 중이라면
+docker ps -a --filter name=paneo    # 컨테이너 자체가 떴는지 확인
 ```
 
 포트가 맞는지 확인합니다.
@@ -463,14 +459,23 @@ journalctl -u paneo-agent -f
 
 ## 12. 업데이트
 
-서버 장치에서 최신 코드를 받은 뒤 재시작합니다.
+서버 장치에서 최신 릴리즈 이미지를 받은 뒤 재시작합니다.
 
 ```sh
-cd /home/pi/paneo
-git pull
-npm install
+docker pull ghcr.io/eigger/paneo:latest
 sudo systemctl restart paneo
 ```
+
+systemd 대신 Docker Compose로 운영 중이라면:
+
+```sh
+cd /path/to/paneo   # docker-compose.yml이 있는 위치
+docker compose pull
+docker compose up -d
+```
+
+(§3.4처럼 Docker 없이 설치했다면: 저장소 디렉터리에서 `git pull` → `npm install` →
+`sudo systemctl restart paneo`.)
 
 에이전트 코드가 바뀐 경우 디스플레이 Pi에서 다시 설치하거나 `/opt/paneo-agent/agent.js`와 `version.json`을 갱신한 뒤 재시작합니다.
 

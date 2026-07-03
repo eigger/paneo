@@ -16,9 +16,14 @@
 # Environment (optional):
 #   PANEO_REPO      Git URL (default: https://github.com/eigger/paneo.git)
 #   PANEO_REF       Branch or tag to install (default: master)
-#   PANEO_INSTALL_DIR Clone target (default: /opt/paneo)
+#   PANEO_INSTALL_DIR Clone target (default: /opt/paneo) — used only to fetch
+#                   scripts/install-pi.sh itself; the server role no longer
+#                   needs the cloned source (it runs as a Docker image, D18/D19)
 #   PANEO_MODE      server | display | all (default: all)
+#   PANEO_IMAGE     Docker image for server mode (default: ghcr.io/eigger/paneo:latest)
 #   PANEO_*         Other variables are forwarded to scripts/install-pi.sh
+#
+# Server mode requires Docker (auto-installed via get.docker.com if missing).
 
 set -euo pipefail
 
