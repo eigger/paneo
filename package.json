@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Paneo — web-editable dashboards for Raspberry Pi / ambient displays",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/eigger/paneo.git"
