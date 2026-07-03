@@ -20,6 +20,22 @@ Edit in the browser, hit **Apply**, and connected displays update live — no re
 | Editor | <img src="docs/images/editor.png" alt="Paneo editor" width="640" /> |
 | Display | <img src="docs/images/display.png" alt="Paneo display kiosk" width="640" /> |
 
+### Widgets
+
+| Widget | Preview |
+|--------|---------|
+| Clock | <img src="docs/images/widgets/clock.png" alt="Clock widget" width="200" /> |
+| Date | <img src="docs/images/widgets/date.png" alt="Date widget" width="200" /> |
+| Weather | <img src="docs/images/widgets/weather.png" alt="Weather widget" width="200" /> |
+| Alarm timer | <img src="docs/images/widgets/timer.png" alt="Alarm timer widget" width="200" /> |
+| Monthly calendar | <img src="docs/images/widgets/calendar-month.png" alt="Monthly calendar widget" width="240" /> |
+| Event list | <img src="docs/images/widgets/calendar.png" alt="Event list widget" width="220" /> |
+| RSS / News | <img src="docs/images/widgets/rss.png" alt="RSS widget" width="220" /> |
+| Photo slideshow | <img src="docs/images/widgets/photo.png" alt="Photo widget" width="220" /> |
+| External page | <img src="docs/images/widgets/iframe.png" alt="External page widget" width="240" /> |
+
+Regenerate with `node scripts/capture-screenshots.mjs` (widgets only: `PANEO_SCREENSHOT_MODE=widgets`).
+
 > Design doc: [docs/design.md](docs/design.md) (decision log in §0) · Milestone: **M6 non-RTSP complete**, RTSP deferred
 
 ## What works today

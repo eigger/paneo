@@ -20,6 +20,22 @@
 | 편집기 | <img src="docs/images/editor.png" alt="Paneo 편집기" width="640" /> |
 | 디스플레이 | <img src="docs/images/display.png" alt="Paneo 디스플레이 키오스크" width="640" /> |
 
+### 위젯
+
+| 위젯 | 미리보기 |
+|------|----------|
+| 시계 | <img src="docs/images/widgets/clock.png" alt="시계 위젯" width="200" /> |
+| 날짜 | <img src="docs/images/widgets/date.png" alt="날짜 위젯" width="200" /> |
+| 날씨 | <img src="docs/images/widgets/weather.png" alt="날씨 위젯" width="200" /> |
+| 알람 타이머 | <img src="docs/images/widgets/timer.png" alt="알람 타이머 위젯" width="200" /> |
+| 월간 달력 | <img src="docs/images/widgets/calendar-month.png" alt="월간 달력 위젯" width="240" /> |
+| 일정 목록 | <img src="docs/images/widgets/calendar.png" alt="일정 목록 위젯" width="220" /> |
+| RSS / 뉴스 | <img src="docs/images/widgets/rss.png" alt="RSS 위젯" width="220" /> |
+| 사진 슬라이드쇼 | <img src="docs/images/widgets/photo.png" alt="사진 위젯" width="220" /> |
+| 외부 페이지 | <img src="docs/images/widgets/iframe.png" alt="외부 페이지 위젯" width="240" /> |
+
+재생성: `node scripts/capture-screenshots.mjs` (위젯만: `PANEO_SCREENSHOT_MODE=widgets`).
+
 > 설계 문서: [docs/design.md](docs/design.md) (결정 로그 §0) · 마일스톤: **M6 비-RTSP 완료**, RTSP 보류
 
 ## 현재 동작하는 기능
