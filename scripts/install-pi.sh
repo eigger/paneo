@@ -8,6 +8,7 @@
 #
 # Examples:
 #   sudo env PANEO_MODE=server PANEO_DIR=$PWD bash scripts/install-pi.sh
+#   curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=all bash
 #   curl -sSL http://<server-ip>:4321/install/pi.sh | sudo env PANEO_MODE=display PANEO_SERVER=http://<server-ip>:4321 PANEO_TOKEN=<token> bash
 #   sudo env PANEO_MODE=all PANEO_DIR=$PWD PANEO_DEVICE_NAME="Living Room" bash scripts/install-pi.sh
 
@@ -19,7 +20,7 @@ SERVER="${PANEO_SERVER:-http://localhost:${PORT}}"
 TOKEN="${PANEO_TOKEN:-}"
 DEVICE_NAME="${PANEO_DEVICE_NAME:-Raspberry Pi}"
 APP_DIR="${PANEO_DIR:-}"
-REPO="${PANEO_REPO:-}"
+REPO="${PANEO_REPO:-https://github.com/eigger/paneo.git}"
 INSTALL_DIR="${PANEO_INSTALL_DIR:-/opt/paneo}"
 AGENT_DIR="${PANEO_AGENT_DIR:-/opt/paneo-agent}"
 SERVICE_USER="${PANEO_USER:-${SUDO_USER:-pi}}"

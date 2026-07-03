@@ -59,6 +59,9 @@ See [`docs/install-device.md`](docs/install-device.md) ([한국어](docs/install
 Quick Raspberry Pi commands:
 
 ```sh
+# Install from GitHub latest (recommended)
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=all bash
+
 # Server Pi, from the Paneo repo root
 sudo env PANEO_MODE=server PANEO_DIR=$PWD bash scripts/install-pi.sh
 
@@ -84,6 +87,7 @@ sudo env PANEO_MODE=all PANEO_DIR=$PWD PANEO_DEVICE_NAME="Living Room" bash scri
 - `public/editor/` — grid editor (drag/resize, settings modal, add-widget popover)
 - `public/display/` — kiosk display page
 - `agent/` — optional companion agent for display power control
+- `install.sh` — GitHub bootstrap installer for Raspberry Pi
 - `scripts/install-pi.sh` — Raspberry Pi one-click installer for server/display/all-in-one modes
 - `test/` — Node.js built-in test runner suite
 

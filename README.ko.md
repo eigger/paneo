@@ -56,6 +56,9 @@ GitHub Actions(`.github/workflows/ci.yml`)에서 Node.js 22·24 환경으로 동
 라즈베리 파이 원클릭 명령:
 
 ```sh
+# GitHub 최신 소스로 설치 (권장)
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=all bash
+
 # 서버 Pi — 프로젝트 루트에서
 sudo env PANEO_MODE=server PANEO_DIR=$PWD bash scripts/install-pi.sh
 
@@ -81,6 +84,7 @@ sudo env PANEO_MODE=all PANEO_DIR=$PWD PANEO_DEVICE_NAME="거실" bash scripts/i
 - `public/editor/` — 그리드 편집기
 - `public/display/` — 키오스크 디스플레이 페이지
 - `agent/` — 선택적 컴패니언 에이전트(화면 전원 제어)
+- `install.sh` — GitHub에서 clone 후 Pi 설치를 시작하는 부트스트랩 스크립트
 - `scripts/install-pi.sh` — 라즈베리 파이 원클릭 설치 스크립트
 - `test/` — Node.js 내장 테스트 러너
 

@@ -26,9 +26,29 @@ Editing device:
 
 ## 2. One-click install
 
-On Raspberry Pi, `scripts/install-pi.sh` can install Node.js, the server service, Chromium kiosk autostart, and the companion agent in one step.
+On Raspberry Pi, a single `install.sh` command clones the latest source from GitHub and installs Node.js, the server service, Chromium kiosk autostart, and the companion agent.
 
-### 2.1 Server Pi
+### 2.0 Install from GitHub (recommended)
+
+Run one of these on the Pi. The script shallow-clones the `master` branch to `/opt/paneo`, then runs `scripts/install-pi.sh`.
+
+```sh
+# All-in-one server + display (Pi 4+)
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=all bash
+
+# Server only
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=server bash
+```
+
+Optional environment variables:
+
+- `PANEO_REF=master` — branch or tag (default: `master`)
+- `PANEO_INSTALL_DIR=/opt/paneo` — clone destination
+- `PANEO_DEVICE_NAME="Living Room"` — display name when `all` mode auto-creates a token
+
+If the install directory already exists as a git clone, the script fetches the same branch before installing.
+
+### 2.1 Server Pi (when you already have the source)
 
 Clone Paneo, then run from the project root:
 

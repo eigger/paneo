@@ -37,5 +37,6 @@ jobs:
 
       - name: Validate installer shell scripts
         run: |
+          bash -n install.sh
           bash -n scripts/install-pi.sh
           bash -n agent/install.sh

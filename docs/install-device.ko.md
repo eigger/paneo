@@ -26,9 +26,29 @@
 
 ## 2. 원클릭 설치
 
-Raspberry Pi에서는 `scripts/install-pi.sh` 하나로 Node.js, 서버 서비스, Chromium kiosk 자동실행, 컴패니언 에이전트 등록까지 처리할 수 있습니다.
+Raspberry Pi에서는 `install.sh` 한 줄로 GitHub 최신 소스를 받아 Node.js, 서버 서비스, Chromium kiosk 자동실행, 컴패니언 에이전트까지 설치할 수 있습니다.
 
-### 2.1 서버 Pi
+### 2.0 GitHub에서 바로 설치 (권장)
+
+Pi 터미널에 아래 명령만 입력하면 됩니다. `master` 브랜치 최신 커밋을 `/opt/paneo`에 clone한 뒤 `scripts/install-pi.sh`를 실행합니다.
+
+```sh
+# 서버 + 디스플레이 한 대 (Pi 4+)
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=all bash
+
+# 서버만
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=server bash
+```
+
+선택 환경 변수:
+
+- `PANEO_REF=master` — 브랜치 또는 태그 (기본: `master`)
+- `PANEO_INSTALL_DIR=/opt/paneo` — clone 경로
+- `PANEO_DEVICE_NAME="거실"` — `all` 모드에서 자동 생성할 화면 이름
+
+이미 clone된 경로가 있으면 `git fetch`로 같은 브랜치를 갱신한 뒤 설치를 진행합니다.
+
+### 2.1 서버 Pi (소스를 직접 받은 경우)
 
 Paneo 소스를 받은 뒤 프로젝트 루트에서 실행합니다.
 

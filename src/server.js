@@ -14,6 +14,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, '..', 'public');
 const AGENT_DIR = path.join(__dirname, '..', 'agent');
 const SCRIPTS_DIR = path.join(__dirname, '..', 'scripts');
+const ROOT = path.join(__dirname, '..');
 const PORT = Number(process.env.PORT || 4321);
 
 const app = Fastify({ logger: { level: 'info', transport: undefined } });
@@ -348,6 +349,10 @@ app.get('/agent/agent.js', async (_req, reply) => {
 app.get('/agent/version.json', async (_req, reply) => {
   reply.type('application/json; charset=utf-8');
   return reply.sendFile('version.json', AGENT_DIR);
+});
+app.get('/install.sh', async (_req, reply) => {
+  reply.type('text/x-shellscript; charset=utf-8');
+  return reply.sendFile('install.sh', ROOT);
 });
 app.get('/install/pi.sh', async (_req, reply) => {
   reply.type('text/x-shellscript; charset=utf-8');
