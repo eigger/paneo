@@ -8,12 +8,13 @@
 </head>
 <body>
   <header>
-    <div class="brand">Paneo <span class="tag" data-i18n="tag"></span></div>
+    <div class="brand">Paneo <span class="tag" id="editor-version-tag" data-i18n="tag"></span></div>
 
     <!-- editing: what you're building right now -->
     <div class="toolbar" id="edit-toolbar">
       <label class="sel"><span data-i18n="device"></span>
         <select id="device-select"></select>
+        <button type="button" id="device-add-btn" class="icon-btn small" title="Add device">+</button>
       </label>
       <div class="palette-wrap">
         <button id="palette-btn" class="palette-btn" aria-haspopup="menu" aria-expanded="false">
@@ -50,7 +51,77 @@
         </div>
         <button type="button" id="resolution-rotate" class="settings-close" data-i18n="rotate"></button>
       </div>
+      <div class="field">
+        <label data-i18n="perfLabel"></label>
+        <select id="perf-select"></select>
+      </div>
+
+      <hr class="settings-divider" />
+
+      <div class="field">
+        <label data-i18n="groupLabel"></label>
+        <select id="group-select"></select>
+        <div class="group-new-row">
+          <input type="text" id="group-new-name" data-i18n-placeholder="groupNewPlaceholder" />
+          <button type="button" id="group-new-btn" data-i18n="groupNewBtn"></button>
+        </div>
+        <button type="button" id="group-apply-btn" class="settings-close" data-i18n="groupApplyBtn"></button>
+      </div>
+
+      <hr class="settings-divider" />
+
+      <div class="field">
+        <label data-i18n="remoteLabel"></label>
+        <div id="device-connected" class="muted"></div>
+        <div id="agent-status" class="agent-badge"></div>
+        <div class="button-row">
+          <button type="button" id="cmd-reload-btn" data-i18n="cmdReload"></button>
+          <button type="button" id="cmd-identify-btn" data-i18n="cmdIdentify"></button>
+        </div>
+        <div class="button-row">
+          <button type="button" id="cmd-power-on-btn" class="power-on" data-i18n="powerOn" disabled></button>
+          <button type="button" id="cmd-power-off-btn" class="power-off" data-i18n="powerOff" disabled></button>
+        </div>
+      </div>
+
+      <hr class="settings-divider" />
+
+      <div class="field">
+        <label data-i18n="powerLabel"></label>
+        <div class="grid2 power-schedule-row">
+          <label data-i18n="powerOnTime"></label>
+          <input type="time" id="power-on-time" />
+          <label data-i18n="powerOffTime"></label>
+          <input type="time" id="power-off-time" />
+        </div>
+        <div class="button-row">
+          <button type="button" id="power-save-btn" class="settings-close" data-i18n="powerSave"></button>
+          <button type="button" id="power-clear-btn" data-i18n="powerClear"></button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label data-i18n="haSettingsLabel"></label>
+        <div class="field">
+          <label data-i18n="haUrlLabel"></label>
+          <input type="text" id="ha-url" placeholder="http://192.168.1.100:8123" style="width:100%" />
+        </div>
+        <div class="field">
+          <label data-i18n="haTokenLabel"></label>
+          <input type="password" id="ha-token" placeholder="Long-lived Access Token" style="width:100%" />
+        </div>
+        <button type="button" id="ha-save-btn" class="settings-close" data-i18n="haSaveBtn"></button>
+      </div>
+
+      <hr class="settings-divider" />
+
+      <div class="field">
+        <label data-i18n="versionLabel"></label>
+        <div id="component-versions" class="component-versions muted"></div>
+      </div>
+
       <button id="settings-close" class="settings-close" data-i18n="close"></button>
+      <button type="button" id="device-delete-btn" class="danger" data-i18n="deleteDevice"></button>
     </div>
   </div>
 

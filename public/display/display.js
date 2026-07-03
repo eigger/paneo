@@ -7,12 +7,30 @@ const token = location.pathname.split('/').filter(Boolean).pop();
 const CACHE_KEY = `paneo:layout:${token}`;
 
 let lastLayout = null;
-let lastCtx = { locale: 'ko-KR', timezone: undefined };
+let lastCtx = { locale: 'ko-KR', timezone: undefined, performanceProfile: 'high' };
+let displayVersion = '';
+
+fetch('/api/version')
+  .then((res) => res.json())
+  .then((manifest) => {
+    displayVersion = manifest?.components?.display || '';
+    if (displayVersion) statusEl.title = `Paneo display v${displayVersion}`;
+  })
+  .catch(() => {});
+
+// 'auto' is resolved locally on the display, not the server (docs/design.md §4.3/§14
+// "B") — simple heuristic; a future auto-resolution-detect could feed a similar signal.
+function resolvePerformanceProfile(profile) {
+  if (profile !== 'auto') return profile || 'high';
+  const mem = navigator.deviceMemory; // not supported in every browser; undefined is fine
+  const cores = navigator.hardwareConcurrency || 4;
+  return (mem && mem <= 1) || cores <= 2 ? 'low' : 'high';
+}
 
 function applyLayout(layout, ctx) {
   if (!layout) return;
   lastLayout = layout;
-  if (ctx) lastCtx = ctx;
+  if (ctx) lastCtx = { ...ctx, performanceProfile: resolvePerformanceProfile(ctx.performanceProfile) };
   document.documentElement.lang = (lastCtx.locale || 'ko-KR').split('-')[0];
   document.body.style.background = layout.background || '#0b0f19';
   applyGridContainer(stage, layout);
@@ -50,14 +68,30 @@ function setStatus(text, cls, fade) {
   if (fade) setTimeout(() => (statusEl.style.opacity = '0'), 2000);
 }
 
+// remote "화면 확인" command (§M2) — briefly overlay the device name so an admin
+// can tell which physical screen this is when several are running at once.
+let identifyTimer = null;
+function showIdentify(name) {
+  const el = document.getElementById('identify-overlay');
+  el.textContent = name || '?';
+  el.classList.remove('hidden');
+  clearTimeout(identifyTimer);
+  identifyTimer = setTimeout(() => el.classList.add('hidden'), 4000);
+}
+
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${location.host}/ws?role=display&token=${encodeURIComponent(token)}`);
   ws.onopen = () => setStatus('● 연결됨', 'online', true);
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
-    if (msg.type === 'layout.set') applyLayout(msg.layout, { locale: msg.locale, timezone: msg.timezone });
-    else if (msg.type === 'command' && msg.action === 'reload') location.reload();
+    if (msg.type === 'layout.set') {
+      applyLayout(msg.layout, { locale: msg.locale, timezone: msg.timezone, performanceProfile: msg.performanceProfile });
+    } else if (msg.type === 'command' && msg.action === 'reload') {
+      location.reload();
+    } else if (msg.type === 'command' && msg.action === 'identify') {
+      showIdentify(msg.deviceName);
+    }
   };
   ws.onclose = () => { setStatus('○ 재연결 중…', 'offline', false); setTimeout(connect, 2000); };
   ws.onerror = () => ws.close();

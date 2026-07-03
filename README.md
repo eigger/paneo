@@ -1,24 +1,30 @@
 # Paneo
 
-Web-editable dashboards for Raspberry Pi / ambient displays.
-Edit in the browser, hit **적용(Apply)**, and the display updates — no reload.
+[English](README.md) · [한국어](README.ko.md)
 
-> Design doc: [docs/design.md](docs/design.md) (decision log in §0) · Milestone: **M1 complete**, M2 next
+Web-editable dashboards for Raspberry Pi and ambient displays.
+Edit in the browser, hit **Apply**, and connected displays update live — no reload.
+
+> Design doc: [docs/design.md](docs/design.md) (decision log in §0) · Milestone: **M6 non-RTSP complete**, RTSP deferred
 
 ## What works today
 
 - **Editor** (`/`): drag/resize a widget grid, per-widget settings (text/number/checkbox/dynamic URL lists), a
-  categorized "+ 위젯 추가" popover, per-device resolution (presets + custom + rotate), editor UI language
+  categorized **Add widget** popover, per-device resolution (presets + custom + rotate), editor UI language
   (ko/en) and per-device display locale — all in a ⚙ settings panel separate from the editing toolbar.
 - **Display** (`/d/<token>`): kiosk page, WebSocket-pushed layout updates, offline cache (last layout persists
   through a network drop), real CSS Grid layout so the same data renders proportionally correct at any
   resolution/aspect ratio.
-- **Draft/Publish model**: editing never touches the live display until you hit **적용** — publish broadcasts
+- **Draft/Publish model**: editing never touches the live display until you hit **Apply** — publish broadcasts
   to every connected display for that device.
-- **8 widgets**: clock, date, text, weather (Open-Meteo, no API key), calendar (multiple iCal URLs, merged +
-  sorted), RSS/news (multiple feeds, merged + sorted), iframe, photo slideshow (multiple images, rotating).
+- **11 widgets**: clock, date, text, weather (Open-Meteo, no API key), event list, monthly calendar,
+  RSS/news, sandboxed external page, photo slideshow/photo frame, alarm timer, and Home Assistant entity.
 - **Data proxy** (`src/dataproxy.js`): widgets never call third-party APIs directly — the server fetches,
   per-source-caches, and merges, so one broken calendar/feed doesn't take down the widget.
+- **Device management**: per-device resolution/locale/performance profile, groups, live reload/identify,
+  and optional companion-agent power scheduling.
+- **M6 third-party guardrails**: external pages render through a sandboxed iframe, and the editor surfaces
+  widget version/required capabilities/permissions before publish. RTSP/camera streaming is intentionally deferred.
 - **SQLite persistence** via Node's built-in `node:sqlite` — no native compile step.
 
 ## Run
@@ -28,10 +34,44 @@ npm install
 npm start          # http://localhost:4321
 ```
 
-- **Editor**: http://localhost:4321/ (a default device "거실" is seeded on first run)
-- **Display**: click "디스플레이 열기" in the editor, or open `http://localhost:4321/d/<token>`
+- **Editor**: http://localhost:4321/ (a default device is seeded on first run)
+- **Display**: click **Open display** in the editor, or open `http://localhost:4321/d/<token>`
 
-Open the display in a second tab/window, arrange widgets in the editor, press **적용**, and watch it update live.
+Open the display in a second tab/window, arrange widgets in the editor, press **Apply**, and watch it update live.
+
+## Tests
+
+```sh
+npm test
+```
+
+CI runs the same test suite on Node.js 22 and 24 via GitHub Actions (`.github/workflows/ci.yml`).
+
+## Install on real devices
+
+See [`docs/install-device.md`](docs/install-device.md) ([한국어](docs/install-device.ko.md)) for the full Raspberry Pi / kiosk setup:
+
+- server installation and `systemd` service
+- Chromium kiosk autostart on display devices
+- optional companion-agent installation for screen power control
+- first dashboard setup, Home Assistant, photo frame, and troubleshooting
+
+Quick Raspberry Pi commands:
+
+```sh
+# Server Pi, from the Paneo repo root
+sudo env PANEO_MODE=server PANEO_DIR=$PWD bash scripts/install-pi.sh
+
+# Display Pi, after creating a display in the editor and copying its token
+curl -sSL http://<server-ip>:4321/install/pi.sh \
+  | sudo env PANEO_MODE=display \
+    PANEO_SERVER=http://<server-ip>:4321 \
+    PANEO_TOKEN=<token> \
+    bash
+
+# Single Pi running both server and display
+sudo env PANEO_MODE=all PANEO_DIR=$PWD PANEO_DEVICE_NAME="Living Room" bash scripts/install-pi.sh
+```
 
 ## Layout / stack
 
@@ -43,7 +83,15 @@ Open the display in a second tab/window, arrange widgets in the editor, press **
 - `public/shared/gridlayout.js` — shared CSS Grid sizing so editor preview and display stay proportionally in sync
 - `public/editor/` — grid editor (drag/resize, settings modal, add-widget popover)
 - `public/display/` — kiosk display page
+- `agent/` — optional companion agent for display power control
+- `scripts/install-pi.sh` — Raspberry Pi one-click installer for server/display/all-in-one modes
+- `test/` — Node.js built-in test runner suite
 
 ## Widgets
 
-`paneo.clock` · `paneo.date` · `paneo.text` · `paneo.weather` · `paneo.calendar` · `paneo.rss` · `paneo.iframe` · `paneo.photo`
+`paneo.clock` · `paneo.date` · `paneo.text` · `paneo.weather` · `paneo.calendar` · `paneo.calendar.month` ·
+`paneo.rss` · `paneo.iframe` · `paneo.photo` · `paneo.timer` · `paneo.homeassistant`
+
+## Repository
+
+https://github.com/eigger/paneo

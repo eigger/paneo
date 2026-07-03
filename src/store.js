@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, existsSync, readFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+const DATA_DIR = process.env.PANEO_DATA_DIR || path.join(process.cwd(), 'data');
 mkdirSync(DATA_DIR, { recursive: true });
 const DB_FILE = path.join(DATA_DIR, 'paneo.sqlite');
 const LEGACY_JSON = path.join(DATA_DIR, 'store.json');
@@ -25,15 +25,31 @@ db.exec(`
     publishedAt TEXT
   )
 `);
+db.exec(`
+  CREATE TABLE IF NOT EXISTS groups (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL
+  )
+`);
+db.exec(`
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  )
+`);
 
 // CREATE TABLE IF NOT EXISTS doesn't add columns to an already-created table —
-// migrate existing DBs (from before the resolution field existed) by adding
-// them if missing. Resolution is manually set for now (§ "A"); a future
-// auto-detect ("B") would report the display's real viewport over WS and
-// overwrite these same two columns — no schema change needed for that later.
+// migrate existing DBs (from before these fields existed) by adding them if
+// missing. Resolution is manually set for now (§ "A"); a future auto-detect
+// ("B") would report the display's real viewport over WS and overwrite these
+// same two columns — no schema change needed for that later.
 const existingColumns = new Set(db.prepare('PRAGMA table_info(devices)').all().map((c) => c.name));
 if (!existingColumns.has('resolutionW')) db.exec('ALTER TABLE devices ADD COLUMN resolutionW INTEGER NOT NULL DEFAULT 1920');
 if (!existingColumns.has('resolutionH')) db.exec('ALTER TABLE devices ADD COLUMN resolutionH INTEGER NOT NULL DEFAULT 1080');
+if (!existingColumns.has('groupId')) db.exec('ALTER TABLE devices ADD COLUMN groupId TEXT');
+// M4: companion-agent fields (docs/design.md §4.1 D, §9)
+if (!existingColumns.has('powerSchedule')) db.exec('ALTER TABLE devices ADD COLUMN powerSchedule TEXT');
+if (!existingColumns.has('agentPresent')) db.exec('ALTER TABLE devices ADD COLUMN agentPresent INTEGER NOT NULL DEFAULT 0');
 
 function defaultLayout() {
   // rows is a *minimum* — grows automatically to fit content (public/shared/gridlayout.js)
@@ -51,23 +67,38 @@ function rowToDevice(row) {
     timezone: row.timezone,
     resolutionW: row.resolutionW,
     resolutionH: row.resolutionH,
+    groupId: row.groupId,
+    powerSchedule: row.powerSchedule ? JSON.parse(row.powerSchedule) : null, // §M4 §9
+    agentPresent: Boolean(row.agentPresent),                                  // §M4 companion-agent
     draft: JSON.parse(row.draft),
     published: JSON.parse(row.published),
     publishedAt: row.publishedAt,
   };
 }
 
+function rowToGroup(row) {
+  return row ? { id: row.id, name: row.name } : null;
+}
+
 const stmt = {
   all: db.prepare('SELECT * FROM devices'),
   byId: db.prepare('SELECT * FROM devices WHERE id = ?'),
   byToken: db.prepare('SELECT * FROM devices WHERE token = ?'),
+  byGroup: db.prepare('SELECT * FROM devices WHERE groupId = ?'),
   count: db.prepare('SELECT COUNT(*) AS c FROM devices'),
-  insert: db.prepare(`INSERT INTO devices (id, name, token, performanceProfile, locale, timezone, resolutionW, resolutionH, draft, published, publishedAt)
-    VALUES (@id, @name, @token, @performanceProfile, @locale, @timezone, @resolutionW, @resolutionH, @draft, @published, @publishedAt)`),
+  insert: db.prepare(`INSERT INTO devices (id, name, token, performanceProfile, locale, timezone, resolutionW, resolutionH, groupId, powerSchedule, agentPresent, draft, published, publishedAt)
+    VALUES (@id, @name, @token, @performanceProfile, @locale, @timezone, @resolutionW, @resolutionH, @groupId, @powerSchedule, @agentPresent, @draft, @published, @publishedAt)`),
+  deleteDevice: db.prepare('DELETE FROM devices WHERE id = ?'),
+  groupsAll: db.prepare('SELECT * FROM groups'),
+  groupInsert: db.prepare('INSERT INTO groups (id, name) VALUES (@id, @name)'),
   updateDraft: db.prepare('UPDATE devices SET draft = ? WHERE id = ?'),
   updatePublish: db.prepare('UPDATE devices SET published = ?, publishedAt = ? WHERE id = ?'),
   updateFields: db.prepare(`UPDATE devices SET name = @name, performanceProfile = @performanceProfile,
-    locale = @locale, timezone = @timezone, resolutionW = @resolutionW, resolutionH = @resolutionH WHERE id = @id`),
+    locale = @locale, timezone = @timezone, resolutionW = @resolutionW, resolutionH = @resolutionH,
+    groupId = @groupId, powerSchedule = @powerSchedule WHERE id = @id`),
+  updateAgentPresent: db.prepare('UPDATE devices SET agentPresent = ? WHERE id = ?'),
+  getSetting: db.prepare('SELECT value FROM settings WHERE key = ?'),
+  setSetting: db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'),
 };
 
 function newDeviceRow(name) {
@@ -81,6 +112,9 @@ function newDeviceRow(name) {
     timezone: null, // null → display uses its own local timezone
     resolutionW: 1920, // manual for now ("A") — a future auto-detect ("B") would
     resolutionH: 1080, // overwrite these from the display's real reported viewport
+    groupId: null, // §M2 — group-based bulk layout apply, not a live-shared layout reference
+    powerSchedule: null, // §M4 §9 — daily on/off schedule: [{on:"07:00",off:"23:00"}]
+    agentPresent: 0,     // §M4 — 0=absent 1=connected (runtime only, reset on server start)
     draft: layout,
     published: layout,
     publishedAt: null,
@@ -102,6 +136,7 @@ function migrateLegacyJson() {
         timezone: d.timezone ?? null,
         resolutionW: d.resolutionW || 1920,
         resolutionH: d.resolutionH || 1080,
+        groupId: d.groupId ?? null,
         draft: JSON.stringify(d.draft || defaultLayout()),
         published: JSON.stringify(d.published || defaultLayout()),
         publishedAt: d.publishedAt ?? null,
@@ -142,6 +177,9 @@ export async function createDevice(name) {
 export async function updateDevice(id, patch) {
   const d = getDevice(id);
   if (!d) return null;
+  // powerSchedule: accept null (disable), or an object/array from the patch
+  let ps = d.powerSchedule;
+  if ('powerSchedule' in patch) ps = patch.powerSchedule ?? null;
   stmt.updateFields.run({
     id,
     name: patch.name ?? d.name,
@@ -150,8 +188,48 @@ export async function updateDevice(id, patch) {
     timezone: patch.timezone !== undefined ? patch.timezone : d.timezone,
     resolutionW: patch.resolutionW ?? d.resolutionW,
     resolutionH: patch.resolutionH ?? d.resolutionH,
+    groupId: patch.groupId !== undefined ? patch.groupId : d.groupId,
+    powerSchedule: ps !== null ? JSON.stringify(ps) : null,
   });
   return getDevice(id);
+}
+
+// §M4: called by the /ws/agent handler when an agent connects/disconnects.
+// agentPresent is runtime-only: reset to 0 on server start (it's in the DB
+// so publicDevice() can include it, but it's always false until the agent
+// re-connects after a server restart).
+export function setAgentPresent(id, present) {
+  stmt.updateAgentPresent.run(present ? 1 : 0, id);
+}
+
+export async function deleteDevice(id) {
+  const info = stmt.deleteDevice.run(id);
+  return info.changes > 0;
+}
+
+export function listGroups() {
+  return stmt.groupsAll.all().map(rowToGroup);
+}
+
+export async function createGroup(name) {
+  const row = { id: randomUUID(), name: name || '새 그룹' };
+  stmt.groupInsert.run(row);
+  return rowToGroup(row);
+}
+
+// Bulk-copy (not a live shared reference, docs/design.md D7): the source device's
+// published layout is copied into every *other* device sharing its groupId.
+export async function applyLayoutToGroup(sourceId) {
+  const source = getDevice(sourceId);
+  if (!source?.groupId) return [];
+  const siblings = stmt.byGroup.all(source.groupId).map(rowToDevice).filter((d) => d.id !== sourceId);
+  const layoutJson = JSON.stringify(source.published);
+  const publishedAt = new Date().toISOString();
+  for (const d of siblings) {
+    stmt.updateDraft.run(layoutJson, d.id);
+    stmt.updatePublish.run(layoutJson, publishedAt, d.id);
+  }
+  return siblings.map((d) => d.id);
 }
 
 export async function saveDraft(id, layout) {
@@ -167,3 +245,14 @@ export async function publish(id) {
   stmt.updatePublish.run(JSON.stringify(d.draft), publishedAt, id);
   return getDevice(id);
 }
+
+// §M5 settings store helpers
+export function getSetting(key) {
+  const row = stmt.getSetting.get(key);
+  return row ? row.value : null;
+}
+
+export function setSetting(key, value) {
+  stmt.setSetting.run(key, value === null || value === undefined ? null : String(value));
+}
+

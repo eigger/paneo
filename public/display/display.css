@@ -49,3 +49,72 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
   transition: opacity 0.6s; }
 #status.online { color: #7cffb2; }
 #status.offline { color: #ffc97c; }
+
+/* remote "화면 확인" command (§M2) — briefly identifies which physical screen this is */
+#identify-overlay { position: fixed; inset: 0; z-index: 999;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(59, 130, 246, 0.92);
+  font-size: clamp(28px, 8vw, 96px); font-weight: 700; color: #fff;
+  animation: identify-pulse 1s ease-in-out infinite; }
+#identify-overlay.hidden { display: none; }
+@keyframes identify-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.w-image.no-transition { transition: none; }
+
+/* ---- §M3: Monthly calendar grid (paneo.calendar.month) ---- */
+.w-cal-month { display: flex; flex-direction: column; width: 100%; height: 100%; padding: 8px; gap: 4px; }
+.cal-m-header { font-size: clamp(11px, 1.8vw, 20px); font-weight: 600; text-align: center; opacity: 0.9; padding-bottom: 2px; }
+.cal-m-grid { display: grid; flex: 1; gap: 2px; }
+.cal-m-cell { min-width: 0; min-height: 0; overflow: hidden; font-size: clamp(9px, 1.2vw, 13px); }
+.cal-m-day-hdr { text-align: center; opacity: 0.45; font-size: clamp(9px, 1.1vw, 12px); font-weight: 600; padding: 2px 0; }
+.cal-m-wn-hdr, .cal-m-wn { text-align: center; opacity: 0.25; font-size: clamp(8px, 0.9vw, 11px); }
+.cal-m-day { background: rgba(255,255,255,0.03); border-radius: 4px; padding: 2px 3px; display: flex; flex-direction: column; gap: 1px; cursor: default; }
+.cal-m-day:hover { background: rgba(255,255,255,0.07); }
+.cal-m-today { background: rgba(96,165,250,0.18); border: 1px solid rgba(96,165,250,0.45); }
+.cal-m-today .cal-m-dnum { color: #60a5fa; font-weight: 700; }
+.cal-m-other { opacity: 0.3; }
+.cal-m-sat .cal-m-dnum { color: #7dd3fc; }
+.cal-m-sun .cal-m-dnum { color: #f87171; }
+.cal-m-dnum { font-size: clamp(9px, 1.1vw, 13px); font-weight: 500; line-height: 1.2; }
+.cal-m-event { font-size: clamp(8px, 0.9vw, 11px); opacity: 0.8; background: rgba(96,165,250,0.2); border-radius: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+.cal-m-more { font-size: clamp(7px, 0.8vw, 10px); opacity: 0.5; }
+.cal-m-fetch-err { font-size: 11px; color: #ff9aa7; padding: 4px; text-align: center; }
+
+/* ---- §M3: Alarm / countdown timer (paneo.timer) ---- */
+.w-timer { display: flex; flex-direction: column; justify-content: center; gap: 6px; width: 100%; height: 100%; padding: 10px 14px; }
+.w-timer-empty .timer-hint { font-size: clamp(11px, 1.5vw, 15px); opacity: 0.4; text-align: center; white-space: pre-line; }
+.timer-row { display: flex; flex-direction: column; gap: 1px; }
+.timer-label { font-size: clamp(10px, 1.3vw, 14px); opacity: 0.6; font-weight: 500; }
+.timer-val { font-size: clamp(14px, 2.5vw, 28px); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+.timer-future { color: #f87171; } /* counts down — time still in the future */
+.timer-past   { color: #86efac; } /* elapsed — target time has passed */
+.timer-invalid { font-size: 12px; opacity: 0.4; }
+
+/* ---- §M5: Home Assistant (paneo.homeassistant) ---- */
+.w-ha { display: flex; flex-direction: column; height: 100%; padding: 12px; justify-content: space-between; box-sizing: border-box; }
+.ha-header { display: flex; align-items: center; gap: 8px; font-size: clamp(11px, 1.4vw, 15px); font-weight: 600; opacity: 0.85; }
+.ha-icon { font-size: clamp(14px, 1.8vw, 20px); }
+.ha-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ha-body { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; }
+.ha-state-val { font-size: clamp(20px, 3.5vw, 36px); font-weight: 700; color: #60a5fa; }
+.ha-toggle-btn { background: #3b82f6; color: #fff; border: 0; border-radius: 8px; padding: 6px 12px; font-size: clamp(12px, 1.8vw, 18px); font-weight: 600; cursor: pointer; width: 100%; max-width: 140px; transition: background 0.2s; white-space: nowrap; }
+.ha-toggle-btn:hover { background: #2563eb; }
+.ha-toggle-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ---- §M5: Ken Burns Photo slide & fit mode ---- */
+.fit-contain { background-size: contain !important; background-repeat: no-repeat !important; }
+.fit-cover { background-size: cover !important; }
+.w-image-container { position: relative; width: 100%; height: 100%; overflow: hidden; border-radius: inherit; }
+.w-image-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-position: center; transform: scale(1); }
+.w-image-bg.kenburns { animation: kenburns-anim 16s ease-in-out infinite alternate; }
+.w-image-bg-preload { display: none; }
+
+@keyframes kenburns-anim {
+  0% { transform: scale(1) translate(0, 0); }
+  100% { transform: scale(1.12) translate(-2%, -1%); }
+}
+
+

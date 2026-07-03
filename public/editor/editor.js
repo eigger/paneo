@@ -9,6 +9,8 @@ let saveTimer = null;
 
 const canvas = document.getElementById('canvas');
 const deviceSelect = document.getElementById('device-select');
+const deviceAddBtn = document.getElementById('device-add-btn');
+const deviceDeleteBtn = document.getElementById('device-delete-btn');
 const langSelect = document.getElementById('lang-select');
 const localeSelect = document.getElementById('locale-select');
 const resolutionSelect = document.getElementById('resolution-select');
@@ -16,14 +18,37 @@ const resolutionCustom = document.getElementById('resolution-custom');
 const resolutionWInput = document.getElementById('resolution-w');
 const resolutionHInput = document.getElementById('resolution-h');
 const resolutionRotateBtn = document.getElementById('resolution-rotate');
+const perfSelect = document.getElementById('perf-select');
+const groupSelect = document.getElementById('group-select');
+const groupNewName = document.getElementById('group-new-name');
+const groupNewBtn = document.getElementById('group-new-btn');
+const groupApplyBtn = document.getElementById('group-apply-btn');
+const deviceConnected = document.getElementById('device-connected');
+const cmdReloadBtn = document.getElementById('cmd-reload-btn');
+const cmdIdentifyBtn = document.getElementById('cmd-identify-btn');
+// §M4: companion-agent & power schedule
+const agentStatus = document.getElementById('agent-status');
+const cmdPowerOnBtn = document.getElementById('cmd-power-on-btn');
+const cmdPowerOffBtn = document.getElementById('cmd-power-off-btn');
+const powerOnInput = document.getElementById('power-on-time');
+const powerOffInput = document.getElementById('power-off-time');
+const powerSaveBtn = document.getElementById('power-save-btn');
+const powerClearBtn = document.getElementById('power-clear-btn');
 const palette = document.getElementById('palette');
 const paletteBtn = document.getElementById('palette-btn');
 const inspectorBody = document.getElementById('inspector-body');
 const saveState = document.getElementById('save-state');
 const openDisplay = document.getElementById('open-display');
 
+let groups = [];
+let versionManifest = null;
+
 const uid = () => Math.random().toString(36).slice(2, 9);
-const ctx = () => ({ locale: device?.locale || 'ko-KR', timezone: device?.timezone || undefined });
+const ctx = () => ({
+  locale: device?.locale || 'ko-KR',
+  timezone: device?.timezone || undefined,
+  performanceProfile: device?.performanceProfile || 'high',
+});
 
 async function api(path, opts = {}) {
   // Only send a JSON content-type when there's actually a body — Fastify's
@@ -39,9 +64,34 @@ async function api(path, opts = {}) {
 function applyI18n() {
   document.documentElement.lang = getLang();
   document.querySelectorAll('[data-i18n]').forEach((el) => (el.textContent = t(el.dataset.i18n)));
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => (el.placeholder = t(el.dataset.i18nPlaceholder)));
   saveState.textContent = t('saved');
+  applyVersionUI();
   buildPalette();
   renderInspector();
+}
+
+function applyVersionUI() {
+  const tag = document.getElementById('editor-version-tag');
+  if (tag && versionManifest?.components?.editor) {
+    tag.textContent = `${t('tag')} v${versionManifest.components.editor}`;
+  }
+
+  const box = document.getElementById('component-versions');
+  if (!box || !versionManifest?.components) return;
+  const c = versionManifest.components;
+  const agentVer = device?.agentPresent && device.agentVersion ? device.agentVersion : c.agent;
+  box.innerHTML = [
+    t('versionServer', c.server),
+    t('versionEditor', c.editor),
+    t('versionDisplay', c.display),
+    t('versionAgent', agentVer),
+  ].map((line) => `<div>${line}</div>`).join('');
+}
+
+async function loadVersions() {
+  versionManifest = await api('/api/version');
+  applyVersionUI();
 }
 
 const CATEGORY_KEY = { basic: 'categoryBasic', data: 'categoryData', media: 'categoryMedia' };
@@ -155,6 +205,141 @@ function initSelectors() {
     applyCanvasAspectRatio();
     saveResolution();
   });
+
+  for (const [value, key] of [['high', 'perfHigh'], ['low', 'perfLow'], ['auto', 'perfAuto']]) {
+    const o = document.createElement('option');
+    o.value = value; o.textContent = t(key);
+    perfSelect.appendChild(o);
+  }
+  perfSelect.addEventListener('change', async () => {
+    if (!device) return;
+    device.performanceProfile = perfSelect.value;
+    render(); // widgets re-render with the new ctx().performanceProfile immediately
+    await api(`/api/devices/${device.id}`, { method: 'PATCH', body: JSON.stringify({ performanceProfile: device.performanceProfile }) });
+  });
+
+  groupSelect.addEventListener('change', async () => {
+    if (!device) return;
+    device.groupId = groupSelect.value || null;
+    await api(`/api/devices/${device.id}`, { method: 'PATCH', body: JSON.stringify({ groupId: device.groupId }) });
+  });
+  groupNewBtn.addEventListener('click', async () => {
+    const name = groupNewName.value.trim();
+    if (!name || !device) return;
+    const g = await api('/api/groups', { method: 'POST', body: JSON.stringify({ name }) });
+    groups.push(g);
+    groupNewName.value = '';
+    populateGroupSelect();
+    groupSelect.value = g.id;
+    device.groupId = g.id;
+    await api(`/api/devices/${device.id}`, { method: 'PATCH', body: JSON.stringify({ groupId: g.id }) });
+  });
+  groupApplyBtn.addEventListener('click', async () => {
+    if (!device) return;
+    if (!device.groupId) { toast(t('groupNoneToApply')); return; }
+    const res = await api(`/api/devices/${device.id}/apply-to-group`, { method: 'POST' });
+    toast(t('groupApplied', res.applied));
+  });
+
+  cmdReloadBtn.addEventListener('click', () => sendCommand('reload'));
+  cmdIdentifyBtn.addEventListener('click', () => sendCommand('identify'));
+
+  // §M4: remote power commands
+  if (cmdPowerOnBtn) cmdPowerOnBtn.addEventListener('click', () => sendPower(true));
+  if (cmdPowerOffBtn) cmdPowerOffBtn.addEventListener('click', () => sendPower(false));
+
+  // §M4: power schedule save / clear
+  if (powerSaveBtn) powerSaveBtn.addEventListener('click', async () => {
+    if (!device) return;
+    const on = powerOnInput.value.trim();
+    const off = powerOffInput.value.trim();
+    const schedule = (on || off) ? [{ on: on || null, off: off || null }] : null;
+    device.powerSchedule = schedule;
+    await api(`/api/devices/${device.id}`, { method: 'PATCH', body: JSON.stringify({ powerSchedule: schedule }) });
+    toast(t('powerSaved'));
+  });
+  if (powerClearBtn) powerClearBtn.addEventListener('click', async () => {
+    if (!device) return;
+    device.powerSchedule = null;
+    powerOnInput.value = '';
+    powerOffInput.value = '';
+    await api(`/api/devices/${device.id}`, { method: 'PATCH', body: JSON.stringify({ powerSchedule: null }) });
+    toast(t('powerSaved'));
+  });
+
+  deviceAddBtn.addEventListener('click', async () => {
+    const name = prompt(t('devicePrompt'));
+    if (!name) return;
+    const d = await api('/api/devices', { method: 'POST', body: JSON.stringify({ name }) });
+    await loadDevices(d.id);
+  });
+  deviceDeleteBtn.addEventListener('click', async () => {
+    if (!device) return;
+    if (!confirm(t('deleteConfirm', device.name))) return;
+    await api(`/api/devices/${device.id}`, { method: 'DELETE' });
+    device = null;
+    await loadDevices();
+  });
+}
+
+async function sendCommand(action) {
+  if (!device) return;
+  const res = await api(`/api/devices/${device.id}/command`, { method: 'POST', body: JSON.stringify({ action }) });
+  toast(res.displays > 0 ? t('cmdSent') : t('cmdNoDisplay'));
+}
+
+// §M4: send power on/off to the companion agent via the server
+async function sendPower(on) {
+  if (!device) return;
+  const res = await api(`/api/devices/${device.id}/command`, { method: 'POST', body: JSON.stringify({ action: 'power', on }) });
+  if (res.agentPresent) {
+    toast(on ? t('powerOnSent') : t('powerOffSent'));
+  } else {
+    toast(t('powerNoAgent'));
+  }
+}
+
+function populateGroupSelect() {
+  groupSelect.innerHTML = '';
+  const none = document.createElement('option');
+  none.value = ''; none.textContent = t('groupNone');
+  groupSelect.appendChild(none);
+  for (const g of groups) {
+    const o = document.createElement('option');
+    o.value = g.id; o.textContent = g.name;
+    groupSelect.appendChild(o);
+  }
+}
+
+async function loadGroups() {
+  groups = await api('/api/groups');
+  populateGroupSelect();
+}
+
+// Sync the settings-modal fields that reflect device-level (not layout-level) state.
+function syncDeviceMetaUI() {
+  perfSelect.value = device.performanceProfile || 'high';
+  groupSelect.value = device.groupId || '';
+  deviceConnected.textContent = t('connectedCount', device.displays ?? 0);
+  // §M4: agent badge
+  if (agentStatus) {
+    agentStatus.textContent = device.agentPresent
+      ? t('agentConnected', device.agentVersion || '')
+      : t('agentMissing');
+    agentStatus.className = 'agent-badge' + (device.agentPresent ? ' connected' : '');
+    agentStatus.title = device.agentPresent ? '' : t('agentMissingTip');
+  }
+  // §M4: power schedule
+  if (powerOnInput && powerOffInput) {
+    const ps = device.powerSchedule;
+    const s = Array.isArray(ps) ? ps[0] : ps;
+    powerOnInput.value = s?.on ?? '';
+    powerOffInput.value = s?.off ?? '';
+  }
+  // §M4: power buttons
+  const hasAgent = device.agentPresent ?? false;
+  if (cmdPowerOnBtn) { cmdPowerOnBtn.disabled = !hasAgent; cmdPowerOnBtn.title = hasAgent ? '' : t('agentMissingTip'); }
+  if (cmdPowerOffBtn) { cmdPowerOffBtn.disabled = !hasAgent; cmdPowerOffBtn.title = hasAgent ? '' : t('agentMissingTip'); }
 }
 
 function saveResolution() {
@@ -189,7 +374,8 @@ function applyCanvasAspectRatio() {
 }
 
 // ---- device loading ----
-async function loadDevices() {
+async function loadDevices(preferredId) {
+  await loadGroups();
   const devices = await api('/api/devices');
   deviceSelect.innerHTML = '';
   for (const d of devices) {
@@ -198,7 +384,15 @@ async function loadDevices() {
     opt.textContent = d.name;
     deviceSelect.appendChild(opt);
   }
-  if (devices.length) await selectDevice(devices[0].id);
+  if (!devices.length) {
+    device = null;
+    layout = null;
+    render();
+    renderInspector();
+    return;
+  }
+  const target = preferredId && devices.some((d) => d.id === preferredId) ? preferredId : devices[0].id;
+  await selectDevice(target);
 }
 
 async function selectDevice(id) {
@@ -209,7 +403,9 @@ async function selectDevice(id) {
   localeSelect.value = device.locale || 'ko-KR';
   syncResolutionUI();
   applyCanvasAspectRatio();
+  syncDeviceMetaUI();
   openDisplay.href = `/d/${device.token}`;
+  applyVersionUI();
   render();
   renderInspector();
 }
@@ -252,6 +448,7 @@ function findFreeCell(w, h) {
 }
 
 function render() {
+  if (!layout) { canvas.innerHTML = ''; return; } // no devices left (e.g. after deleting the last one)
   canvas.querySelectorAll('.widget-content').forEach((c) => c._cleanup?.());
   canvas.style.background = layout.background || '#0b0f19';
   canvas.innerHTML = '';
@@ -343,7 +540,29 @@ function renderInspector() {
   if (!w) { inspectorBody.innerHTML = `<p class="muted">${t('selectHint')}</p>`; return; }
   const def = widgets[w.type];
   const esc = (s) => String(s ?? '').replace(/"/g, '&quot;');
+  const escHtml = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   let html = `<div class="field"><label>${t('type')}</label><div class="val">${widgetLabel(w.type, lang)}</div></div>`;
+
+  // §M3: minSize warning — shown if widget is smaller than its declared minimum
+  const minW = def?.minSize?.w ?? 1;
+  const minH = def?.minSize?.h ?? 1;
+  if (w.w < minW || w.h < minH) {
+    html += `<p class="min-size-warn">${t('minSizeWarn', `${minW}×${minH}`)}</p>`;
+  }
+
+  const meta = [
+    def?.version ? `${t('version')}: ${def.version}` : '',
+    ...(def?.requires || []).map((x) => `${t('requires')}: ${x}`),
+    ...(def?.permissions || []).map((x) => `${t('permission')}: ${x}`),
+    def?.sandbox ? `${t('sandbox')}: ${def.sandbox}` : '',
+  ].filter(Boolean);
+  if (meta.length) {
+    html += `<div class="widget-meta">${meta.map((x) => `<span>${escHtml(x)}</span>`).join('')}</div>`;
+  }
+  if (def?.sandbox === 'iframe') {
+    html += `<p class="plugin-sandbox-note">${t('sandboxNote')}</p>`;
+  }
+
   html += `<div class="grid2">
     <label>X<input type="number" data-prop="x" value="${w.x}" min="0"></label>
     <label>Y<input type="number" data-prop="y" value="${w.y}" min="0"></label>
@@ -358,16 +577,25 @@ function renderInspector() {
     } else if (c.type === 'textarea') {
       html += `<div class="field"><label>${fieldLabel(c, lang)}</label><textarea data-config="${c.key}" rows="4">${esc(w.config?.[c.key])}</textarea></div>`;
     } else if (c.type === 'list') {
-      const arr = Array.isArray(w.config?.[c.key]) ? w.config[c.key] : [];
+      const configArr = w.config?.[c.key];
+      const arr = (Array.isArray(configArr) && configArr.length > 0) ? configArr : [''];
+      const ph = c.placeholder ? (c.placeholder[lang] || c.placeholder.ko || c.placeholder) : '';
       const rows = arr.map((val, i) => `
         <div class="list-row">
-          <input type="text" data-list-key="${c.key}" data-list-index="${i}" value="${esc(val)}">
+          <input type="text" data-list-key="${c.key}" data-list-index="${i}" value="${esc(val)}" placeholder="${esc(ph)}">
           <button type="button" class="list-remove" data-list-key="${c.key}" data-list-index="${i}">×</button>
         </div>`).join('');
       html += `<div class="field"><label>${fieldLabel(c, lang)}</label>
         <div class="list-field">${rows}
           <button type="button" class="list-add" data-list-key="${c.key}">${t('addItem')}</button>
         </div></div>`;
+    } else if (c.type === 'enum') {
+      // §M3: enum type — rendered as <select> in the inspector
+      const cur = w.config?.[c.key] ?? c.default ?? '';
+      const opts = (c.options || []).map((opt) =>
+        `<option value="${esc(opt)}" ${cur === opt ? 'selected' : ''}>${opt}</option>`
+      ).join('');
+      html += `<div class="field"><label>${fieldLabel(c, lang)}</label><select data-config="${c.key}">${opts}</select></div>`;
     } else {
       html += `<div class="field"><label>${fieldLabel(c, lang)}</label><input type="text" data-config="${c.key}" value="${esc(w.config?.[c.key])}"></div>`;
     }
@@ -480,7 +708,43 @@ function toast(msg) {
 // ---- settings modal (separate from the edit toolbar: device/palette/apply) ----
 const settingsBtn = document.getElementById('settings-btn');
 const settingsOverlay = document.getElementById('settings-overlay');
-settingsBtn.addEventListener('click', () => settingsOverlay.classList.remove('hidden'));
+
+async function loadHASettings() {
+  try {
+    const data = await api('/api/settings/ha');
+    const haUrl = document.getElementById('ha-url');
+    const haToken = document.getElementById('ha-token');
+    if (haUrl) haUrl.value = data.url || '';
+    if (haToken) haToken.value = data.token || '';
+  } catch (err) {
+    console.error('Failed to load HA settings', err);
+  }
+}
+
+async function saveHASettings() {
+  const url = document.getElementById('ha-url').value.trim();
+  const token = document.getElementById('ha-token').value.trim();
+  try {
+    await api('/api/settings/ha', {
+      method: 'POST',
+      body: JSON.stringify({ url, token })
+    });
+    toast(t('haSaved'));
+    // Reload settings to refresh token masking
+    await loadHASettings();
+  } catch (err) {
+    toast(t('haSavedFailed'));
+  }
+}
+
+settingsBtn.addEventListener('click', async () => {
+  settingsOverlay.classList.remove('hidden');
+  await loadHASettings();
+});
+
+const haSaveBtn = document.getElementById('ha-save-btn');
+if (haSaveBtn) haSaveBtn.addEventListener('click', saveHASettings);
+
 document.getElementById('settings-close').addEventListener('click', () => settingsOverlay.classList.add('hidden'));
 settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) settingsOverlay.classList.add('hidden'); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') settingsOverlay.classList.add('hidden'); });
@@ -502,4 +766,5 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 window.addEventListener('resize', render);
 
+loadVersions().catch(() => {});
 loadDevices().catch((err) => toast(t('loadFail', err.message)));
