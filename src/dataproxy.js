@@ -16,7 +16,7 @@ async function cached(key, ttlMs, fetcher) {
   return value;
 }
 
-const WEATHER_CODE_TEXT = {
+const WEATHER_CODE_TEXT_KO = {
   0: '맑음', 1: '대체로 맑음', 2: '구름 조금', 3: '흐림',
   45: '안개', 48: '서리 안개',
   51: '이슬비', 53: '이슬비', 55: '이슬비',
@@ -25,6 +25,22 @@ const WEATHER_CODE_TEXT = {
   80: '소나기', 81: '소나기', 82: '강한 소나기',
   95: '뇌우', 96: '뇌우(우박)', 99: '뇌우(강한 우박)',
 };
+
+const WEATHER_CODE_TEXT_EN = {
+  0: 'Clear', 1: 'Mostly clear', 2: 'Partly cloudy', 3: 'Overcast',
+  45: 'Fog', 48: 'Rime fog',
+  51: 'Light drizzle', 53: 'Drizzle', 55: 'Heavy drizzle',
+  61: 'Rain', 63: 'Rain', 65: 'Heavy rain',
+  71: 'Snow', 73: 'Snow', 75: 'Heavy snow', 77: 'Snow grains',
+  80: 'Showers', 81: 'Showers', 82: 'Heavy showers',
+  95: 'Thunderstorm', 96: 'Thunderstorm (hail)', 99: 'Thunderstorm (heavy hail)',
+};
+
+function weatherCodeText(code, locale) {
+  const en = String(locale || '').toLowerCase().startsWith('en');
+  const map = en ? WEATHER_CODE_TEXT_EN : WEATHER_CODE_TEXT_KO;
+  return map[code] ?? '-';
+}
 
 async function geocode(location) {
   const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1`;
@@ -36,7 +52,7 @@ async function geocode(location) {
   return { lat: hit.latitude, lon: hit.longitude, name: hit.name };
 }
 
-async function fetchWeather(location) {
+async function fetchWeather(location, locale) {
   const { lat, lon, name } = await geocode(location);
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`;
   const res = await fetch(url);
@@ -47,7 +63,7 @@ async function fetchWeather(location) {
     location: name,
     temperature: cw?.temperature,
     weatherCode: cw?.weathercode,
-    weatherText: WEATHER_CODE_TEXT[cw?.weathercode] ?? '-',
+    weatherText: weatherCodeText(cw?.weathercode, locale),
     isDay: !!cw?.is_day,
     fetchedAt: new Date().toISOString(),
   };
@@ -90,9 +106,10 @@ async function fetchMerged(urls, cacheKeyPrefix, ttlMs, fetchOne, combine) {
 export async function registerDataProxy(app) {
   app.get('/api/proxy/weather', async (req, reply) => {
     const location = req.query?.location;
+    const locale = req.query?.locale || 'ko-KR';
     if (!location) return reply.code(400).send({ error: 'location required' });
     try {
-      return await cached(`weather:${location}`, 10 * 60_000, () => fetchWeather(location));
+      return await cached(`weather:${location}:${locale}`, 10 * 60_000, () => fetchWeather(location, locale));
     } catch (err) {
       return reply.code(502).send({ error: String(err.message || err) });
     }

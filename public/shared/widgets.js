@@ -327,7 +327,7 @@ export const widgets = {
       const unitSymbol = units === 'imperial' ? '°F' : '°C';
       loadingBox(el, '...');
       pollJson(
-        el, `/api/proxy/weather?location=${encodeURIComponent(loc)}&units=${units}`, pollInterval(10 * 60_000, ctx),
+        el, `/api/proxy/weather?location=${encodeURIComponent(loc)}&units=${units}&locale=${encodeURIComponent(ctx.locale || 'ko-KR')}`, pollInterval(10 * 60_000, ctx),
         (data) => {
           el.innerHTML = `<div class="w-weather">
             <div class="weather-temp">${Math.round(data.temperature)}${unitSymbol}</div>
