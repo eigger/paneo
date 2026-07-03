@@ -13,6 +13,13 @@
 Web-editable dashboards for Raspberry Pi and ambient displays.
 Edit in the browser, hit **Apply**, and connected displays update live — no reload.
 
+## Gallery
+
+| View | Screenshot |
+|------|------------|
+| Editor | <img src="docs/images/editor.png" alt="Paneo editor" width="640" /> |
+| Display | <img src="docs/images/display.png" alt="Paneo display kiosk" width="640" /> |
+
 > Design doc: [docs/design.md](docs/design.md) (decision log in §0) · Milestone: **M6 non-RTSP complete**, RTSP deferred
 
 ## What works today

@@ -13,6 +13,13 @@
 라즈베리 파이와 상시 디스플레이를 위한 웹 편집형 대시보드입니다.
 브라우저에서 레이아웃을 편집하고 **적용**을 누르면 연결된 화면이 새로고침 없이 즉시 갱신됩니다.
 
+## Gallery
+
+| 화면 | 스크린샷 |
+|------|----------|
+| 편집기 | <img src="docs/images/editor.png" alt="Paneo 편집기" width="640" /> |
+| 디스플레이 | <img src="docs/images/display.png" alt="Paneo 디스플레이 키오스크" width="640" /> |
+
 > 설계 문서: [docs/design.md](docs/design.md) (결정 로그 §0) · 마일스톤: **M6 비-RTSP 완료**, RTSP 보류
 
 ## 현재 동작하는 기능
