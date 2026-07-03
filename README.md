@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/eigger/paneo/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/eigger/paneo/actions/workflows/ci.yml)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22.5-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![GitHub Release](https://img.shields.io/github/release/eigger/paneo.svg)](https://github.com/eigger/paneo/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/eigger/paneo)](https://github.com/eigger/paneo/releases/latest)
 [![License](https://img.shields.io/github/license/eigger/paneo)](https://github.com/eigger/paneo/blob/master/LICENSE)
 [![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-supported-C51A4A?logo=raspberrypi&logoColor=white)](docs/install-device.md)
 [![Self-hosted](https://img.shields.io/badge/hosting-self--hosted-2563EB)](docs/design.md)
