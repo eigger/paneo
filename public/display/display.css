@@ -1,0 +1,51 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; background: #0b0f19;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #e8edf6; }
+#stage { width: 100vw; height: 100vh; }
+
+.widget { position: relative; min-width: 0; min-height: 0; }
+.widget-content {
+  width: 100%; height: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+
+.w-clock { display: flex; align-items: baseline; gap: 8px; font-variant-numeric: tabular-nums; }
+.clock-hm { font-size: clamp(28px, 8vw, 96px); font-weight: 600; letter-spacing: 2px; }
+.clock-sec { font-size: 0.35em; opacity: 0.55; }
+.w-date { text-align: center; }
+.w-date .date-main { font-size: clamp(16px, 3vw, 40px); font-weight: 500; }
+.w-date .date-weekday { font-size: clamp(13px, 2vw, 24px); opacity: 0.6; margin-top: 4px; }
+.w-text { font-size: clamp(16px, 3vw, 40px); padding: 12px; text-align: center; }
+.w-image { width: 100%; height: 100%; background-size: cover; background-position: center;
+  transition: background-image 0.6s ease; }
+.w-placeholder { display: flex; align-items: center; justify-content: center;
+  opacity: 0.5; font-size: 14px; }
+
+.w-loading, .w-error { opacity: 0.6; font-size: 14px; padding: 8px; text-align: center; }
+.w-error { color: #ff9aa7; }
+
+.w-weather { text-align: center; }
+.weather-temp { font-size: clamp(24px, 6vw, 56px); font-weight: 600; }
+.weather-text { font-size: clamp(13px, 2vw, 20px); opacity: 0.75; margin-top: 2px; }
+.weather-loc { font-size: clamp(11px, 1.6vw, 16px); opacity: 0.5; margin-top: 4px; }
+
+.w-calendar, .w-rss { list-style: none; width: 100%; height: 100%; padding: 12px;
+  overflow: hidden; font-size: clamp(12px, 1.8vw, 18px); }
+.w-calendar li, .w-rss li { padding: 5px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
+.w-calendar li:last-child, .w-rss li:last-child { border-bottom: none; }
+.cal-date { opacity: 0.6; margin-right: 10px; font-variant-numeric: tabular-nums; }
+.cal-empty { opacity: 0.4; }
+.w-rss a { color: inherit; text-decoration: none; }
+.w-rss a:hover { text-decoration: underline; }
+
+.w-iframe { width: 100%; height: 100%; border: 0; }
+
+#status { position: fixed; right: 12px; bottom: 12px; font-size: 13px;
+  padding: 4px 12px; border-radius: 20px; background: rgba(0, 0, 0, 0.45);
+  transition: opacity 0.6s; }
+#status.online { color: #7cffb2; }
+#status.offline { color: #ffc97c; }

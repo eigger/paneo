@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Paneo Editor</title>
+  <link rel="stylesheet" href="/editor/editor.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">Paneo <span class="tag" data-i18n="tag"></span></div>
+
+    <!-- editing: what you're building right now -->
+    <div class="toolbar" id="edit-toolbar">
+      <label class="sel"><span data-i18n="device"></span>
+        <select id="device-select"></select>
+      </label>
+      <div class="palette-wrap">
+        <button id="palette-btn" class="palette-btn" aria-haspopup="menu" aria-expanded="false">
+          <span data-i18n="addWidget"></span>
+        </button>
+        <div id="palette" class="palette hidden" role="menu"></div>
+      </div>
+      <span id="save-state" class="save-state"></span>
+      <a id="open-display" href="#" target="_blank" class="link" data-i18n="openDisplay"></a>
+      <button id="apply" class="apply" data-i18n="apply"></button>
+    </div>
+
+    <!-- settings: app/device config, not part of the editing flow -->
+    <button id="settings-btn" class="icon-btn" title="Settings" aria-haspopup="dialog">⚙</button>
+  </header>
+
+  <div id="settings-overlay" class="overlay hidden">
+    <div id="settings-panel" role="dialog" aria-modal="true">
+      <h3 data-i18n="settingsTitle"></h3>
+      <div class="field">
+        <label data-i18n="lang"></label>
+        <select id="lang-select"></select>
+      </div>
+      <div class="field">
+        <label data-i18n="localeLabel"></label>
+        <select id="locale-select"></select>
+      </div>
+      <div class="field">
+        <label data-i18n="resolutionLabel"></label>
+        <select id="resolution-select"></select>
+        <div id="resolution-custom" class="grid2 hidden">
+          <label>W<input type="number" id="resolution-w" min="100" step="10"></label>
+          <label>H<input type="number" id="resolution-h" min="100" step="10"></label>
+        </div>
+        <button type="button" id="resolution-rotate" class="settings-close" data-i18n="rotate"></button>
+      </div>
+      <button id="settings-close" class="settings-close" data-i18n="close"></button>
+    </div>
+  </div>
+
+  <main>
+    <section id="canvas-wrap">
+      <div id="canvas"></div>
+    </section>
+    <aside id="inspector">
+      <h3 data-i18n="inspector"></h3>
+      <div id="inspector-body"></div>
+    </aside>
+  </main>
+
+  <div id="toast"></div>
+  <script type="module" src="/editor/editor.js"></script>
+</body>
+</html>
