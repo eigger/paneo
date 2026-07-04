@@ -1,6 +1,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; background: #0b0f19;
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #e8edf6; }
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #e8edf6;
+  cursor: none; }
 #stage { width: 100vw; height: 100vh; }
 
 .widget { position: relative; min-width: 0; min-height: 0; }

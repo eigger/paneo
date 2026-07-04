@@ -199,10 +199,12 @@ fi
 KIOSK_EOF
   # Append the chrome command with runtime-expanded variables
   cat >> /usr/local/bin/paneo-kiosk <<EOF
-exec "$chrome" \$OZONE \\
-  --kiosk --noerrdialogs --disable-infobars \\
-  --disable-session-crashed-bubble \\
-  --no-first-run \\
+exec "$chrome" \$OZONE \
+  --kiosk --noerrdialogs --disable-infobars \
+  --disable-session-crashed-bubble \
+  --no-first-run \
+  --disable-translate \
+  --disable-features=Translate \
   "$display_url"
 EOF
   chmod +x /usr/local/bin/paneo-kiosk
