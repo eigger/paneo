@@ -19,6 +19,11 @@ const AGENT_DIR = path.join(__dirname, '..', 'agent');
 const SCRIPTS_DIR = path.join(__dirname, '..', 'scripts');
 const ROOT = path.join(__dirname, '..');
 const PORT = Number(process.env.PORT || 4321);
+// Same PANEO_DATA_DIR convention as store.js/plugins.js — must resolve to the
+// mounted /data volume in the Docker image (see Dockerfile), not a path under
+// __dirname, or every container recreation (every restart/update, since the
+// systemd unit runs `docker run --rm`) silently wipes anything stored there.
+const DATA_DIR = process.env.PANEO_DATA_DIR || path.join(process.cwd(), 'data');
 
 const app = Fastify({ logger: { level: 'info', transport: undefined } });
 
@@ -271,7 +276,7 @@ app.post('/api/proxy/ha/services/:domain/:service', async (req, reply) => {
 });
 
 // --- Photo/video Frame Proxy & Local storage (§M5, extended for video) ---
-const PHOTOS_DIR = path.join(__dirname, '..', 'data', 'photos');
+const PHOTOS_DIR = path.join(DATA_DIR, 'photos');
 if (!fs.existsSync(PHOTOS_DIR)) {
   fs.mkdirSync(PHOTOS_DIR, { recursive: true });
 }
@@ -294,7 +299,7 @@ app.get('/api/proxy/photos/local/file/:filename', async (req, reply) => {
   if (!fs.existsSync(filePath)) {
     return reply.code(404).send({ error: 'File not found' });
   }
-  return reply.sendFile(`photos/${safeName}`, path.join(__dirname, '..', 'data'));
+  return reply.sendFile(`photos/${safeName}`, DATA_DIR);
 });
 
 // Editor-side upload for the photo/media widget's "local" source — multiple files
