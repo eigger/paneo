@@ -99,6 +99,14 @@ if [ -f "$KIOSK_BIN" ]; then
     printf '%s\n' \
       '#!/usr/bin/env bash' \
       'set -e' \
+      '# Wait for the Paneo server before launching Chromium (reboot race condition fix)' \
+      'SERVER_URL="$(grep -o '"'"'http[^ "]*'"'"' "$0" | head -1 | sed '"'"'s|/d/.*||'"'"')"' \
+      'SERVER_URL="${SERVER_URL:-http://localhost:4321}"' \
+      'for _i in $(seq 1 60); do' \
+      '  if curl -fsS "${SERVER_URL}/api/brand" >/dev/null 2>&1; then break; fi' \
+      '  sleep 2' \
+      'done' \
+      '' \
       'if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then' \
       '  OZONE="--ozone-platform=wayland --enable-features=UseOzonePlatform"' \
       '  wlr-randr >/dev/null 2>&1 || true' \

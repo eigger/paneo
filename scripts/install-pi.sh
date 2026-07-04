@@ -236,6 +236,18 @@ install_kiosk() {
   cat > /usr/local/bin/paneo-kiosk <<'KIOSK_EOF'
 #!/usr/bin/env bash
 set -e
+# Wait for the Paneo server to be ready before launching Chromium.
+# On reboot, Docker may take 10-30 s to start — without this wait the
+# browser opens before the server is up and shows a blank white page.
+SERVER_URL="$(grep -o 'http[^ "]*' "$0" | head -1 | sed 's|/d/.*||')"
+SERVER_URL="${SERVER_URL:-http://localhost:4321}"
+for _i in $(seq 1 60); do
+  if curl -fsS "${SERVER_URL}/api/brand" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 2
+done
+
 if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then
   # Wayland (Wayfire / Labwc — Raspberry Pi OS Bookworm default)
   OZONE="--ozone-platform=wayland --enable-features=UseOzonePlatform"
@@ -251,12 +263,12 @@ fi
 KIOSK_EOF
   # Append the chrome command with runtime-expanded variables
   cat >> /usr/local/bin/paneo-kiosk <<EOF
-exec "$chrome" \$OZONE \
-  --kiosk --noerrdialogs --disable-infobars \
-  --disable-session-crashed-bubble \
-  --no-first-run \
-  --disable-translate \
-  --disable-features=Translate \
+exec "$chrome" \$OZONE \\
+  --kiosk --noerrdialogs --disable-infobars \\
+  --disable-session-crashed-bubble \\
+  --no-first-run \\
+  --disable-translate \\
+  --disable-features=Translate \\
   "$display_url"
 EOF
   chmod +x /usr/local/bin/paneo-kiosk
