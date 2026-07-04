@@ -1,8 +1,10 @@
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
+import fastifyMultipart from '@fastify/multipart';
 import path from 'node:path';
 import fs from 'node:fs';
+import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { BRAND } from './brand.js';
 import { COMPONENTS, getVersionManifest } from './version.js';
@@ -22,6 +24,9 @@ const app = Fastify({ logger: { level: 'info', transport: undefined } });
 
 await app.register(fastifyWebsocket);
 await app.register(fastifyStatic, { root: PUBLIC, prefix: '/' });
+// Local photo/video uploads (§ media widget) — capped well above any realistic
+// single file (video included) but still bounded so a bad upload can't fill the disk.
+await app.register(fastifyMultipart, { limits: { fileSize: 500 * 1024 * 1024, files: 20 } });
 // §7/D17: third-party "module" plugins are filesystem-installed (admin trust,
 // same level as the server's own code) — served as plain static files so the
 // client can `import()` them directly. decorateReply:false because the first
@@ -70,6 +75,35 @@ app.get('/ws', { websocket: true }, (socket, req) => {
   socket.send(JSON.stringify(layoutMessage(device)));
   socket.on('close', () => removeDisplay(device.id, socket));
   socket.on('error', () => removeDisplay(device.id, socket));
+});
+
+// paneo.todo runtime edits (docs/design.md D27/D28) — token-authed like /ws (the
+// display only ever knows its own pairing token, never the internal device id).
+app.post('/api/display/:token/toggle-todo', async (req, reply) => {
+  const { widgetId, index } = req.body || {};
+  if (!widgetId || typeof index !== 'number') return reply.code(400).send({ error: 'widgetId and index required' });
+  const device = store.toggleTodoItem(req.params.token, widgetId, index);
+  if (!device) return reply.code(404).send({ error: 'not found' });
+  broadcast(device.id, layoutMessage(device)); // sync every connected physical display for this device
+  return { ok: true };
+});
+
+app.post('/api/display/:token/add-todo', async (req, reply) => {
+  const { widgetId, text } = req.body || {};
+  if (!widgetId || !text) return reply.code(400).send({ error: 'widgetId and text required' });
+  const device = store.addTodoItem(req.params.token, widgetId, text);
+  if (!device) return reply.code(404).send({ error: 'not found' });
+  broadcast(device.id, layoutMessage(device));
+  return { ok: true };
+});
+
+app.post('/api/display/:token/delete-todo', async (req, reply) => {
+  const { widgetId, index } = req.body || {};
+  if (!widgetId || typeof index !== 'number') return reply.code(400).send({ error: 'widgetId and index required' });
+  const device = store.deleteTodoItem(req.params.token, widgetId, index);
+  if (!device) return reply.code(404).send({ error: 'not found' });
+  broadcast(device.id, layoutMessage(device));
+  return { ok: true };
 });
 
 // --- WebSocket: companion-agent clients (docs/design.md §4.1 D, §M4) ---
@@ -236,16 +270,17 @@ app.post('/api/proxy/ha/services/:domain/:service', async (req, reply) => {
   }
 });
 
-// --- Photo Frame Proxy & Local storage (§M5) ---
+// --- Photo/video Frame Proxy & Local storage (§M5, extended for video) ---
 const PHOTOS_DIR = path.join(__dirname, '..', 'data', 'photos');
 if (!fs.existsSync(PHOTOS_DIR)) {
   fs.mkdirSync(PHOTOS_DIR, { recursive: true });
 }
+const MEDIA_EXT_RE = /\.(jpe?g|png|webp|gif|mp4|webm|mov|m4v|ogv)$/i;
 
 app.get('/api/proxy/photos/local', async (req, reply) => {
   try {
     const files = fs.readdirSync(PHOTOS_DIR)
-      .filter(f => /\.(jpe?g|png|webp|gif)$/i.test(f));
+      .filter(f => MEDIA_EXT_RE.test(f));
     return files.map(f => `/api/proxy/photos/local/file/${encodeURIComponent(f)}`);
   } catch (err) {
     return [];
@@ -260,6 +295,51 @@ app.get('/api/proxy/photos/local/file/:filename', async (req, reply) => {
     return reply.code(404).send({ error: 'File not found' });
   }
   return reply.sendFile(`photos/${safeName}`, path.join(__dirname, '..', 'data'));
+});
+
+// Editor-side upload for the photo/media widget's "local" source — multiple files
+// under the `files` field. path.basename() on every filename (both here and in the
+// GET/DELETE routes above/below) keeps a crafted "../../etc/passwd"-style name from
+// ever escaping PHOTOS_DIR.
+app.post('/api/proxy/photos/local/upload', async (req, reply) => {
+  const saved = [];
+  const skipped = [];
+  for await (const part of req.files()) {
+    const safeName = path.basename(part.filename || '');
+    if (!safeName || !MEDIA_EXT_RE.test(safeName)) {
+      skipped.push(part.filename);
+      part.file.resume(); // drain the stream so req.files() can move to the next part
+      continue;
+    }
+    let targetName = safeName;
+    let n = 1;
+    const ext = path.extname(safeName);
+    const base = path.basename(safeName, ext);
+    while (fs.existsSync(path.join(PHOTOS_DIR, targetName))) {
+      targetName = `${base}-${n++}${ext}`;
+    }
+    await pipeline(part.file, fs.createWriteStream(path.join(PHOTOS_DIR, targetName)));
+    saved.push(targetName);
+  }
+  if (!saved.length) {
+    return reply.code(400).send({ error: 'No valid image/video files uploaded', skipped });
+  }
+  return { ok: true, saved, skipped };
+});
+
+app.delete('/api/proxy/photos/local/file/:filename', async (req, reply) => {
+  const safeName = path.basename(req.params.filename);
+  // Same MEDIA_EXT_RE gate as GET (list) and POST (upload), so this route can't
+  // be used to remove an arbitrary non-media file that happens to sit in PHOTOS_DIR.
+  if (!MEDIA_EXT_RE.test(safeName)) {
+    return reply.code(400).send({ error: 'Not a managed media file' });
+  }
+  const filePath = path.join(PHOTOS_DIR, safeName);
+  if (!fs.existsSync(filePath)) {
+    return reply.code(404).send({ error: 'File not found' });
+  }
+  fs.unlinkSync(filePath);
+  return { ok: true };
 });
 
 app.get('/api/proxy/photos/unsplash', async (req, reply) => {

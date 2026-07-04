@@ -21,6 +21,19 @@ test('applyGridContainer sets CSS grid tracks from layout', () => {
   assert.equal(el.style.gap, '12px');
 });
 
+test('applyGridContainer sets outer padding equal to the inter-widget gap', () => {
+  const el = { style: {} };
+  applyGridContainer(el, { grid: { cols: 8, rows: 5, gap: 12 }, widgets: [] });
+  assert.equal(el.style.padding, '12px');
+});
+
+test('applyGridContainer falls back to the default gap for both gap and padding', () => {
+  const el = { style: {} };
+  applyGridContainer(el, { grid: { cols: 12, rows: 7 }, widgets: [] });
+  assert.equal(el.style.gap, '8px');
+  assert.equal(el.style.padding, '8px');
+});
+
 test('applyGridItem maps widget coordinates to grid placement', () => {
   const el = { style: {} };
   applyGridItem(el, { x: 2, y: 3, w: 4, h: 2 });

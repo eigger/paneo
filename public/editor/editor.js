@@ -1,13 +1,112 @@
 import { widgets, renderWidget, widgetLabel, fieldLabel, CATEGORY_ORDER, loadPlugins } from '/shared/widgets.js';
 import { t, getLang, setLang, LANGS, LOCALES, RESOLUTIONS } from '/editor/i18n.js';
 import { effectiveRows, applyGridContainer, applyGridItem, applyCustomCss } from '/shared/gridlayout.js';
+import { attachSwipeNavigation } from '/shared/swipe.js';
 
 let device = null;
 let layout = null;
+// Multi-page layout structure
+// layout = { pages: [{ id: string, widgets: [], grid?, background? }], currentPageIndex: number }
+
+// Wraps a legacy flat draft ({grid,background,widgets}, saved before multi-page
+// support existed) into the current pages shape, *preserving* its widgets/grid/
+// background as page-0 — the one place this migration has to be correct. Every
+// device created via src/store.js's defaultLayout() is already pages-shaped, so
+// this only actually rewrites something for devices saved before that changed;
+// for anything already pages-shaped it's a no-op passthrough.
+function migrateToPages(draft) {
+  if (draft && Array.isArray(draft.pages) && draft.pages.length) return draft;
+  const legacy = draft || {};
+  return {
+    pages: [{
+      id: 'page-0',
+      widgets: Array.isArray(legacy.widgets) ? legacy.widgets : [],
+      grid: legacy.grid || { cols: 12, rows: 7, gap: 8 },
+      background: legacy.background || '#0b0f19',
+    }],
+    currentPageIndex: 0,
+  };
+}
+
+function getCurrentPageLayout() {
+  if (!layout) return null;
+  layout = migrateToPages(layout);
+  return layout.pages[layout.currentPageIndex];
+}
+function addPage() {
+  const MAX_PAGES = 5;
+  if (layout.pages.length >= MAX_PAGES) return;
+  const newId = `page-${layout.pages.length}`;
+  layout.pages.push({ id: newId, widgets: [] });
+  layout.currentPageIndex = layout.pages.length - 1;
+  renderPageSelector();
+  render();
+  renderInspector();
+  scheduleSave();
+}
+function removeCurrentPage() {
+  if (layout.pages.length <= 1) return; // cannot delete last page
+  const idx = layout.currentPageIndex;
+  layout.pages.splice(idx, 1);
+  // adjust current index
+  layout.currentPageIndex = Math.max(0, idx - 1);
+  renderPageSelector();
+  render();
+  renderInspector();
+  scheduleSave();
+}
+function switchPage(delta) {
+  if (!layout || !layout.pages) return;
+  const count = layout.pages.length;
+  layout.currentPageIndex = (layout.currentPageIndex + delta + count) % count;
+  renderPageSelector();
+  render();
+  renderInspector();
+  scheduleSave();
+}
+function renderPageSelector() {
+  const selector = document.getElementById('page-selector');
+  if (!selector) return;
+  selector.innerHTML = '';
+  // indicator dots
+  const dots = document.createElement('div');
+  dots.className = 'page-dots';
+  layout.pages.forEach((p, i) => {
+    const dot = document.createElement('span');
+    dot.className = 'page-dot' + (i === layout.currentPageIndex ? ' active' : '');
+    dot.title = `Page ${i + 1}`;
+    dot.addEventListener('click', () => { layout.currentPageIndex = i; render(); renderInspector(); renderPageSelector(); scheduleSave(); });
+    dots.appendChild(dot);
+  });
+  selector.appendChild(dots);
+  // + button
+  const addBtn = document.createElement('button');
+  addBtn.className = 'page-add';
+  addBtn.textContent = '+';
+  addBtn.title = 'Add page';
+  addBtn.disabled = layout.pages.length >= 5;
+  addBtn.addEventListener('click', addPage);
+  selector.appendChild(addBtn);
+  // – button
+  const delBtn = document.createElement('button');
+  delBtn.className = 'page-del-btn';
+  delBtn.textContent = '−';
+  delBtn.title = 'Delete current page';
+  delBtn.disabled = layout.pages.length <= 1;
+  delBtn.addEventListener('click', removeCurrentPage);
+  selector.appendChild(delBtn);
+}
+
 let selectedId = null;
 let saveTimer = null;
 
 const canvas = document.getElementById('canvas');
+
+// ResizeObserver: sync grid background whenever canvas size changes (e.g., inspector opens/closes)
+new ResizeObserver(() => {
+  if (getCurrentPageLayout()) repositionNodes();
+}).observe(canvas);
+
 const deviceSelect = document.getElementById('device-select');
 const deviceAddBtn = document.getElementById('device-add-btn');
 const deviceDeleteBtn = document.getElementById('device-delete-btn');
@@ -44,10 +143,16 @@ let groups = [];
 let versionManifest = null;
 
 const uid = () => Math.random().toString(36).slice(2, 9);
-const ctx = () => ({
+// `w` is optional context about the widget being rendered — `widgetId` lets a
+// widget address itself in a server call (e.g. paneo.todo's tap-to-toggle),
+// and `preview: true` tells widgets they're in the editor canvas, not a live
+// display, so they should skip any runtime-write behavior tied to a real token.
+const ctx = (w) => ({
   locale: device?.locale || 'ko-KR',
   timezone: device?.timezone || undefined,
   performanceProfile: device?.performanceProfile || 'high',
+  preview: true,
+  widgetId: w?.id,
 });
 
 async function api(path, opts = {}) {
@@ -397,7 +502,7 @@ async function loadDevices(preferredId) {
 
 async function selectDevice(id) {
   device = await api(`/api/devices/${id}`);
-  layout = device.draft;
+  layout = migrateToPages(device.draft);
   selectedId = null;
   deviceSelect.value = id;
   localeSelect.value = device.locale || 'ko-KR';
@@ -415,30 +520,73 @@ async function selectDevice(id) {
 // actual layout/scaling is done by real CSS Grid (applyGridContainer/Item),
 // which is what keeps the editor preview and the display in proportional sync.
 function cellSize() {
-  const cols = layout.grid?.cols || 12;
-  const rows = effectiveRows(layout);
-  const gap = layout.grid?.gap ?? 8;
-  return {
-    cols, rows,
-    cellW: (canvas.clientWidth - gap * (cols - 1)) / cols,
-    cellH: (canvas.clientHeight - gap * (rows - 1)) / rows,
-  };
+  const pg = getCurrentPageLayout();
+  const cols = pg?.grid?.cols || 12;
+  const rows = effectiveRows(pg);
+  const gap = pg?.grid?.gap ?? 8;
+  // clientWidth/Height include the container's own outer padding (applyGridContainer
+  // sets padding = gap), so that has to come off before dividing into cell tracks or
+  // dragged widgets would drift from the cursor as the canvas gets padding-heavy.
+  const cellW = (canvas.clientWidth - gap * 2 - gap * (cols - 1)) / cols;
+  const cellH = (canvas.clientHeight - gap * 2 - gap * (rows - 1)) / rows;
+  return { cols, rows, gap, cellW, cellH };
 }
 
 // Does (x,y,w,h) overlap any other widget? (excludeId lets a widget ignore itself)
 function isFree(x, y, w, h, excludeId) {
-  const cols = layout.grid?.cols || 12;
+  const pg = getCurrentPageLayout();
+  const cols = pg?.grid?.cols || 12;
   if (x < 0 || y < 0 || x + w > cols) return false;
-  return !layout.widgets.some((o) => {
+  const source = pg.widgets.find(o => o.id === excludeId);
+  if (source && widgets[source.type]?.backgroundLayer) return true;
+  return !pg.widgets.some((o) => {
     if (o.id === excludeId) return false;
+    if (widgets[o.type]?.backgroundLayer) return false;
     return x < o.x + o.w && x + w > o.x && y < o.y + o.h && y + h > o.y;
   });
+}
+
+// Straight rect-overlap test shared by the drag collision resolver below.
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+// Push whatever `sourceId` (the widget under the cursor) now overlaps straight down,
+// out of the way — cascading to anything *that* lands on next. Only ever pushes down,
+// never sideways or up: keeps the algorithm simple and guaranteed to terminate, since
+// every push strictly increases a widget's y and there are finitely many widgets.
+// `effectiveRows` (gridlayout.js) already treats configured rows as a minimum that
+// grows to fit content, so a cascade running past the bottom just grows the grid.
+function resolveCollisions(layoutWidgets, sourceId) {
+  const source = layoutWidgets.find(x => x.id === sourceId);
+  if (source && widgets[source.type]?.backgroundLayer) return;
+  const queue = [sourceId];
+  const queued = new Set(queue);
+  let guard = 0;
+  while (queue.length && guard++ < 2000) {
+    const curId = queue.shift();
+    queued.delete(curId);
+    const cur = layoutWidgets.find((x) => x.id === curId);
+    if (!cur) continue;
+    for (const other of layoutWidgets) {
+      if (other.id === curId || !rectsOverlap(cur, other)) continue;
+      if (widgets[other.type]?.backgroundLayer || widgets[cur.type]?.backgroundLayer) continue;
+      const pushedY = cur.y + cur.h;
+      if (other.y < pushedY) {
+        other.y = pushedY;
+        if (!queued.has(other.id)) {
+          queue.push(other.id);
+          queued.add(other.id);
+        }
+      }
+    }
+  }
 }
 
 // First free top-left-first cell that fits a new widget of size (w,h) — avoids
 // every new widget stacking at (0,0) on top of whatever's already there.
 function findFreeCell(w, h) {
-  const cols = layout.grid?.cols || 12;
+  const cols = getCurrentPageLayout()?.grid?.cols || 12;
   for (let y = 0; y < 500; y++) {
     for (let x = 0; x <= cols - w; x++) {
       if (isFree(x, y, w, h)) return { x, y };
@@ -448,22 +596,28 @@ function findFreeCell(w, h) {
 }
 
 function render() {
-  if (!layout) { canvas.innerHTML = ''; return; } // no devices left (e.g. after deleting the last one)
+  const pg = getCurrentPageLayout();
+  if (!pg) { canvas.innerHTML = ''; return; }
+  // Clean up previous widget content
   canvas.querySelectorAll('.widget-content').forEach((c) => c._cleanup?.());
-  canvas.style.background = layout.background || '#0b0f19';
+  canvas.style.backgroundColor = pg.background || '#0b0f19';
   canvas.innerHTML = '';
-  applyGridContainer(canvas, layout);
-  const { cols, rows } = cellSize();
-  canvas.style.backgroundSize = `${100 / cols}% ${100 / rows}%`;
-  for (const w of layout.widgets) {
+  applyGridContainer(canvas, pg);
+  const { cols, rows, gap, cellW, cellH } = cellSize();
+  // Set backgroundSize in pixels so grid lines match CSS Grid cell boundaries exactly,
+  // regardless of gap size. Each tile = one cell track + one gap.
+  canvas.style.backgroundSize = `${cellW + gap}px ${cellH + gap}px`;
+  for (const w of pg.widgets) {
     const node = document.createElement('div');
     node.className = 'ed-widget' + (w.id === selectedId ? ' selected' : '');
     node.dataset.id = w.id;
+    node.dataset.type = w.type;
+    if (widgets[w.type]?.backgroundLayer) node.dataset.backgroundLayer = 'true';
     applyGridItem(node, w);
     const content = document.createElement('div');
-    content.className = 'widget-content';
+    content.className = 'widget-content' + (w.transparentBg ? ' transparent-bg' : '');
     node.appendChild(content);
-    renderWidget(content, w.type, w.config, ctx());
+    renderWidget(content, w.type, w.config, ctx(w));
     applyCustomCss(content, w.customCss);
     const handle = document.createElement('div');
     handle.className = 'resize-handle';
@@ -471,9 +625,48 @@ function render() {
     canvas.appendChild(node);
     attachDrag(node, w, handle);
   }
+  renderPageSelector();
 }
 
-// ---- drag to move / resize (grid-snapped, with an overlap warning) ----
+// Cheap per-pointermove update: reposition existing DOM nodes only — never re-run
+// renderWidget() mid-drag, which would restart every widget's timers and re-fire
+// data-widget network polls (weather/calendar/etc.) on every mouse pixel moved.
+// Full render() still runs once on drop (see attachDrag below).
+function repositionNodes() {
+  const pg = getCurrentPageLayout();
+  if (!pg) return;
+  applyGridContainer(canvas, pg); // rows may have grown from a push-down cascade
+  const { cols, rows, gap, cellW, cellH } = cellSize();
+  canvas.style.backgroundSize = `${cellW + gap}px ${cellH + gap}px`;
+  // One bulk query + Map lookups, not one attribute-selector query per widget —
+  // this runs on every pointermove tick during drag/resize, so avoiding N
+  // separate DOM walks per frame matters once a page has more than a couple
+  // of widgets on it.
+  const nodesById = new Map();
+  canvas.querySelectorAll('.ed-widget').forEach((n) => nodesById.set(n.dataset.id, n));
+  for (const o of pg.widgets) {
+    const node = nodesById.get(o.id);
+    if (node) applyGridItem(node, o);
+  }
+}
+
+// Page navigation via keyboard arrows
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft') {
+    switchPage(-1);
+  } else if (e.key === 'ArrowRight') {
+    switchPage(1);
+  }
+});
+
+// Swipe-to-switch-page on the canvas (touch only — a mouse drag on empty canvas
+// is otherwise unclaimed today, but touch-gating keeps this from ever competing
+// with the mouse-based widget move/resize handlers below). Same threshold/ratio
+// as the real display (shared/swipe.js) so the editor preview's swipe feel
+// actually matches the kiosk.
+attachSwipeNavigation(canvas, (dir) => switchPage(dir), { touchOnly: true });
+
+// ---- drag to move / resize (grid-snapped; colliding widgets are pushed down, never overlapped) ----
 function attachDrag(node, w, handle) {
   node.addEventListener('pointerdown', (e) => {
     if (e.target === handle) return;
@@ -481,18 +674,23 @@ function attachDrag(node, w, handle) {
     selectWidget(w.id);
     const { cellW, cellH, cols } = cellSize();
     const sx = e.clientX, sy = e.clientY, ox = w.x, oy = w.y;
+    const snapshot = new Map(getCurrentPageLayout().widgets.filter((o) => o.id !== w.id).map((o) => [o.id, { x: o.x, y: o.y }]));
     node.setPointerCapture(e.pointerId);
     const move = (ev) => {
       w.x = clamp(ox + Math.round((ev.clientX - sx) / cellW), 0, cols - w.w);
       w.y = Math.max(0, oy + Math.round((ev.clientY - sy) / cellH));
-      applyGridItem(node, w);
-      node.classList.toggle('overlap-warning', !isFree(w.x, w.y, w.w, w.h, w.id));
+      const pgWidgets = getCurrentPageLayout().widgets;
+      for (const o of pgWidgets) {
+        const s = snapshot.get(o.id);
+        if (s) { o.x = s.x; o.y = s.y; }
+      }
+      resolveCollisions(pgWidgets, w.id);
+      repositionNodes();
     };
     const up = () => {
       node.removeEventListener('pointermove', move);
       node.removeEventListener('pointerup', up);
-      node.classList.remove('overlap-warning');
-      render(); // re-run applyGridContainer in case rows grew
+      render();
       renderInspector();
       scheduleSave();
     };
@@ -506,18 +704,23 @@ function attachDrag(node, w, handle) {
     selectWidget(w.id);
     const { cellW, cellH, cols } = cellSize();
     const sx = e.clientX, sy = e.clientY, ow = w.w, oh = w.h;
+    const snapshot = new Map(getCurrentPageLayout().widgets.filter((o) => o.id !== w.id).map((o) => [o.id, { x: o.x, y: o.y }]));
     handle.setPointerCapture(e.pointerId);
     const move = (ev) => {
       w.w = clamp(ow + Math.round((ev.clientX - sx) / cellW), 1, cols - w.x);
       w.h = Math.max(1, oh + Math.round((ev.clientY - sy) / cellH));
-      applyGridItem(node, w);
-      node.classList.toggle('overlap-warning', !isFree(w.x, w.y, w.w, w.h, w.id));
+      const pgWidgets = getCurrentPageLayout().widgets;
+      for (const o of pgWidgets) {
+        const s = snapshot.get(o.id);
+        if (s) { o.x = s.x; o.y = s.y; }
+      }
+      resolveCollisions(pgWidgets, w.id);
+      repositionNodes();
     };
     const up = () => {
       handle.removeEventListener('pointermove', move);
       handle.removeEventListener('pointerup', up);
-      node.classList.remove('overlap-warning');
-      render(); // re-run applyGridContainer in case rows grew
+      render();
       renderInspector();
       scheduleSave();
     };
@@ -537,7 +740,7 @@ function selectWidget(id) {
 
 function renderInspector() {
   const lang = getLang();
-  const w = layout?.widgets.find((x) => x.id === selectedId);
+  const w = getCurrentPageLayout()?.widgets?.find((x) => x.id === selectedId);
   if (!w) { inspectorBody.innerHTML = `<p class="muted">${t('selectHint')}</p>`; return; }
   const def = widgets[w.type];
   const esc = (s) => String(s ?? '').replace(/"/g, '&quot;');
@@ -571,6 +774,10 @@ function renderInspector() {
     <label>H<input type="number" data-prop="h" value="${w.h}" min="1"></label>
   </div>`;
   for (const c of def?.config || []) {
+    // Conditional fields (e.g. paneo.photo's per-source options): skip entirely
+    // when the controlling field's current value doesn't match. Re-rendered
+    // reactively below whenever that controlling field changes.
+    if (c.showIf && (w.config?.[c.showIf.key] ?? '') !== c.showIf.equals) continue;
     if (c.type === 'checkbox') {
       html += `<div class="field check"><label><input type="checkbox" data-config="${c.key}" ${w.config?.[c.key] ? 'checked' : ''}> ${fieldLabel(c, lang)}</label></div>`;
     } else if (c.type === 'number') {
@@ -581,11 +788,36 @@ function renderInspector() {
       const configArr = w.config?.[c.key];
       const arr = (Array.isArray(configArr) && configArr.length > 0) ? configArr : [''];
       const ph = c.placeholder ? (c.placeholder[lang] || c.placeholder.ko || c.placeholder) : '';
-      const rows = arr.map((val, i) => `
-        <div class="list-row">
-          <input type="text" data-list-key="${c.key}" data-list-index="${i}" value="${esc(val)}" placeholder="${esc(ph)}">
-          <button type="button" class="list-remove" data-list-key="${c.key}" data-list-index="${i}">×</button>
-        </div>`).join('');
+      let rows;
+      if (c.key === 'icsUrls') {
+        const colorOptions = [
+          ['', t('colorDefault')],
+          ['#ef4444', t('colorRed')],
+          ['#f97316', t('colorOrange')],
+          ['#eab308', t('colorYellow')],
+          ['#22c55e', t('colorGreen')],
+          ['#3b82f6', t('colorBlue')],
+          ['#a855f7', t('colorPurple')],
+        ];
+        rows = arr.map((val, i) => {
+          const [urlVal, colorVal = ''] = String(val || '').split('|');
+          const colorOpts = colorOptions.map(([cVal, cLabel]) =>
+            `<option value="${cVal}" ${colorVal === cVal ? 'selected' : ''}>${cLabel}</option>`
+          ).join('');
+          return `
+            <div class="list-row ics-list-row" data-list-key="${c.key}" data-list-index="${i}">
+              <input type="text" class="ics-url-input" value="${esc(urlVal)}" placeholder="${esc(ph)}">
+              <select class="ics-color-select" style="width: 80px; flex: 0 0 auto; margin-left: 4px; padding: 4px; border: 1px solid #232a38; border-radius: 6px; background: #161b26; color: inherit; font-size: 12px;">${colorOpts}</select>
+              <button type="button" class="list-remove" data-list-key="${c.key}" data-list-index="${i}">×</button>
+            </div>`;
+        }).join('');
+      } else {
+        rows = arr.map((val, i) => `
+          <div class="list-row">
+            <input type="text" data-list-key="${c.key}" data-list-index="${i}" value="${esc(val)}" placeholder="${esc(ph)}">
+            <button type="button" class="list-remove" data-list-key="${c.key}" data-list-index="${i}">×</button>
+          </div>`).join('');
+      }
       html += `<div class="field"><label>${fieldLabel(c, lang)}</label>
         <div class="list-field">${rows}
           <button type="button" class="list-add" data-list-key="${c.key}">${t('addItem')}</button>
@@ -597,6 +829,71 @@ function renderInspector() {
         `<option value="${esc(opt)}" ${cur === opt ? 'selected' : ''}>${opt}</option>`
       ).join('');
       html += `<div class="field"><label>${fieldLabel(c, lang)}</label><select data-config="${c.key}">${opts}</select></div>`;
+    } else if (c.type === 'timerList') {
+      // One structured row per entry (paneo.timer) — native <input type=time> pickers
+      // instead of a hand-typed "label|HH:MM|showAt|hideAt" string in one box.
+      const configArr = w.config?.[c.key];
+      const arr = (Array.isArray(configArr) && configArr.length > 0) ? configArr : [{}];
+      const rows = arr.map((entry, i) => {
+        const e = entry && typeof entry === 'object' ? entry : {};
+        return `<div class="timer-entry-row" data-timer-key="${c.key}" data-timer-index="${i}">
+          <input type="text" data-timer-field="label" placeholder="${t('timerFieldLabel')}" value="${esc(e.label)}">
+          <div class="timer-entry-grid">
+            <label>${t('timerFieldTime')}<input type="text" placeholder="HH:MM:SS" data-timer-field="time" value="${esc(e.time)}"></label>
+            <label>${t('timerFieldShowAt')}<input type="text" placeholder="HH:MM:SS" data-timer-field="showAt" value="${esc(e.showAt)}"></label>
+            <label>${t('timerFieldHideAt')}<input type="text" placeholder="HH:MM:SS" data-timer-field="hideAt" value="${esc(e.hideAt)}"></label>
+          </div>
+          <button type="button" class="timer-entry-remove" data-timer-key="${c.key}" data-timer-index="${i}">${t('delete')}</button>
+        </div>`;
+      }).join('');
+      html += `<div class="field"><label>${fieldLabel(c, lang)}</label>
+        <div class="timer-entry-list">${rows}
+          <button type="button" class="timer-entry-add" data-timer-key="${c.key}">${t('addItem')}</button>
+        </div></div>`;
+    } else if (c.type === 'structList') {
+      // Generic structured-row list: each sub-field (declared in c.fields) gets its
+      // own input, instead of cramming multiple values into one pipe-delimited string
+      // (e.g. paneo.worldclock's label+timezone, paneo.dday's label+date, paneo.todo's
+      // done+text). Mirrors paneo.timer's timerList UX without duplicating its code —
+      // timerList stays untouched since paneo.timer's shape is the user's own design.
+      const configArr = w.config?.[c.key];
+      const emptyEntry = {};
+      (c.fields || []).forEach((f) => { emptyEntry[f.key] = f.type === 'checkbox' ? false : ''; });
+      const arr = (Array.isArray(configArr) && configArr.length > 0) ? configArr : [emptyEntry];
+      const rows = arr.map((entry, i) => {
+        const e = entry && typeof entry === 'object' ? entry : {};
+        const fieldsHtml = (c.fields || []).map((f) => {
+          const val = e[f.key];
+          const ph = f.placeholder ? (f.placeholder[lang] || f.placeholder.ko || f.placeholder) : '';
+          if (f.type === 'checkbox') {
+            return `<label class="struct-check"><input type="checkbox" data-struct-field="${f.key}" ${val ? 'checked' : ''}> ${fieldLabel(f, lang)}</label>`;
+          }
+          const inputType = f.type === 'date' ? 'date' : 'text';
+          return `<label class="struct-field">${fieldLabel(f, lang)}<input type="${inputType}" data-struct-field="${f.key}" placeholder="${esc(ph)}" value="${esc(val)}"></label>`;
+        }).join('');
+        return `<div class="struct-list-row" data-struct-key="${c.key}" data-struct-index="${i}">
+          <div class="struct-list-fields">${fieldsHtml}</div>
+          <button type="button" class="struct-list-remove" data-struct-key="${c.key}" data-struct-index="${i}">${t('delete')}</button>
+        </div>`;
+      }).join('');
+      html += `<div class="field"><label>${fieldLabel(c, lang)}</label>
+        <div class="struct-list">${rows}
+          <button type="button" class="struct-list-add" data-struct-key="${c.key}">${t('addItem')}</button>
+        </div></div>`;
+    } else if (c.type === 'fileManager') {
+      // paneo.photo "local" source: browse/upload/delete files under data/photos on
+      // the server. The file list itself is server-global (not tied to w.config[c.key]),
+      // populated asynchronously by setupFileManager() below since renderInspector()
+      // builds this HTML synchronously — but *which* files this widget instance shows
+      // is per-widget, via the checkbox selection stored at w.config[c.selectionKey].
+      html += `<div class="field"><label>${fieldLabel(c, lang)}</label>
+        <div class="file-manager" data-file-key="${c.key}" data-selection-key="${c.selectionKey || ''}">
+          <input type="file" class="file-manager-input" multiple accept="image/*,video/*" hidden>
+          <button type="button" class="file-manager-upload-btn">${t('fileUploadBtn')}</button>
+          <div class="file-manager-list">${t('loading')}</div>
+          ${c.selectionKey ? `<p class="field-hint">${t('fileManagerSelectionHint')}</p>` : ''}
+        </div>
+      </div>`;
     } else {
       html += `<div class="field"><label>${fieldLabel(c, lang)}</label><input type="text" data-config="${c.key}" value="${esc(w.config?.[c.key])}"></div>`;
     }
@@ -604,6 +901,7 @@ function renderInspector() {
   // Generic per-instance style override (docs/design.md D16) — not part of the
   // widget's own config schema, so it lives outside the `def.config` loop above,
   // next to the x/y/w/h fields that are likewise generic to every widget type.
+  html += `<div class="field check"><label><input type="checkbox" id="widget-transparent-bg" ${w.transparentBg ? 'checked' : ''}> ${t('transparentBgLabel')}</label></div>`;
   html += `<div class="field"><label>${t('customCssLabel')}</label>
     <textarea id="custom-css-input" rows="4" placeholder="border-radius:12px; opacity:.9;">${escHtml(w.customCss || '')}</textarea>
     <p class="field-hint">${t('customCssHint')}</p>
@@ -612,6 +910,22 @@ function renderInspector() {
   html += `<button id="del-widget" class="danger">${t('delete')}</button>`;
   inspectorBody.innerHTML = html;
 
+  const transparentBgCheckbox = inspectorBody.querySelector('#widget-transparent-bg');
+  if (transparentBgCheckbox) {
+    transparentBgCheckbox.addEventListener('change', (e) => {
+      w.transparentBg = e.target.checked;
+      const node = canvas.querySelector(`.ed-widget[data-id="${w.id}"] .widget-content`);
+      if (node) {
+        if (w.transparentBg) {
+          node.classList.add('transparent-bg');
+        } else {
+          node.classList.remove('transparent-bg');
+        }
+      }
+      scheduleSave();
+    });
+  }
+
   inspectorBody.querySelectorAll('[data-prop]').forEach((inp) =>
     inp.addEventListener('input', () => {
       w[inp.dataset.prop] = Math.max(inp.min ? Number(inp.min) : 0, parseInt(inp.value) || 0);
@@ -619,6 +933,10 @@ function renderInspector() {
       scheduleSave();
     })
   );
+  // Fields whose value some other field's `showIf` depends on — changing one of
+  // these needs a full renderInspector() rebuild, not just a live widget re-render,
+  // or newly-(ir)relevant conditional fields wouldn't appear/disappear.
+  const controllingKeys = new Set((def?.config || []).filter((f) => f.showIf).map((f) => f.showIf.key));
   inspectorBody.querySelectorAll('[data-config]').forEach((inp) =>
     inp.addEventListener('input', () => {
       w.config = w.config || {};
@@ -627,8 +945,9 @@ function renderInspector() {
         : inp.value;
       w.config[inp.dataset.config] = v;
       const node = canvas.querySelector(`.ed-widget[data-id="${w.id}"] .widget-content`);
-      if (node) renderWidget(node, w.type, w.config, ctx());
+      if (node) renderWidget(node, w.type, w.config, ctx(w));
       scheduleSave();
+      if (controllingKeys.has(inp.dataset.config)) renderInspector();
     })
   );
   inspectorBody.querySelectorAll('[data-list-index]').forEach((inp) => {
@@ -637,16 +956,66 @@ function renderInspector() {
       const arr = w.config[inp.dataset.listKey];
       arr[Number(inp.dataset.listIndex)] = inp.value;
       const node = canvas.querySelector(`.ed-widget[data-id="${w.id}"] .widget-content`);
-      if (node) renderWidget(node, w.type, w.config, ctx());
+      if (node) renderWidget(node, w.type, w.config, ctx(w));
       scheduleSave();
     });
   });
+  inspectorBody.querySelectorAll('.ics-list-row').forEach((row) => {
+    const key = row.dataset.listKey;
+    const index = Number(row.dataset.listIndex);
+    const urlInput = row.querySelector('.ics-url-input');
+    const colorSelect = row.querySelector('.ics-color-select');
+    const updateVal = () => {
+      const u = urlInput.value.trim();
+      const c = colorSelect.value;
+      w.config[key][index] = c ? `${u}|${c}` : u;
+      const node = canvas.querySelector(`.ed-widget[data-id="${w.id}"] .widget-content`);
+      if (node) renderWidget(node, w.type, w.config, ctx(w));
+      scheduleSave();
+    };
+    urlInput.addEventListener('input', updateVal);
+    colorSelect.addEventListener('change', updateVal);
+  });
+  inspectorBody.querySelectorAll('[data-struct-field]').forEach((inp) => {
+    const row = inp.closest('[data-struct-index]');
+    const eventName = inp.type === 'checkbox' ? 'change' : 'input';
+    inp.addEventListener(eventName, () => {
+      const arr = w.config[row.dataset.structKey];
+      const i = Number(row.dataset.structIndex);
+      if (typeof arr[i] !== 'object' || arr[i] === null) arr[i] = {};
+      arr[i][inp.dataset.structField] = inp.type === 'checkbox' ? inp.checked : inp.value;
+      const node = canvas.querySelector(`.ed-widget[data-id="${w.id}"] .widget-content`);
+      if (node) renderWidget(node, w.type, w.config, ctx(w));
+      scheduleSave();
+    });
+  });
+  inspectorBody.querySelectorAll('.struct-list-remove').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      w.config[btn.dataset.structKey].splice(Number(btn.dataset.structIndex), 1);
+      renderInspector(); // row removed -> structural change, rebuild this field's rows
+      const node = canvas.querySelector(`.ed-widget[data-id="${w.id}"] .widget-content`);
+      if (node) renderWidget(node, w.type, w.config, ctx(w));
+      scheduleSave();
+    })
+  );
+  inspectorBody.querySelectorAll('.struct-list-add').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.structKey;
+      const fieldDef = (def?.config || []).find((f) => f.key === key);
+      const emptyEntry = {};
+      (fieldDef?.fields || []).forEach((f) => { emptyEntry[f.key] = f.type === 'checkbox' ? false : ''; });
+      if (!Array.isArray(w.config[key])) w.config[key] = [];
+      w.config[key].push(emptyEntry);
+      renderInspector(); // new empty row -> structural change, rebuild
+      scheduleSave();
+    })
+  );
   inspectorBody.querySelectorAll('.list-remove').forEach((btn) =>
     btn.addEventListener('click', () => {
       w.config[btn.dataset.listKey].splice(Number(btn.dataset.listIndex), 1);
       renderInspector(); // row removed -> structural change, rebuild this field's rows
       const node = canvas.querySelector(`.ed-widget[data-id="${w.id}"] .widget-content`);
-      if (node) renderWidget(node, w.type, w.config, ctx());
+      if (node) renderWidget(node, w.type, w.config, ctx(w));
       scheduleSave();
     })
   );
@@ -662,6 +1031,38 @@ function renderInspector() {
       scheduleSave();
     })
   );
+  inspectorBody.querySelectorAll('[data-timer-field]').forEach((inp) => {
+    const row = inp.closest('[data-timer-index]');
+    const eventName = inp.tagName === 'SELECT' ? 'change' : 'input';
+    inp.addEventListener(eventName, () => {
+      const arr = w.config[row.dataset.timerKey];
+      const i = Number(row.dataset.timerIndex);
+      if (typeof arr[i] !== 'object' || arr[i] === null) arr[i] = {};
+      arr[i][inp.dataset.timerField] = inp.value;
+      const node = canvas.querySelector(`.ed-widget[data-id="${w.id}"] .widget-content`);
+      if (node) renderWidget(node, w.type, w.config, ctx(w));
+      scheduleSave();
+    });
+  });
+  inspectorBody.querySelectorAll('.timer-entry-remove').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      w.config[btn.dataset.timerKey].splice(Number(btn.dataset.timerIndex), 1);
+      renderInspector(); // row removed -> structural change, rebuild this field's rows
+      const node = canvas.querySelector(`.ed-widget[data-id="${w.id}"] .widget-content`);
+      if (node) renderWidget(node, w.type, w.config, ctx(w));
+      scheduleSave();
+    })
+  );
+  inspectorBody.querySelectorAll('.timer-entry-add').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.timerKey;
+      if (!Array.isArray(w.config[key])) w.config[key] = [];
+      w.config[key].push({ label: '', time: '', showAt: '', hideAt: '' });
+      renderInspector(); // new empty row -> structural change, rebuild
+      scheduleSave();
+    })
+  );
+  inspectorBody.querySelectorAll('.file-manager').forEach((box) => setupFileManager(box, w));
   inspectorBody.querySelector('#custom-css-input').addEventListener('input', (e) => {
     w.customCss = e.target.value;
     const node = canvas.querySelector(`.ed-widget[data-id="${w.id}"] .widget-content`);
@@ -670,12 +1071,112 @@ function renderInspector() {
   });
 
   inspectorBody.querySelector('#del-widget').addEventListener('click', () => {
-    layout.widgets = layout.widgets.filter((x) => x.id !== selectedId);
+    const pg = getCurrentPageLayout();
+    if (pg) {
+      pg.widgets = pg.widgets.filter((x) => x.id !== selectedId);
+    }
     selectedId = null;
     render();
     renderInspector();
     scheduleSave();
   });
+}
+
+// paneo.photo "local" source manager: lists files already on the server, lets the
+// user upload/delete them (server-global, data/photos — shared by every "local"
+// widget), and — when the field declares a selectionKey — lets *this* widget
+// instance pick which of those shared files it actually shows, via
+// w.config[selectionKey] (an array of filenames; empty means "show everything").
+function setupFileManager(box, w) {
+  const listEl = box.querySelector('.file-manager-list');
+  const input = box.querySelector('.file-manager-input');
+  const uploadBtn = box.querySelector('.file-manager-upload-btn');
+  const selectionKey = box.dataset.selectionKey || '';
+
+  async function refresh() {
+    listEl.textContent = t('loading');
+    try {
+      const files = await api('/api/proxy/photos/local');
+      if (!files.length) {
+        listEl.innerHTML = `<p class="muted">${t('fileManagerEmpty')}</p>`;
+        return;
+      }
+      const selected = selectionKey && Array.isArray(w.config?.[selectionKey]) ? w.config[selectionKey] : [];
+      listEl.innerHTML = files.map((url) => {
+        const name = decodeURIComponent(url.split('/').pop());
+        const thumb = /\.(mp4|webm|mov|m4v|ogv)$/i.test(name)
+          ? `<video src="${url}" muted></video>`
+          : `<img src="${url}" alt="">`;
+        const checkbox = selectionKey
+          ? `<label class="file-manager-select"><input type="checkbox" data-filename="${escHtmlStandalone(name)}" ${selected.includes(name) ? 'checked' : ''}></label>`
+          : '';
+        return `<div class="file-manager-item">
+          ${thumb}
+          ${checkbox}
+          <span class="file-manager-name">${escHtmlStandalone(name)}</span>
+          <button type="button" class="file-manager-delete" data-filename="${encodeURIComponent(name)}">×</button>
+        </div>`;
+      }).join('');
+      listEl.querySelectorAll('.file-manager-delete').forEach((btn) =>
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          try {
+            await api(`/api/proxy/photos/local/file/${btn.dataset.filename}`, { method: 'DELETE' });
+          } catch { /* file already gone or request failed — refresh() below shows current state either way */ }
+          refresh();
+        })
+      );
+      if (selectionKey) {
+        listEl.querySelectorAll('.file-manager-select input').forEach((cb) =>
+          cb.addEventListener('change', () => {
+            w.config = w.config || {};
+            if (!Array.isArray(w.config[selectionKey])) w.config[selectionKey] = [];
+            const arr = w.config[selectionKey];
+            const name = cb.dataset.filename;
+            const i = arr.indexOf(name);
+            if (cb.checked && i === -1) arr.push(name);
+            else if (!cb.checked && i !== -1) arr.splice(i, 1);
+            const node = canvas.querySelector(`.ed-widget[data-id="${w.id}"] .widget-content`);
+            if (node) renderWidget(node, w.type, w.config, ctx(w));
+            scheduleSave();
+          })
+        );
+      }
+    } catch {
+      listEl.innerHTML = `<p class="muted">${t('loadFail', '')}</p>`;
+    }
+  }
+
+  uploadBtn.addEventListener('click', () => input.click());
+  input.addEventListener('change', async () => {
+    if (!input.files.length) return;
+    const fd = new FormData();
+    for (const f of input.files) fd.append('files', f);
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = t('uploading');
+    try {
+      // Not api() — that helper forces a JSON content-type whenever a body is present,
+      // which would break the multipart boundary the browser sets for FormData.
+      const res = await fetch('/api/proxy/photos/local/upload', { method: 'POST', body: fd });
+      if (!res.ok) throw new Error(await res.text().catch(() => res.statusText));
+      toast(t('uploadSuccess'));
+    } catch {
+      toast(t('uploadFailed'));
+    } finally {
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = t('fileUploadBtn');
+      input.value = '';
+      refresh();
+    }
+  });
+
+  refresh();
+}
+
+// Standalone HTML-escape for the file manager's file names (renderInspector's `escHtml`
+// is a local closure variable, out of scope here).
+function escHtmlStandalone(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // ---- add widget ----
@@ -688,7 +1189,8 @@ function addWidget(type) {
   for (const c of def?.config || []) config[c.key] = Array.isArray(c.default) ? [...c.default] : (c.default ?? '');
   const { x, y } = findFreeCell(size.w, size.h);
   const w = { id: uid(), type, x, y, w: size.w, h: size.h, config };
-  layout.widgets.push(w);
+  const pg = getCurrentPageLayout();
+  if (pg) pg.widgets.push(w);
   render();
   selectWidget(w.id);
   scheduleSave();

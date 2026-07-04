@@ -8,12 +8,18 @@ const EXPECTED_WIDGETS = [
   'paneo.text',
   'paneo.photo',
   'paneo.weather',
+  'paneo.airquality',
   'paneo.calendar',
   'paneo.calendar.month',
   'paneo.rss',
   'paneo.iframe',
   'paneo.timer',
   'paneo.homeassistant',
+  'paneo.worldclock',
+  'paneo.dday',
+  'paneo.todo',
+  'paneo.exchangerate',
+  'paneo.qrcode',
 ];
 
 test('widget registry contains all built-in widgets', () => {

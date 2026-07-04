@@ -3,6 +3,7 @@
 // This keeps API keys (future providers) server-only and avoids CORS/rate-limit issues.
 import Parser from 'rss-parser';
 import ical from 'node-ical'; // CJS module: async/sync live under the default export
+import QRCode from 'qrcode';
 
 const rssParser = new Parser();
 
@@ -69,6 +70,58 @@ async function fetchWeather(location, locale) {
   };
 }
 
+// KR-style 4-tier grading (좋음/보통/나쁨/매우나쁨) on raw PM concentration (µg/m³),
+// the way Korean weather apps present "미세먼지" — rather than US/European AQI,
+// which would need a second, less-recognizable scale for the same audience.
+const PM10_THRESHOLDS = [30, 80, 150];
+const PM25_THRESHOLDS = [15, 35, 75];
+const GRADE_TEXT_KO = ['좋음', '보통', '나쁨', '매우나쁨'];
+const GRADE_TEXT_EN = ['Good', 'Moderate', 'Bad', 'Very Bad'];
+
+export function gradeIndex(value, thresholds) {
+  for (let i = 0; i < thresholds.length; i++) if (value <= thresholds[i]) return i;
+  return thresholds.length;
+}
+
+// Frankfurter (ECB-sourced, no API key) — daily rates, so a long TTL cache is fine.
+async function fetchExchangeRate(base, target) {
+  const url = `https://api.frankfurter.dev/v1/latest?base=${encodeURIComponent(base)}&symbols=${encodeURIComponent(target)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`exchange rate failed: ${res.status}`);
+  const data = await res.json();
+  const rate = data.rates?.[target];
+  if (rate == null) throw new Error(`no rate for ${base}->${target}`);
+  return { base: data.base, target, rate, date: data.date };
+}
+
+// QR generated locally (the `qrcode` package) — never leaves the server, so widget
+// content (URLs, wifi credentials, etc.) isn't sent to a third-party QR image API.
+export async function fetchQrCode(data, size) {
+  const width = Math.min(Math.max(Number(size) || 300, 64), 1000);
+  const dataUrl = await QRCode.toDataURL(data, { width, margin: 1 });
+  return { dataUrl };
+}
+
+async function fetchAirQuality(location, locale) {
+  const { lat, lon, name } = await geocode(location);
+  const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm10,pm2_5`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`air quality failed: ${res.status}`);
+  const data = await res.json();
+  const cur = data.current || {};
+  const gradeText = String(locale || '').toLowerCase().startsWith('en') ? GRADE_TEXT_EN : GRADE_TEXT_KO;
+  const pm10 = cur.pm10;
+  const pm25 = cur.pm2_5;
+  const pm10Idx = pm10 != null ? gradeIndex(pm10, PM10_THRESHOLDS) : null;
+  const pm25Idx = pm25 != null ? gradeIndex(pm25, PM25_THRESHOLDS) : null;
+  return {
+    location: name,
+    pm10, pm10Grade: pm10Idx != null ? gradeText[pm10Idx] : null, pm10GradeIndex: pm10Idx,
+    pm25, pm25Grade: pm25Idx != null ? gradeText[pm25Idx] : null, pm25GradeIndex: pm25Idx,
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
 // `range` (optional): { from, to } epoch ms, used by paneo.calendar.month to fetch
 // every event overlapping the visible grid instead of just "upcoming" ones. Without
 // it, this keeps the original "next N events from now" behavior for paneo.calendar
@@ -78,7 +131,12 @@ export async function fetchCalendarSource(url, range) {
   const events = await ical.async.fromURL(url);
   const all = Object.values(events)
     .filter((e) => e.type === 'VEVENT' && e.start)
-    .map((e) => ({ summary: e.summary || '(제목 없음)', start: e.start.toISOString(), end: e.end?.toISOString() }));
+    .map((e) => ({
+      summary: e.summary || '(제목 없음)',
+      start: e.start.toISOString(),
+      end: e.end?.toISOString(),
+      source: url,
+    }));
 
   if (range) {
     return all
@@ -128,6 +186,38 @@ export async function registerDataProxy(app) {
     if (!location) return reply.code(400).send({ error: 'location required' });
     try {
       return await cached(`weather:${location}:${locale}`, 10 * 60_000, () => fetchWeather(location, locale));
+    } catch (err) {
+      return reply.code(502).send({ error: String(err.message || err) });
+    }
+  });
+
+  app.get('/api/proxy/airquality', async (req, reply) => {
+    const location = req.query?.location;
+    const locale = req.query?.locale || 'ko-KR';
+    if (!location) return reply.code(400).send({ error: 'location required' });
+    try {
+      return await cached(`airquality:${location}:${locale}`, 10 * 60_000, () => fetchAirQuality(location, locale));
+    } catch (err) {
+      return reply.code(502).send({ error: String(err.message || err) });
+    }
+  });
+
+  app.get('/api/proxy/exchangerate', async (req, reply) => {
+    const base = String(req.query?.base || '').toUpperCase();
+    const target = String(req.query?.target || '').toUpperCase();
+    if (!base || !target) return reply.code(400).send({ error: 'base and target required' });
+    try {
+      return await cached(`exchangerate:${base}:${target}`, 60 * 60_000, () => fetchExchangeRate(base, target));
+    } catch (err) {
+      return reply.code(502).send({ error: String(err.message || err) });
+    }
+  });
+
+  app.get('/api/proxy/qrcode', async (req, reply) => {
+    const data = req.query?.data;
+    if (!data) return reply.code(400).send({ error: 'data required' });
+    try {
+      return await cached(`qrcode:${data}:${req.query?.size}`, 24 * 60 * 60_000, () => fetchQrCode(data, req.query?.size));
     } catch (err) {
       return reply.code(502).send({ error: String(err.message || err) });
     }

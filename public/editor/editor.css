@@ -43,13 +43,17 @@ select, input { background: #0e1219; color: #e8edf6; border: 1px solid #2a3040;
 .apply:hover { background: #2f6fe0; }
 
 main { flex: 1; display: flex; min-height: 0; }
-#canvas-wrap { flex: 1; padding: 24px; overflow: auto; display: flex; justify-content: center; align-items: flex-start; }
-#canvas { width: 100%; max-width: 1280px;
+#canvas-wrap { flex: 1; padding: 24px; overflow: auto; display: flex; flex-direction: column; justify-content: flex-start; align-items: center; }
+#canvas { width: 100%; max-width: 1280px; align-self: stretch;
   /* aspect-ratio set dynamically in editor.js from the selected device's resolutionW/H */
   aspect-ratio: 16 / 9; /* fallback before the first device loads */
   background: #0b0f19; border-radius: 12px; border: 1px solid #232a38;
   background-image: linear-gradient(#ffffff0a 1px, transparent 1px), linear-gradient(90deg, #ffffff0a 1px, transparent 1px);
-  /* background-size set dynamically in editor.js render() to match the actual grid (cols × effective rows) */
+  /* background-size set dynamically in editor.js render() to match the actual grid (cols × effective rows).
+     background-origin: content-box so those percentages resolve against the padded
+     content box (applyGridContainer's outer padding == gap) — same box the CSS Grid
+     tracks themselves lay out in, so the dotted alignment guide lines up with cells. */
+  background-origin: content-box;
   overflow: hidden; }
 
 .ed-widget { position: relative; cursor: move; min-width: 0; min-height: 0; }
@@ -58,14 +62,42 @@ main { flex: 1; display: flex; min-height: 0; }
   background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: 12px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .ed-widget.selected { outline: 2px solid #3b82f6; outline-offset: 2px; border-radius: 12px; }
-.ed-widget.overlap-warning .widget-content { outline: 2px solid #ff5566; outline-offset: -2px; }
 .resize-handle { position: absolute; right: -4px; bottom: -4px; width: 16px; height: 16px;
   background: #3b82f6; border: 2px solid #10141c; border-radius: 50%; cursor: nwse-resize; }
+.ed-widget .widget-content.transparent-bg { background: transparent !important; border-color: transparent !important; }
+
+/* Page selector (#page-selector is a static, empty div in index.html; renderPageSelector()
+   in editor.js only ever fills its *children* — these rules must live here, not be injected
+   via a <style> tag inside #inspector-body's innerHTML, which only exists while a widget is
+   selected and gets wiped (along with these rules) the moment nothing is selected. That's
+   what caused the page-dots/+/− row to visibly jump by its own margin-top on every
+   select/deselect. */
+#page-selector {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+}
+.page-dots { display: flex; gap: 6px; }
+.page-dot { width: 12px; height: 12px; border-radius: 50%; background: #2a3040; position: relative; cursor: pointer; }
+.page-dot.active { background: #3b82f6; }
+.page-dot .page-del {
+  position: absolute; top: -4px; right: -4px; font-size: 10px; color: #ff9aa7;
+  background: #2a1a1f; border: 1px solid #4a2731; border-radius: 4px; width: 12px; height: 12px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.page-add, .page-del-btn {
+  padding: 4px 8px; background: #1c2330; color: #cfe0ff; border: 1px solid #2a3040;
+  border-radius: 8px; cursor: pointer;
+}
+.page-add:disabled, .page-del-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.page-del-btn { color: #ff9aa7; }
 
 /* widget visuals mirror the display (kept minimal for editor) */
 .w-clock {
   display: flex;
-  align-items: center;
+  align-items: center; /* centers the whole h:m + sec row in the widget box */
   justify-content: center;
   gap: 0.3em;
   width: 100%;
@@ -74,8 +106,11 @@ main { flex: 1; display: flex; min-height: 0; }
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
-.clock-hm { font-size: clamp(24px, 55cqmin, 72px); font-weight: 600; }
-.clock-sec { font-size: 0.36em; opacity: 0.55; align-self: flex-end; margin-bottom: 0.12em; }
+.clock-hm { font-size: clamp(28px, 60cqmin, 82px); font-weight: 600; }
+/* No align-self override here (previously flex-end + margin-bottom, which is what
+   dropped the seconds well below the h:m line) — inheriting align-items: center
+   from .w-clock keeps both pieces on the same vertical center. */
+.clock-sec { font-size: 0.36em; opacity: 0.55; }
 .w-date { text-align: center; }
 .w-date .date-main { font-size: clamp(14px, 2.2vw, 28px); font-weight: 500; }
 .w-date .date-weekday { font-size: clamp(11px, 1.6vw, 18px); opacity: 0.6; margin-top: 3px; }
@@ -90,6 +125,17 @@ main { flex: 1; display: flex; min-height: 0; }
 .weather-temp { font-size: clamp(18px, 4vw, 40px); font-weight: 600; }
 .weather-text { font-size: clamp(11px, 1.6vw, 16px); opacity: 0.75; margin-top: 2px; }
 .weather-loc { font-size: clamp(10px, 1.3vw, 13px); opacity: 0.5; margin-top: 3px; }
+
+.w-airquality { display: flex; flex-direction: column; justify-content: center; gap: 4px;
+  width: 100%; height: 100%; padding: 6px 10px; box-sizing: border-box; }
+.aq-loc { font-size: clamp(9px, 1.2vw, 12px); opacity: 0.6; text-align: center; margin-bottom: 1px; }
+.aq-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.aq-label { font-size: clamp(9px, 1.3vw, 13px); opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.aq-value { font-size: clamp(11px, 1.8vw, 17px); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
+.aq-grade-0 { color: #60a5fa; }
+.aq-grade-1 { color: #86efac; }
+.aq-grade-2 { color: #fbbf24; }
+.aq-grade-3 { color: #f87171; }
 
 .w-calendar, .w-rss { list-style: none; width: 100%; height: 100%; padding: 8px;
   overflow: hidden; font-size: clamp(10px, 1.4vw, 15px); }
@@ -134,7 +180,7 @@ main { flex: 1; display: flex; min-height: 0; }
 .field.check label { display: flex; align-items: center; gap: 8px; opacity: 0.9; font-size: 14px; cursor: pointer; }
 .field.check input { width: auto; }
 .list-field { display: flex; flex-direction: column; gap: 6px; }
-.list-row { display: flex; gap: 6px; }
+.list-row { display: flex; gap: 6px; align-items: center; }
 .list-row input { flex: 1 1 auto; min-width: 0; }
 .list-remove { flex: 0 0 auto; width: 28px; background: #2a1a1f; color: #ff9aa7;
   border: 1px solid #4a2731; border-radius: 8px; cursor: pointer; font-size: 14px; }
@@ -143,6 +189,60 @@ main { flex: 1; display: flex; min-height: 0; }
   border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 12px; }
 .list-add:hover { background: #232c3d; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+
+/* paneo.timer inspector — one structured row per entry instead of a single hand-typed string */
+.timer-entry-list { display: flex; flex-direction: column; gap: 10px; }
+.timer-entry-row { display: flex; flex-direction: column; gap: 6px; padding: 10px;
+  background: #171d29; border: 1px solid #2a3040; border-radius: 10px; }
+.timer-entry-row > input[type="text"] { width: 100%; }
+.timer-entry-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.timer-entry-grid label:first-child { grid-column: span 2; }
+.timer-entry-grid label { display: block; font-size: 11px; opacity: 0.7; }
+.timer-entry-grid input, .timer-entry-grid select { width: 100%; margin-top: 2px; }
+.timer-entry-remove { align-self: flex-end; background: #2a1a1f; color: #ff9aa7;
+  border: 1px solid #4a2731; border-radius: 8px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+.timer-entry-remove:hover { background: #3a2028; }
+.timer-entry-add { align-self: flex-start; background: #1c2330; color: #cfe0ff; border: 1px solid #2a3040;
+  border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 12px; }
+.timer-entry-add:hover { background: #232c3d; }
+
+/* Generic structured-row list (paneo.worldclock/dday/todo) — same visual language
+   as .timer-entry-* above, but field count/type is driven by the widget's own
+   config[].fields instead of being hardcoded per widget. */
+.struct-list { display: flex; flex-direction: column; gap: 10px; }
+.struct-list-row { display: flex; flex-direction: column; gap: 6px; padding: 10px;
+  background: #171d29; border: 1px solid #2a3040; border-radius: 10px; }
+.struct-list-fields { display: flex; flex-wrap: wrap; gap: 8px; }
+.struct-field { flex: 1 1 100px; display: block; font-size: 11px; opacity: 0.7; }
+.struct-field input { width: 100%; margin-top: 2px; }
+.struct-check { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; font-size: 12px; opacity: 0.9; align-self: center; }
+.struct-check input { width: auto; }
+.struct-list-remove { align-self: flex-end; background: #2a1a1f; color: #ff9aa7;
+  border: 1px solid #4a2731; border-radius: 8px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+.struct-list-remove:hover { background: #3a2028; }
+.struct-list-add { align-self: flex-start; background: #1c2330; color: #cfe0ff; border: 1px solid #2a3040;
+  border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 12px; }
+.struct-list-add:hover { background: #232c3d; }
+
+/* paneo.photo "local" source — browse/upload/delete files under data/photos */
+.file-manager { display: flex; flex-direction: column; gap: 8px; }
+.file-manager-upload-btn { align-self: flex-start; background: #1c2330; color: #cfe0ff; border: 1px solid #2a3040;
+  border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 12px; }
+.file-manager-upload-btn:hover { background: #232c3d; }
+.file-manager-upload-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.file-manager-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 8px; max-height: 220px; overflow-y: auto; }
+.file-manager-item { position: relative; border: 1px solid #2a3040; border-radius: 8px; overflow: hidden; aspect-ratio: 1; background: #10141c; }
+.file-manager-item img, .file-manager-item video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.file-manager-name { position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 4px; font-size: 9px;
+  background: rgba(0,0,0,0.6); color: #e8edf6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-manager-delete { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; line-height: 16px;
+  background: rgba(42,26,31,0.9); color: #ff9aa7; border: 1px solid #4a2731; border-radius: 50%; cursor: pointer; font-size: 12px; }
+.file-manager-delete:hover { background: #3a2028; }
+/* Per-widget "show this file on this widget" checkbox (top-left, avoids the delete
+   button's top-right corner) — only rendered when the field declares a selectionKey. */
+.file-manager-select { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.55); border-radius: 4px; cursor: pointer; }
+.file-manager-select input { margin: 0; cursor: pointer; }
 .grid2 label { font-size: 12px; opacity: 0.7; }
 .grid2 input { width: 100%; margin-top: 2px; }
 .danger { width: 100%; margin-top: 8px; background: #3a1f26; color: #ff9aa7;
@@ -224,9 +324,37 @@ main { flex: 1; display: flex; min-height: 0; }
 .ha-toggle-btn:hover { background: #2563eb; }
 .ha-toggle-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
+.w-worldclock { display: flex; flex-direction: column; justify-content: center; gap: 4px; width: 100%; height: 100%; padding: 6px 10px; box-sizing: border-box; overflow: hidden; }
+.wc-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.wc-label { font-size: clamp(9px, 1.3vw, 13px); opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.wc-time { font-size: clamp(11px, 2vw, 20px); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
+
+.w-dday { display: flex; flex-direction: column; justify-content: center; gap: 4px; width: 100%; height: 100%; padding: 6px 10px; box-sizing: border-box; overflow: hidden; }
+.dday-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.dday-label { font-size: clamp(9px, 1.3vw, 13px); opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.dday-val { font-size: clamp(11px, 2.1vw, 22px); font-weight: 700; color: #60a5fa; white-space: nowrap; flex-shrink: 0; }
+
+.w-todo { list-style: none; width: 100%; height: 100%; padding: 8px; overflow: hidden auto; font-size: clamp(10px, 1.4vw, 15px); display: flex; flex-direction: column; gap: 3px; }
+.todo-row { display: flex; align-items: center; gap: 6px; }
+.todo-check { flex-shrink: 0; opacity: 0.7; }
+.todo-done .todo-check { color: #86efac; }
+.todo-done .todo-text { text-decoration: line-through; opacity: 0.5; }
+
+.w-exchangerate { text-align: center; }
+.fx-pair { font-size: clamp(10px, 1.4vw, 14px); opacity: 0.7; }
+.fx-rate { font-size: clamp(14px, 2.6vw, 26px); font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.fx-date { font-size: clamp(9px, 1.1vw, 11px); opacity: 0.4; margin-top: 3px; }
+
+.w-qrcode { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; width: 100%; height: 100%; padding: 6px; box-sizing: border-box; }
+.qr-img { max-width: 100%; max-height: 100%; object-fit: contain; background: #fff; border-radius: 6px; padding: 4px; }
+.qr-caption { font-size: clamp(9px, 1.2vw, 12px); opacity: 0.7; text-align: center; }
+
 /* ---- §M5: Ken Burns Photo slide & fit mode ---- */
 .fit-contain { background-size: contain !important; background-repeat: no-repeat !important; }
 .fit-cover { background-size: cover !important; }
+.w-video { width: 100%; height: 100%; display: block; background: #000; }
+.w-video.fit-cover { object-fit: cover; }
+.w-video.fit-contain { object-fit: contain; }
 .w-image-container { position: relative; width: 100%; height: 100%; overflow: hidden; border-radius: inherit; }
 .w-image-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-position: center; transform: scale(1); }
 .w-image-bg.kenburns { animation: kenburns-anim 16s ease-in-out infinite alternate; }
@@ -237,4 +365,53 @@ main { flex: 1; display: flex; min-height: 0; }
   100% { transform: scale(1.12) translate(-2%, -1%); }
 }
 
+/* ---- §Photo Overlay & Transparent BG ---- */
+.ed-widget { z-index: 2; }
+/* Generic "background layer" widgets (widgets.js: backgroundLayer:true, e.g.
+   paneo.photo) render behind everything else — driven by a data attribute set
+   from the widget-def flag, not this widget type's name, so any other widget
+   (built-in or plugin) can opt into the same behavior. */
+.ed-widget[data-background-layer="true"] { z-index: 1; }
+.ed-widget .widget-content.transparent-bg { background: transparent !important; border-color: transparent !important; }
 
+/* ---- §Page Selector ---- */
+#page-selector {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 0 4px;
+}
+.page-dots {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.page-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.2);
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+.page-dot:hover { background: rgba(255,255,255,0.4); transform: scale(1.2); }
+.page-dot.active { background: #3b82f6; transform: scale(1.25); }
+.page-add, .page-del-btn {
+  background: #1c2330;
+  color: #cfe0ff;
+  border: 1px solid #2a3040;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  font-size: 16px;
+  line-height: 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.2s;
+  padding: 0;
+}
+.page-add:hover, .page-del-btn:hover { background: #232c3d; }
+.page-add:disabled, .page-del-btn:disabled { opacity: 0.3; cursor: default; }
+.page-del-btn { color: #ff9aa7; border-color: #4a2731; background: #2a1a1f; }
+.page-del-btn:hover:not(:disabled) { background: #3a2028; }

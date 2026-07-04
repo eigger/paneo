@@ -13,8 +13,10 @@
 // Total rows to lay the grid out with: at least the configured minimum, but
 // grown automatically if any widget's own y+h extends past it.
 export function effectiveRows(layout) {
-  const configured = layout.grid?.rows || 7;
-  const used = (layout.widgets || []).reduce((max, w) => Math.max(max, w.y + w.h), 0);
+  const configured = layout?.grid?.rows || 7;
+  // Support both page object ({widgets}) and full layout ({pages, widgets})
+  const widgets = layout?.widgets || [];
+  const used = widgets.reduce((max, w) => Math.max(max, w.y + w.h), 0);
   return Math.max(configured, used, 1);
 }
 
@@ -26,6 +28,9 @@ export function applyGridContainer(el, layout) {
   el.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
   el.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
   el.style.gap = `${gap}px`;
+  // Outer edge-to-widget inset matches the inter-widget gap, so the screen border
+  // doesn't look tighter/looser than the spacing between widgets themselves.
+  el.style.padding = `${gap}px`;
 }
 
 export function applyGridItem(el, w) {
