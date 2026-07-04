@@ -85,11 +85,14 @@ const catalogs = {
     powerLabel: '화면 전원 스케줄',
     powerOn: '화면 켜기',
     powerOff: '화면 끄기',
-    powerOnTime: '켜는 시각 (HH:MM)',
-    powerOffTime: '끄는 시각 (HH:MM)',
+    powerOnTime: '켜는 시각 (HH:MM, 24시간제)',
+    powerOffTime: '끄는 시각 (HH:MM, 24시간제)',
     powerSave: '저장',
     powerSaved: '스케줄 저장됨',
     powerClear: '스케줄 해제',
+    powerScheduleSet: (on, off) => `● 설정됨 — ${on ?? '--:--'} 켜짐 / ${off ?? '--:--'} 꺼짐`,
+    powerScheduleNotSet: '○ 설정 안 됨',
+    powerTimeInvalid: '시각은 HH:MM(24시간제) 형식으로 입력하세요 (예: 09:00, 23:30)',
     agentConnected: (v) => (v ? `● 에이전트 연결됨 · v${v}` : '● 에이전트 연결됨'),
     agentMissing: '○ 에이전트 없음',
     agentMissingTip: '컴패니언 에이전트가 필요합니다 (agent/README.md)',
@@ -193,11 +196,14 @@ const catalogs = {
     powerLabel: 'Screen power schedule',
     powerOn: 'Screen on',
     powerOff: 'Screen off',
-    powerOnTime: 'Turn ON at (HH:MM)',
-    powerOffTime: 'Turn OFF at (HH:MM)',
+    powerOnTime: 'Turn ON at (HH:MM, 24-hour)',
+    powerOffTime: 'Turn OFF at (HH:MM, 24-hour)',
     powerSave: 'Save',
     powerSaved: 'Schedule saved',
     powerClear: 'Clear schedule',
+    powerScheduleSet: (on, off) => `● Set — on ${on ?? '--:--'} / off ${off ?? '--:--'}`,
+    powerScheduleNotSet: '○ Not set',
+    powerTimeInvalid: 'Enter time as HH:MM, 24-hour (e.g. 09:00, 23:30)',
     agentConnected: (v) => (v ? `● Agent connected · v${v}` : '● Agent connected'),
     agentMissing: '○ No agent',
     agentMissingTip: 'Companion agent required (see agent/README.md)',
@@ -254,7 +260,7 @@ export function setLang(l) {
   lang = catalogs[l] ? l : 'ko';
   localStorage.setItem('paneo:lang', lang);
 }
-export function t(key, arg) {
+export function t(key, ...args) {
   const v = (catalogs[lang] || catalogs.ko)[key];
-  return typeof v === 'function' ? v(arg) : v ?? key;
+  return typeof v === 'function' ? v(...args) : v ?? key;
 }

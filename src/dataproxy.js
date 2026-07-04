@@ -127,16 +127,79 @@ async function fetchAirQuality(location, locale) {
 // it, this keeps the original "next N events from now" behavior for paneo.calendar
 // (an event *list* widget, where an unbounded fetch would be pointless — nothing
 // past the top ~10 could ever be shown anyway).
+// "Upcoming" (non-range) mode's expansion horizon for recurring events — wide
+// enough to reliably surface the next occurrence of a yearly holiday, without
+// walking arbitrarily far into an unbounded (no COUNT/UNTIL) recurring rule.
+const RECURRING_LOOKAHEAD_MS = 90 * 24 * 3600 * 1000;
+
+// node-ical/rrule quirk: when the server's local timezone isn't UTC, expanded
+// occurrences come back shifted by the local UTC offset (verified: correct
+// under TZ=UTC, off by exactly +9h under TZ=Asia/Seoul) — it reads the
+// DTSTART's *local* calendar fields internally instead of its UTC fields.
+// These convert between real UTC time and that shifted "quirk space" so a
+// query window can be translated in, and raw results translated back out.
+// Exact for any timezone without DST; for one that does, at worst off by an
+// hour right around a transition — accepted rather than reimplementing
+// rrule's date handling ourselves.
+function toRRuleQuirkSpace(date) {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+}
+function fromRRuleQuirkSpace(date) {
+  return new Date(date.getTime() + date.getTimezoneOffset() * 60_000);
+}
+
+// node-ical returns a text property as a plain string, *except* when the ICS
+// source attaches parameters to it (e.g. Apple's calendars use
+// `SUMMARY;LANGUAGE=ko:...`), in which case it's `{ params, val }` instead —
+// without unwrapping `.val`, that object would render as "[object Object]".
+function icalTextValue(v) {
+  if (v == null) return '';
+  return typeof v === 'string' ? v : String(v.val ?? v);
+}
+
 export async function fetchCalendarSource(url, range) {
   const events = await ical.async.fromURL(url);
-  const all = Object.values(events)
-    .filter((e) => e.type === 'VEVENT' && e.start)
-    .map((e) => ({
-      summary: e.summary || '(제목 없음)',
-      start: e.start.toISOString(),
-      end: e.end?.toISOString(),
-      source: url,
-    }));
+  const now = Date.now();
+  // Node-ical only reports a recurring VEVENT's *first-ever* occurrence as
+  // `e.start` — e.g. Apple's holiday calendars store each holiday once with
+  // `RRULE:FREQ=YEARLY`, so without expanding the rule, every recurrence after
+  // that first date is invisible once "now" has passed it (this is why a
+  // Google-exported calendar, which stores one VEVENT per year, works fine
+  // while an RRULE-based one like iCloud's silently shows nothing).
+  const windowFrom = range ? new Date(range.from) : new Date(now - 24 * 3600 * 1000);
+  const windowTo = range ? new Date(range.to) : new Date(now + RECURRING_LOOKAHEAD_MS);
+
+  const all = [];
+  for (const e of Object.values(events)) {
+    if (e.type !== 'VEVENT' || !e.start) continue;
+    if (e.rrule) {
+      const durationMs = e.end ? e.end.getTime() - e.start.getTime() : 0;
+      // Widen the query backward by the event's own duration so a multi-day
+      // recurrence that starts just before the window but overlaps into it
+      // isn't missed — `rrule.between()` only bounds by occurrence *start*.
+      const occurrences = e.rrule.between(
+        toRRuleQuirkSpace(new Date(windowFrom.getTime() - durationMs)),
+        toRRuleQuirkSpace(windowTo),
+        true,
+      );
+      for (const rawStart of occurrences) {
+        const occStart = fromRRuleQuirkSpace(rawStart);
+        all.push({
+          summary: icalTextValue(e.summary) || '(제목 없음)',
+          start: occStart.toISOString(),
+          end: durationMs ? new Date(occStart.getTime() + durationMs).toISOString() : undefined,
+          source: url,
+        });
+      }
+    } else {
+      all.push({
+        summary: icalTextValue(e.summary) || '(제목 없음)',
+        start: e.start.toISOString(),
+        end: e.end?.toISOString(),
+        source: url,
+      });
+    }
+  }
 
   if (range) {
     return all
@@ -149,7 +212,6 @@ export async function fetchCalendarSource(url, range) {
       // no cap here — already bounded to a single month's worth of events by the range
   }
 
-  const now = Date.now();
   return all
     .filter((e) => new Date(e.start).getTime() >= now - 24 * 3600 * 1000)
     .sort((a, b) => new Date(a.start) - new Date(b.start))

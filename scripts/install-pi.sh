@@ -200,13 +200,18 @@ install_korean_fonts() {
 }
 
 install_chromium() {
-  if command -v chromium-browser >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1; then
-    return
+  if ! command -v chromium-browser >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then
+    log "Installing Chromium"
+    apt-get update
+    apt-get install -y chromium-browser || apt-get install -y chromium
   fi
 
-  log "Installing Chromium"
-  apt-get update
-  apt-get install -y chromium-browser || apt-get install -y chromium
+  # Debian/Raspberry Pi OS's chromium package ships WITHOUT proprietary H.264/AAC
+  # decode support (patent licensing) — an .mp4 video in paneo.photo simply won't
+  # play at all without this (silently: no error dialog, just a black/frozen
+  # frame). Not present in every repo/arch, so best-effort — .webm (VP8/VP9)
+  # videos work regardless, since those codecs aren't patent-encumbered.
+  apt-get install -y chromium-codecs-ffmpeg-extra 2>/dev/null || true
 }
 
 chromium_cmd() {
@@ -270,6 +275,7 @@ exec "$chrome" \$OZONE \\
   --disable-translate \\
   --disable-features=Translate \\
   --password-store=basic \\
+  --autoplay-policy=no-user-gesture-required \\
   "$display_url"
 EOF
   chmod +x /usr/local/bin/paneo-kiosk

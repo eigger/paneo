@@ -58,6 +58,16 @@ function isVideoUrl(url) {
   return VIDEO_EXT_RE.test(String(url || ''));
 }
 
+// Anchors a repeating timer to absolute wall-clock boundaries (multiples of
+// intervalMs since the epoch) instead of "now + intervalMs" — so multiple
+// paneo.photo widgets sharing the same interval always advance at the same
+// instant regardless of when each one happened to start, and a single slow
+// tick (GC pause, background tab throttling) can't accumulate drift, since
+// every reschedule re-syncs to the grid from the current clock time.
+function delayUntilNextBoundary(intervalMs) {
+  return intervalMs - (Date.now() % intervalMs);
+}
+
 // §4.3 performance profile: on 'low' tier, poll data widgets half as often —
 // a real (if modest, given today's widget set has no video/RTSP yet) CPU/network
 // saving rather than an invented one. docs/design.md §M2 D8.
@@ -256,6 +266,7 @@ export const widgets = {
       { key: 'immichAlbumId', label: { ko: 'Immich 앨범 ID (선택)', en: 'Immich Album ID (optional)' }, type: 'text', default: '', showIf: { key: 'source', equals: 'immich' } },
       { key: 'fit', label: { ko: '맞춤 방식', en: 'Fit Mode' }, type: 'enum', options: ['cover', 'contain'], default: 'cover' },
       { key: 'effects', label: { ko: 'Ken Burns 애니메이션 (사진 전용)', en: 'Ken Burns Effect (photos only)' }, type: 'checkbox', default: false },
+      { key: 'transition', label: { ko: '전환 효과', en: 'Transition' }, type: 'enum', options: ['none', 'fade', 'slide'], default: 'none' },
       { key: 'shuffleOrder', label: { ko: '랜덤 순서로 재생', en: 'Shuffle order' }, type: 'checkbox', default: false },
       { key: 'intervalSec', label: { ko: '사진 전환 간격(초) — 동영상은 재생이 끝나면 자동 전환', en: 'Photo interval (sec) — videos advance when playback ends' }, type: 'number', default: 8 },
     ],
@@ -266,12 +277,17 @@ export const widgets = {
       const useEffects = config.effects && ctx.performanceProfile === 'high';
       const intervalSec = Math.max(2, Number(config.intervalSec) || 8);
       const shuffle = !!config.shuffleOrder;
+      // Cross-fade/slide adds a second composited layer + CSS transition — real
+      // GPU/CPU cost on a Pi Zero/3, so (like Ken Burns) it's 'high' tier only.
+      const transition = ctx.performanceProfile === 'high' ? (config.transition || 'none') : 'none';
+      const TRANSITION_MS = 700;
 
       let timer = null;
       let items = [];
       let currentIndex = 0;
       let pendingNextIndex = 0;
       let activeVideoEl = null;
+      let hasPainted = false;
 
       // Random-without-immediate-repeat when shuffle is on, otherwise plain sequential.
       const pickNextIndex = () => {
@@ -303,33 +319,65 @@ export const widgets = {
         }
 
         const currentUrl = items[currentIndex];
+        const isVideo = isVideoUrl(currentUrl);
+        const loopSingle = isVideo && items.length <= 1 && source !== 'unsplash';
 
-        // Videos drive their own advance via the 'ended' event (so playback isn't cut
-        // short by the photo interval) instead of the setTimeout used for images below.
-        if (isVideoUrl(currentUrl)) {
-          const loopSingle = items.length <= 1 && source !== 'unsplash';
-          el.innerHTML = `<video class="w-video${fitClass}" src="${escapeAttr(currentUrl)}" autoplay muted playsinline ${loopSingle ? 'loop' : ''}></video>`;
-          activeVideoEl = el.querySelector('video');
-          if (!loopSingle) activeVideoEl.addEventListener('ended', advance);
+        // Computed unconditionally (not just in the image branch below) — advance()
+        // reads pendingNextIndex, and if a video never set it, ending/erroring that
+        // video would fall back to whatever stale value a *previous* image paint
+        // left behind, which is effectively random and often just replays the same
+        // video forever instead of moving to the next item.
+        pendingNextIndex = pickNextIndex();
+
+        let innerHtml;
+        if (isVideo) {
+          innerHtml = `<video class="w-video${fitClass}" src="${escapeAttr(currentUrl)}" autoplay muted playsinline ${loopSingle ? 'loop' : ''}></video>`;
+        } else {
+          const nextUrl = items[pendingNextIndex] ?? currentUrl;
+          innerHtml = useEffects
+            ? `<div class="w-image-container">
+                <div class="w-image-bg kenburns${fitClass}" style="background-image:url('${escapeStyleUrl(currentUrl)}')"></div>
+                <div class="w-image-bg-preload" style="background-image:url('${escapeStyleUrl(nextUrl)}')"></div>
+              </div>`
+            : `<div class="w-image${fitClass}" style="background-image:url('${escapeStyleUrl(currentUrl)}')"></div>`;
+        }
+
+        // First paint (or transition:none) swaps content instantly, same as before
+        // this option existed. Otherwise the new layer fades/slides in on top of
+        // the old one, which is removed once the CSS transition finishes.
+        let newLayer;
+        if (!hasPainted || transition === 'none') {
+          el.innerHTML = `<div class="ms-stage"><div class="ms-layer ms-active">${innerHtml}</div></div>`;
+          newLayer = el.querySelector('.ms-layer');
+        } else {
+          const stage = el.querySelector('.ms-stage');
+          newLayer = document.createElement('div');
+          newLayer.className = `ms-layer ms-${transition}-enter`;
+          newLayer.innerHTML = innerHtml;
+          stage.appendChild(newLayer);
+          void newLayer.offsetWidth; // force a reflow so the enter->active transition actually runs
+          newLayer.classList.add('ms-active');
+          const oldLayers = [...stage.children].filter((c) => c !== newLayer);
+          setTimeout(() => oldLayers.forEach((l) => l.remove()), TRANSITION_MS);
+        }
+        hasPainted = true;
+
+        // Videos drive their own advance via 'ended' (so playback isn't cut short
+        // by the photo interval) instead of the setTimeout used for images below.
+        // 'error' also advances — a video that fails to decode (e.g. an unsupported
+        // codec) would otherwise freeze the slideshow on that item forever, since
+        // 'ended' never fires for a video that never started playing.
+        if (isVideo) {
+          activeVideoEl = newLayer.querySelector('video');
+          if (!loopSingle) {
+            activeVideoEl.addEventListener('ended', advance);
+            activeVideoEl.addEventListener('error', advance);
+          }
           return;
         }
 
-        pendingNextIndex = pickNextIndex();
-        const nextUrl = items[pendingNextIndex] ?? currentUrl;
-
-        if (useEffects && !isVideoUrl(nextUrl)) {
-          el.innerHTML = `
-            <div class="w-image-container">
-              <div class="w-image-bg kenburns${fitClass}" style="background-image:url('${escapeStyleUrl(currentUrl)}')"></div>
-              <div class="w-image-bg-preload" style="background-image:url('${escapeStyleUrl(nextUrl)}')"></div>
-            </div>
-          `;
-        } else {
-          el.innerHTML = `<div class="w-image${fitClass}" style="background-image:url('${escapeStyleUrl(currentUrl)}')"></div>`;
-        }
-
         if (items.length > 1 || source === 'unsplash') {
-          timer = setTimeout(advance, intervalSec * 1000);
+          timer = setTimeout(advance, delayUntilNextBoundary(intervalSec * 1000));
         }
       };
 
@@ -541,6 +589,7 @@ export const widgets = {
         const curMonth = now.getMonth();
         const showWN = !!config.showWeekNumber;
         const cols = showWN ? 8 : 7;
+        const weekRows = Math.ceil(cells.length / 7);
 
         let headerRow = '';
         if (showWN) headerRow += `<div class="cal-m-cell cal-m-wn-hdr"></div>`;
@@ -592,7 +641,7 @@ export const widgets = {
 
         el.innerHTML = `<div class="w-cal-month">
           <div class="cal-m-header">${monthFmt.format(now)}</div>
-          <div class="cal-m-grid" style="grid-template-columns:repeat(${cols},1fr)">
+          <div class="cal-m-grid" style="grid-template-columns:repeat(${cols},1fr);grid-template-rows:auto repeat(${weekRows},1fr)">
             ${headerRow}${bodyRows}
           </div>
         </div>`;
