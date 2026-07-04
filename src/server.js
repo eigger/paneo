@@ -446,6 +446,10 @@ app.get('/install/pi.sh', async (_req, reply) => {
   reply.type('text/x-shellscript; charset=utf-8');
   return reply.sendFile('install-pi.sh', SCRIPTS_DIR);
 });
+app.get('/update.sh', async (_req, reply) => {
+  reply.type('text/x-shellscript; charset=utf-8');
+  return reply.sendFile('update-pi.sh', SCRIPTS_DIR);
+});
 
 app.listen({ port: PORT, host: '0.0.0.0' })
   .then(() => {
