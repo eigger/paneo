@@ -126,7 +126,67 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 6. Summary
+# 6. Restart the kiosk browser
+# ---------------------------------------------------------------------------
+restart_kiosk() {
+  [ -f "$KIOSK_BIN" ] || { log "Kiosk not installed — skipping restart"; return; }
+
+  # Find the desktop user who owns the running chromium/kiosk process
+  local kiosk_user uid runtime_dir
+  kiosk_user="$(ps aux \
+    | grep -E '[c]hromium.*(--kiosk|paneo-kiosk)|[p]aneo-kiosk' \
+    | awk '{print $1}' | grep -v root | head -1 || true)"
+
+  # Fall back to the SUDO_USER (who invoked sudo) or SERVICE_USER from agent service
+  if [ -z "$kiosk_user" ]; then
+    kiosk_user="${SUDO_USER:-$(read_service_env paneo-agent User 2>/dev/null || true)}"
+  fi
+
+  if [ -z "$kiosk_user" ]; then
+    log "Could not determine kiosk user — kiosk NOT restarted"
+    log "Run manually: sudo -u pi /usr/local/bin/paneo-kiosk &"
+    return
+  fi
+
+  uid="$(id -u "$kiosk_user" 2>/dev/null || true)"
+  runtime_dir="/run/user/$uid"
+
+  # Kill the running kiosk/chromium (ignore if not running)
+  log "Stopping kiosk (user: $kiosk_user)..."
+  pkill -u "$kiosk_user" -f 'chromium.*--kiosk' 2>/dev/null || true
+  pkill -u "$kiosk_user" -f 'paneo-kiosk'        2>/dev/null || true
+  sleep 2
+
+  # Detect display server: Wayland socket lives under XDG_RUNTIME_DIR
+  local wayland_sock=""
+  if [ -d "$runtime_dir" ]; then
+    wayland_sock="$(ls "$runtime_dir"/wayland-* 2>/dev/null | head -1 | xargs -I{} basename {} 2>/dev/null || true)"
+  fi
+
+  log "Restarting kiosk as $kiosk_user..."
+  if [ -n "$wayland_sock" ]; then
+    # Wayland (Bookworm / Wayfire / Labwc)
+    sudo -u "$kiosk_user" env \
+      WAYLAND_DISPLAY="$wayland_sock" \
+      XDG_RUNTIME_DIR="$runtime_dir" \
+      XDG_SESSION_TYPE="wayland" \
+      /usr/local/bin/paneo-kiosk &
+  else
+    # X11 (Bullseye / LXDE)
+    local xauth="/home/$kiosk_user/.Xauthority"
+    sudo -u "$kiosk_user" env \
+      DISPLAY=":0" \
+      XAUTHORITY="$xauth" \
+      /usr/local/bin/paneo-kiosk &
+  fi
+
+  log "Kiosk restarted (display: ${wayland_sock:-:0})"
+}
+
+restart_kiosk
+
+# ---------------------------------------------------------------------------
+# 7. Summary
 # ---------------------------------------------------------------------------
 log "Done"
 if curl -fsS "$SERVER/api/version" >/dev/null 2>&1; then
