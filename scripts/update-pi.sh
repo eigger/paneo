@@ -137,6 +137,27 @@ if command -v apt-get >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------------
+# 5b. Best-effort: display fonts (Korean Nanum + color emoji). install-pi.sh
+#    installs these fresh, but a device set up before this step existed
+#    (or a Pi OS image that dropped a font package) won't have them until an
+#    update pulls them in too — without the emoji font in particular, weather/
+#    icon glyphs render as invisible blanks on the kiosk even though they show
+#    up fine in the editor on a desktop OS that already has one.
+# ---------------------------------------------------------------------------
+if command -v apt-get >/dev/null 2>&1; then
+  if ! fc-list :lang=ko 2>/dev/null | grep -qi nanum; then
+    apt-get install -y fonts-nanum fonts-nanum-extra 2>/dev/null \
+      || apt-get install -y fonts-nanum 2>/dev/null \
+      || log "Korean fonts not available — skipping"
+  fi
+  if ! fc-list 2>/dev/null | grep -qi "noto color emoji"; then
+    apt-get install -y fonts-noto-color-emoji 2>/dev/null \
+      || log "Emoji font not available — skipping"
+  fi
+  fc-cache -f >/dev/null 2>&1 || true
+fi
+
+# ---------------------------------------------------------------------------
 # 6. Update the kiosk launcher script
 # ---------------------------------------------------------------------------
 KIOSK_BIN="/usr/local/bin/paneo-kiosk"

@@ -180,23 +180,46 @@ create_token_if_needed() {
   log "Created display token: ${TOKEN}"
 }
 
-install_korean_fonts() {
-  # Check if Nanum fonts are already installed
+install_display_fonts() {
+  local need_cache_rebuild=0
+  local need_apt_update=0
+  fc-list :lang=ko 2>/dev/null | grep -qi nanum || need_apt_update=1
+  fc-list 2>/dev/null | grep -qi "noto color emoji" || need_apt_update=1
+  [ "$need_apt_update" -eq 1 ] && apt-get update -qq
+
+  # Korean text (Nanum) — the app's own Pretendard webfont (self-hosted,
+  # served from public/shared/fonts/) covers Korean glyphs fine in Chromium,
+  # but Nanum is kept as a system-level fallback for anything that renders
+  # outside the app's own CSS (Chromium UI chrome, other kiosk-adjacent uses).
   if fc-list :lang=ko 2>/dev/null | grep -qi nanum; then
     log "Korean fonts already installed"
-    return
+  else
+    log "Installing Korean fonts (Nanum)"
+    # fonts-nanum      : NanumGothic, NanumMyeongjo, NanumBarunGothic
+    # fonts-nanum-extra: NanumSquare, NanumBarunpen, etc.
+    apt-get install -y fonts-nanum fonts-nanum-extra 2>/dev/null \
+      || apt-get install -y fonts-nanum 2>/dev/null \
+      || log "Warning: could not install Nanum fonts — Korean text may not render correctly"
+    need_cache_rebuild=1
   fi
 
-  log "Installing Korean fonts (Nanum)"
-  apt-get update -qq
-  # fonts-nanum      : NanumGothic, NanumMyeongjo, NanumBarunGothic
-  # fonts-nanum-extra: NanumSquare, NanumBarunpen, etc.
-  apt-get install -y fonts-nanum fonts-nanum-extra 2>/dev/null \
-    || apt-get install -y fonts-nanum 2>/dev/null \
-    || log "Warning: could not install Nanum fonts — Korean text may not render correctly"
+  # Color emoji — the app's webfont (Pretendard) is text-only, like every
+  # other text font; emoji glyphs (weather icons, widget icons, etc.) always
+  # come from a separate OS-level color font, and a fresh Raspberry Pi OS
+  # install doesn't ship one. Without it, those glyphs render as invisible/
+  # blank boxes on the kiosk display even though they show up fine on
+  # whatever desktop OS someone used to build the layout in the editor.
+  if fc-list 2>/dev/null | grep -qi "noto color emoji"; then
+    log "Emoji font already installed"
+  else
+    log "Installing color emoji font (Noto Color Emoji)"
+    apt-get install -y fonts-noto-color-emoji 2>/dev/null \
+      || log "Warning: could not install an emoji font — emoji icons (e.g. weather) will not render"
+    need_cache_rebuild=1
+  fi
+
   # Rebuild font cache so Chromium picks up the new fonts immediately
-  fc-cache -fv >/dev/null 2>&1 || true
-  log "Korean fonts installed"
+  [ "$need_cache_rebuild" -eq 1 ] && { fc-cache -fv >/dev/null 2>&1 || true; }
 }
 
 install_chromium() {
@@ -412,14 +435,14 @@ main() {
       install_server
       ;;
     display)
-      install_korean_fonts
+      install_display_fonts
       create_token_if_needed
       install_kiosk
       install_agent
       ;;
     all)
       install_server
-      install_korean_fonts
+      install_display_fonts
       create_token_if_needed
       install_kiosk
       install_agent
