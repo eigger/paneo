@@ -240,6 +240,55 @@ async function loadUpdateCheck() {
     updateCheckResult = { error: true };
   }
   applyUpdateCheckUI();
+  syncDeviceMetaUI();
+}
+
+// Remote-update progress (docs/design.md D#) — polled while the settings
+// panel is open (and right after triggering an update) so "did it actually
+// start / is it still going" doesn't require SSHing into the device to tail
+// /tmp/paneo-update.log. Server-side status auto-expires after 20 minutes
+// (src/server.js UPDATE_STATUS_STALE_MS), so a stale "done"/"failed" from a
+// much earlier run never lingers here either.
+let updateProgress = null; // { status: 'idle'|'running'|'done'|'failed', mode }
+let updateProgressTimer = null;
+
+function applyUpdateProgressUI() {
+  const box = document.getElementById('update-progress-status');
+  if (!box) return;
+  const status = updateProgress?.status;
+  if (!status || status === 'idle') {
+    box.className = 'update-progress-status';
+    box.textContent = '';
+    return;
+  }
+  box.className = `update-progress-status visible ${status}`;
+  if (status === 'running') box.textContent = t('updateProgressRunning', updateProgress.mode);
+  else if (status === 'done') box.textContent = t('updateProgressDone');
+  else if (status === 'failed') box.textContent = t('updateProgressFailed');
+}
+
+async function loadUpdateProgress() {
+  if (!device) return;
+  try {
+    updateProgress = await api(`/api/devices/${device.id}/update-status`);
+  } catch {
+    return; // transient fetch error — keep last known state, try again next cycle
+  }
+  applyUpdateProgressUI();
+  syncDeviceMetaUI();
+  if (updateProgress.status === 'running') {
+    updateProgressTimer = setTimeout(loadUpdateProgress, 4000);
+  }
+}
+
+function startUpdateProgressPolling() {
+  clearTimeout(updateProgressTimer);
+  loadUpdateProgress();
+}
+
+function stopUpdateProgressPolling() {
+  clearTimeout(updateProgressTimer);
+  updateProgressTimer = null;
 }
 
 const CATEGORY_KEY = { basic: 'categoryBasic', data: 'categoryData', media: 'categoryMedia', plugin: 'categoryPlugin' };
@@ -473,6 +522,7 @@ async function sendUpdate(mode) {
   if (!device) return;
   const res = await api(`/api/devices/${device.id}/command`, { method: 'POST', body: JSON.stringify({ action: 'update', mode }) });
   toast(res.agentPresent ? t('updateSent') : t('updateNoAgent'));
+  if (res.agentPresent) startUpdateProgressPolling();
 }
 
 function populateGroupSelect() {
@@ -517,8 +567,16 @@ function syncDeviceMetaUI() {
   const hasAgent = device.agentPresent ?? false;
   if (cmdPowerOnBtn) { cmdPowerOnBtn.disabled = !hasAgent; cmdPowerOnBtn.title = hasAgent ? '' : t('agentMissingTip'); }
   if (cmdPowerOffBtn) { cmdPowerOffBtn.disabled = !hasAgent; cmdPowerOffBtn.title = hasAgent ? '' : t('agentMissingTip'); }
-  if (cmdUpdateAllBtn) { cmdUpdateAllBtn.disabled = !hasAgent; cmdUpdateAllBtn.title = hasAgent ? '' : t('agentMissingTip'); }
-  if (cmdUpdateServerBtn) { cmdUpdateServerBtn.disabled = !hasAgent; cmdUpdateServerBtn.title = hasAgent ? '' : t('agentMissingTip'); }
+  // Update buttons: disabled with no agent (as before), while an update is
+  // already running (avoid re-triggering a second one on top of it), or once
+  // the update-check has positively confirmed this is already the latest
+  // release — a failed/not-yet-loaded check fails open (doesn't block).
+  const updating = updateProgress?.status === 'running';
+  const alreadyLatest = updateCheckResult && !updateCheckResult.error && updateCheckResult.updateAvailable === false;
+  const updateDisabled = !hasAgent || updating || alreadyLatest;
+  const updateTitle = !hasAgent ? t('agentMissingTip') : updating ? t('updateInProgressTip') : alreadyLatest ? t('updateAlreadyLatestTip') : '';
+  if (cmdUpdateAllBtn) { cmdUpdateAllBtn.disabled = updateDisabled; cmdUpdateAllBtn.title = updateTitle; }
+  if (cmdUpdateServerBtn) { cmdUpdateServerBtn.disabled = updateDisabled; cmdUpdateServerBtn.title = updateTitle; }
 }
 
 function saveResolution() {
@@ -1341,17 +1399,26 @@ async function saveHASettings() {
   }
 }
 
+function closeSettings() {
+  settingsOverlay.classList.add('hidden');
+  stopUpdateProgressPolling();
+}
+
 settingsBtn.addEventListener('click', async () => {
   settingsOverlay.classList.remove('hidden');
   await loadHASettings();
+  // Reflects whatever's currently going on (or just finished) even if this
+  // device's update was triggered from a different tab/session — and keeps
+  // polling on its own while the panel is open and a run is still active.
+  startUpdateProgressPolling();
 });
 
 const haSaveBtn = document.getElementById('ha-save-btn');
 if (haSaveBtn) haSaveBtn.addEventListener('click', saveHASettings);
 
-document.getElementById('settings-close').addEventListener('click', () => settingsOverlay.classList.add('hidden'));
-settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) settingsOverlay.classList.add('hidden'); });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') settingsOverlay.classList.add('hidden'); });
+document.getElementById('settings-close').addEventListener('click', closeSettings);
+settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) closeSettings(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSettings(); });
 
 // ---- add-widget popover ----
 paletteBtn.addEventListener('click', (e) => { e.stopPropagation(); togglePalette(); });

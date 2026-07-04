@@ -33,6 +33,21 @@ esac
 [ "$(id -u)" -eq 0 ] || fail "run with sudo"
 
 # ---------------------------------------------------------------------------
+# Progress status file — the companion agent reads this on its *next*
+# connection (not necessarily this run's agent process, since step 4 below
+# restarts it partway through every mode) to report how the update actually
+# ended back to the editor. An EXIT trap catches any failure under `set -e`
+# regardless of which step it happens in; the success path overwrites it
+# with "done" as the very last thing this script does.
+# ---------------------------------------------------------------------------
+STATUS_FILE="/tmp/paneo-update-status.json"
+write_status() {
+  printf '{"state":"%s","mode":"%s","ts":%s}\n' "$1" "$MODE" "$(date +%s)" > "$STATUS_FILE" 2>/dev/null || true
+}
+write_status running
+trap '[ "$?" -ne 0 ] && write_status failed' EXIT
+
+# ---------------------------------------------------------------------------
 # Read existing config from systemd service files (set during install)
 # ---------------------------------------------------------------------------
 read_service_env() {
@@ -232,9 +247,12 @@ if [ -f "$KIOSK_BIN" ]; then
   # Write a helper script so we can launch it completely detached from
   # the curl|bash pipe (background jobs in non-interactive piped bash are
   # unreliable — the helper approach is always safe).
-  HELPER="/tmp/paneo-kiosk-restart.sh"
+  # Lives in /usr/local/bin/ (not /tmp) — some Pi OS images mount /tmp with
+  # noexec, which intermittently blocks execution with "Permission denied".
+  HELPER="/usr/local/bin/paneo-kiosk-restart.sh"
+  HELPER_TMP="${HELPER}.tmp.$$"
   if [ -n "$WAYLAND_SOCK" ]; then
-    cat > "$HELPER" <<HELPER_EOF
+    cat > "$HELPER_TMP" <<HELPER_EOF
 #!/usr/bin/env bash
 export WAYLAND_DISPLAY="$WAYLAND_SOCK"
 export XDG_RUNTIME_DIR="$RUNTIME_DIR"
@@ -244,7 +262,7 @@ exec /usr/local/bin/paneo-kiosk
 HELPER_EOF
     log "Launching kiosk via Wayland ($WAYLAND_SOCK) as $KIOSK_USER"
   else
-    cat > "$HELPER" <<HELPER_EOF
+    cat > "$HELPER_TMP" <<HELPER_EOF
 #!/usr/bin/env bash
 export DISPLAY=":0"
 export XAUTHORITY="/home/$KIOSK_USER/.Xauthority"
@@ -252,8 +270,9 @@ exec /usr/local/bin/paneo-kiosk
 HELPER_EOF
     log "Launching kiosk via X11 as $KIOSK_USER"
   fi
-  chmod +x "$HELPER"
-  chown "$KIOSK_USER" "$HELPER"
+  chmod +x "$HELPER_TMP"
+  chown "$KIOSK_USER" "$HELPER_TMP"
+  mv "$HELPER_TMP" "$HELPER"
 
   # Run the helper as the desktop user, fully detached.
   # Redirect to a log file so errors are visible: /tmp/paneo-kiosk.log
@@ -284,4 +303,6 @@ if curl -fsS "$SERVER/api/version" >/dev/null 2>&1; then
 fi
 log "Server logs : docker logs -f paneo"
 log "Agent logs  : journalctl -u paneo-agent -f"
+
+write_status done
 

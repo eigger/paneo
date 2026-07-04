@@ -19,7 +19,7 @@
  */
 
 import { execSync, execFile, spawn } from 'node:child_process';
-import { readFileSync, readdirSync, openSync } from 'node:fs';
+import { readFileSync, readdirSync, openSync, existsSync, unlinkSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -76,6 +76,13 @@ function connect() {
     console.log('[agent] connected');
     reconnectDelay = 2000; // reset on successful connect
     ws.send(JSON.stringify({ type: 'agent.hello', version: AGENT_VERSION, component: AGENT_COMPONENT }));
+    // The update script restarts this very process partway through (both
+    // 'all' and 'server' mode always refresh the agent) -- so the instance
+    // that received the update command dies before it can ever report
+    // completion. The new instance that comes up after the restart is the
+    // one that has to notice and report it, via the status file
+    // update-pi.sh itself writes (see reportPendingUpdateStatus below).
+    reportPendingUpdateStatus(ws);
     startHeartbeat();
   });
 
@@ -220,9 +227,45 @@ function runUpdate(mode) {
     });
     child.unref();
     console.log(`[agent] update started (mode=${mode}, pid=${child.pid}) — log: ${logFile}`);
+    // Best-effort — this process (and this very connection) may well be
+    // killed by the update script's own agent-restart step within seconds,
+    // so there's no guarantee this actually reaches the server. That's fine:
+    // the server also sets 'running' itself the moment it sent the command,
+    // and reportPendingUpdateStatus() covers reporting how it actually ended.
+    if (ws?.readyState === 1 /* OPEN */) {
+      ws.send(JSON.stringify({ type: 'agent.status', status: 'running', mode }));
+    }
   } catch (e) {
     console.error(`[agent] failed to start update: ${e.message}`);
   }
+}
+
+// update-pi.sh writes its progress here (state: running|done|failed) so that
+// whichever agent process is alive when the update actually finishes -- not
+// necessarily the one that started it, since the update restarts this agent
+// partway through -- can report the outcome on its next connection. Reported
+// (and then removed) at most once: a stale "running" entry from a run that
+// never got to write a terminal state (e.g. the Pi lost power mid-update) is
+// discarded rather than left to read as perpetually in-progress.
+const UPDATE_STATUS_FILE = '/tmp/paneo-update-status.json';
+const UPDATE_STATUS_MAX_AGE_MS = 20 * 60_000;
+
+function reportPendingUpdateStatus(socket) {
+  let entry;
+  try {
+    if (!existsSync(UPDATE_STATUS_FILE)) return;
+    entry = JSON.parse(readFileSync(UPDATE_STATUS_FILE, 'utf8'));
+  } catch {
+    return;
+  }
+  const ageMs = Date.now() - (Number(entry?.ts) || 0) * 1000;
+  if (ageMs > UPDATE_STATUS_MAX_AGE_MS || !['done', 'failed'].includes(entry?.state)) {
+    try { unlinkSync(UPDATE_STATUS_FILE); } catch { /* best-effort */ }
+    return;
+  }
+  console.log(`[agent] reporting update outcome: ${entry.state} (mode=${entry.mode})`);
+  socket.send(JSON.stringify({ type: 'agent.status', status: entry.state, mode: entry.mode }));
+  try { unlinkSync(UPDATE_STATUS_FILE); } catch { /* already reported; avoid re-sending on next reconnect */ }
 }
 
 // ---------------------------------------------------------------------------

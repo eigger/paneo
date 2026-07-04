@@ -110,6 +110,11 @@ const catalogs = {
     updateCheckAvailable: (v) => `🆕 업데이트 가능 — v${v}`,
     updateCheckLatest: '✓ 최신 버전입니다',
     updateCheckFailed: '업데이트 확인 실패 (네트워크 확인 필요)',
+    updateProgressRunning: (mode) => `⏳ 업데이트 진행 중… (${mode === 'server' ? '서버만' : '전체'})`,
+    updateProgressDone: '✓ 업데이트 완료',
+    updateProgressFailed: '✗ 업데이트 실패 — 화면 장치의 /tmp/paneo-update.log 확인 필요',
+    updateInProgressTip: '업데이트가 이미 진행 중입니다',
+    updateAlreadyLatestTip: '이미 최신 버전입니다',
     // §M5 Home Assistant
     haSettingsLabel: '홈어시스턴트 연동 설정',
     haUrlLabel: '서버 주소 (URL)',
@@ -229,6 +234,11 @@ const catalogs = {
     updateCheckAvailable: (v) => `🆕 Update available — v${v}`,
     updateCheckLatest: '✓ Up to date',
     updateCheckFailed: 'Update check failed (check network)',
+    updateProgressRunning: (mode) => `⏳ Update in progress… (${mode === 'server' ? 'server only' : 'all'})`,
+    updateProgressDone: '✓ Update complete',
+    updateProgressFailed: '✗ Update failed — check /tmp/paneo-update.log on the display device',
+    updateInProgressTip: 'An update is already in progress',
+    updateAlreadyLatestTip: 'Already up to date',
     // §M5 Home Assistant
     haSettingsLabel: 'Home Assistant Settings',
     haUrlLabel: 'Server URL',
