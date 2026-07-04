@@ -154,24 +154,48 @@ sleep 2
 if [ -f "$KIOSK_BIN" ]; then
   # Find wayland socket (Bookworm default)
   WAYLAND_SOCK="$(ls "$RUNTIME_DIR"/wayland-* 2>/dev/null | head -1 | xargs -I{} basename {} 2>/dev/null || true)"
+  DBUS_ADDR="unix:path=${RUNTIME_DIR}/bus"
 
+  # Write a helper script so we can launch it completely detached from
+  # the curl|bash pipe (background jobs in non-interactive piped bash are
+  # unreliable — the helper approach is always safe).
+  HELPER="/tmp/paneo-kiosk-restart.sh"
   if [ -n "$WAYLAND_SOCK" ]; then
+    cat > "$HELPER" <<HELPER_EOF
+#!/usr/bin/env bash
+export WAYLAND_DISPLAY="$WAYLAND_SOCK"
+export XDG_RUNTIME_DIR="$RUNTIME_DIR"
+export XDG_SESSION_TYPE="wayland"
+export DBUS_SESSION_BUS_ADDRESS="$DBUS_ADDR"
+exec /usr/local/bin/paneo-kiosk
+HELPER_EOF
     log "Launching kiosk via Wayland ($WAYLAND_SOCK) as $KIOSK_USER"
-    sudo -u "$KIOSK_USER" \
-      WAYLAND_DISPLAY="$WAYLAND_SOCK" \
-      XDG_RUNTIME_DIR="$RUNTIME_DIR" \
-      XDG_SESSION_TYPE="wayland" \
-      setsid /usr/local/bin/paneo-kiosk </dev/null >/dev/null 2>&1 &
-    disown $! 2>/dev/null || true
   else
+    cat > "$HELPER" <<HELPER_EOF
+#!/usr/bin/env bash
+export DISPLAY=":0"
+export XAUTHORITY="/home/$KIOSK_USER/.Xauthority"
+exec /usr/local/bin/paneo-kiosk
+HELPER_EOF
     log "Launching kiosk via X11 as $KIOSK_USER"
-    sudo -u "$KIOSK_USER" \
-      DISPLAY=":0" \
-      XAUTHORITY="/home/$KIOSK_USER/.Xauthority" \
-      setsid /usr/local/bin/paneo-kiosk </dev/null >/dev/null 2>&1 &
-    disown $! 2>/dev/null || true
   fi
-  log "Kiosk launched"
+  chmod +x "$HELPER"
+  chown "$KIOSK_USER" "$HELPER"
+
+  # Run the helper as the desktop user, fully detached.
+  # Redirect to a log file so errors are visible: /tmp/paneo-kiosk.log
+  if command -v at >/dev/null 2>&1; then
+    # `at now` runs in a clean environment, fully detached from this session
+    echo "sudo -u $KIOSK_USER $HELPER" | at now 2>/dev/null
+    log "Kiosk scheduled via 'at' — check /tmp/paneo-kiosk.log if it doesn't appear"
+  else
+    # Fallback: nohup + double-fork via a subshell
+    (
+      sleep 1
+      sudo -u "$KIOSK_USER" nohup "$HELPER" > /tmp/paneo-kiosk.log 2>&1 &
+    ) &
+    log "Kiosk launched (log: /tmp/paneo-kiosk.log)"
+  fi
 else
   log "Kiosk binary not found — skipping restart"
 fi
