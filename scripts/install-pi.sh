@@ -131,6 +131,39 @@ create_token_if_needed() {
   fi
 
   wait_for_server
+
+  # If the database already has devices (e.g. paneo-data volume reused from a
+  # previous install), reuse an existing token instead of creating a duplicate.
+  #   1. Try to find a device whose name matches $DEVICE_NAME.
+  #   2. If none matches, use the first device in the list.
+  #   3. Only create a NEW device when the list is completely empty.
+  local devices_json
+  devices_json="$(curl -fsS "$SERVER/api/devices" 2>/dev/null || echo '[]')"
+
+  # Extract token for a device whose name matches DEVICE_NAME (case-insensitive)
+  TOKEN="$(printf '%s' "$devices_json" \
+    | grep -o "{[^}]*\"name\":\"$DEVICE_NAME\"[^}]*}" \
+    | grep -o '"token":"[^"]*"' | head -1 \
+    | sed -E 's/.*:"([^"]*)"/\1/')"
+
+  # If no name-match, fall back to the first device
+  if [ -z "$TOKEN" ]; then
+    TOKEN="$(printf '%s' "$devices_json" \
+      | grep -o '"token":"[^"]*"' | head -1 \
+      | sed -E 's/.*:"([^"]*)"/\1/')"
+  fi
+
+  if [ -n "$TOKEN" ]; then
+    local existing_name
+    existing_name="$(printf '%s' "$devices_json" \
+      | grep -o "{[^}]*\"token\":\"$TOKEN\"[^}]*}" \
+      | grep -o '"name":"[^"]*"' | head -1 \
+      | sed -E 's/.*:"([^"]*)"/\1/')"
+    log "Reusing existing display device: ${existing_name} (token: ${TOKEN})"
+    return
+  fi
+
+  # No devices at all — create one
   log "Creating display device: $DEVICE_NAME"
   # grep/sed, not `node -e` — this runs before we know whether install_agent
   # will need Node at all (ENABLE_AGENT could be 0), and the server itself is
