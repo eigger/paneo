@@ -178,18 +178,38 @@ install_kiosk() {
   display_url="${SERVER}/d/${TOKEN}"
 
   log "Writing kiosk launcher for $display_url"
-  cat > /usr/local/bin/paneo-kiosk <<EOF
+  # Runtime Wayland detection: $WAYLAND_DISPLAY is set by the desktop session
+  # manager when Wayland is active (Wayfire/Labwc on Bookworm), empty on X11.
+  # We evaluate it at launch time, not at install time.
+  cat > /usr/local/bin/paneo-kiosk <<'KIOSK_EOF'
 #!/usr/bin/env bash
 set -e
-export DISPLAY="\${DISPLAY:-:0}"
-xset s off >/dev/null 2>&1 || true
-xset -dpms >/dev/null 2>&1 || true
-xset s noblank >/dev/null 2>&1 || true
-exec "$chrome" --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble "$display_url"
+if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then
+  # Wayland (Wayfire / Labwc — Raspberry Pi OS Bookworm default)
+  OZONE="--ozone-platform=wayland --enable-features=UseOzonePlatform"
+  wlr-randr >/dev/null 2>&1 || true   # wake display if possible; ignore errors
+else
+  # X11 (Bullseye / LXDE)
+  export DISPLAY="${DISPLAY:-:0}"
+  OZONE=""
+  xset s off    >/dev/null 2>&1 || true
+  xset -dpms    >/dev/null 2>&1 || true
+  xset s noblank >/dev/null 2>&1 || true
+fi
+KIOSK_EOF
+  # Append the chrome command with runtime-expanded variables
+  cat >> /usr/local/bin/paneo-kiosk <<EOF
+exec "$chrome" \$OZONE \\
+  --kiosk --noerrdialogs --disable-infobars \\
+  --disable-session-crashed-bubble \\
+  --no-first-run \\
+  "$display_url"
 EOF
   chmod +x /usr/local/bin/paneo-kiosk
 
   log "Registering desktop autostart"
+
+  # ---- LXDE / Bullseye ----
   mkdir -p "$home/.config/autostart" "$home/.config/lxsession/LXDE-pi"
   cat > "$home/.config/autostart/paneo-kiosk.desktop" <<EOF
 [Desktop Entry]
@@ -198,13 +218,43 @@ Name=Paneo Kiosk
 Exec=/usr/local/bin/paneo-kiosk
 X-GNOME-Autostart-enabled=true
 EOF
-  cat > "$home/.config/lxsession/LXDE-pi/autostart" <<EOF
+  if [ -d "$home/.config/lxsession/LXDE-pi" ]; then
+    cat >> "$home/.config/lxsession/LXDE-pi/autostart" <<EOF
 @xset s off
 @xset -dpms
 @xset s noblank
 @/usr/local/bin/paneo-kiosk
 EOF
-  chown -R "$SERVICE_USER:$SERVICE_USER" "$home/.config/autostart" "$home/.config/lxsession"
+  fi
+
+  # ---- Wayfire (Bookworm default on Pi 4/5) ----
+  local wayfire_ini="$home/.config/wayfire.ini"
+  mkdir -p "$home/.config"
+  if [ ! -f "$wayfire_ini" ]; then
+    cat > "$wayfire_ini" <<EOF
+[autostart]
+paneo-kiosk = /usr/local/bin/paneo-kiosk
+EOF
+  elif ! grep -q "paneo-kiosk" "$wayfire_ini"; then
+    if grep -q "^\[autostart\]" "$wayfire_ini"; then
+      sed -i "/^\[autostart\]/a paneo-kiosk = /usr/local/bin/paneo-kiosk" "$wayfire_ini"
+    else
+      printf '\n[autostart]\npaneo-kiosk = /usr/local/bin/paneo-kiosk\n' >> "$wayfire_ini"
+    fi
+  fi
+
+  # ---- Labwc (alternative Wayland compositor on some Pi builds) ----
+  mkdir -p "$home/.config/labwc"
+  local labwc_as="$home/.config/labwc/autostart"
+  if ! grep -q "paneo-kiosk" "$labwc_as" 2>/dev/null; then
+    echo "/usr/local/bin/paneo-kiosk &" >> "$labwc_as"
+  fi
+
+  chown -R "$SERVICE_USER:$SERVICE_USER" \
+    "$home/.config/autostart" \
+    "$home/.config/lxsession" \
+    "$home/.config/wayfire.ini" \
+    "$home/.config/labwc" 2>/dev/null || true
 
   log "Kiosk autostart registered. It will launch after the desktop session starts."
 }
