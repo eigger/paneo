@@ -19,7 +19,8 @@
  */
 
 import { execSync, execFile } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -53,10 +54,8 @@ if (!TOKEN) {
   process.exit(1);
 }
 
-// Detect available power control method once at startup
-const POWER_METHOD = detectPowerMethod();
 console.log(`[agent] ${AGENT_COMPONENT} v${AGENT_VERSION}`);
-console.log(`[agent] power method: ${POWER_METHOD}`);
+console.log(`[agent] power method (best guess at startup): ${describePowerMethod()}`);
 console.log(`[agent] connecting to ${WS_URL}`);
 
 let ws = null;
@@ -124,47 +123,67 @@ function startHeartbeat() {
 
 // ---------------------------------------------------------------------------
 // Power control -- platform-specific
+//
+// The method is resolved fresh on every setPower() call, not cached once at
+// startup: this agent normally starts (systemd, multi-user.target) before the
+// desktop/Wayland session exists, so a one-time check at boot can permanently
+// miss wlr-randr even though it'll work fine once the compositor is up.
 // ---------------------------------------------------------------------------
 
-function detectPowerMethod() {
+function hasCommand(cmd) {
+  try { execSync(`which ${cmd}`, { stdio: 'ignore' }); return true; } catch { return false; }
+}
+
+// The agent's systemd service (see scripts/install-pi.sh) doesn't inherit the
+// desktop session's WAYLAND_DISPLAY/XDG_RUNTIME_DIR -- wlr-randr needs both to
+// reach the compositor's socket. It runs as the same OS user as the kiosk
+// (systemd `User=`), so os.userInfo().uid gives the right runtime dir directly,
+// mirroring how scripts/update-pi.sh's kiosk-restart step finds the socket.
+function resolveWaylandEnv() {
   try {
-    execSync('which vcgencmd', { stdio: 'ignore' });
-    return 'vcgencmd';
-  } catch { /* not found */ }
-  try {
-    execSync('which wlr-randr', { stdio: 'ignore' });
-    return 'wlr-randr';
-  } catch { /* not found */ }
-  try {
-    execSync('which xset', { stdio: 'ignore' });
-    return 'xset';
-  } catch { /* not found */ }
+    const runtimeDir = `/run/user/${os.userInfo().uid}`;
+    const socket = readdirSync(runtimeDir).find((f) => /^wayland-\d+$/.test(f));
+    return socket ? { XDG_RUNTIME_DIR: runtimeDir, WAYLAND_DISPLAY: socket } : null;
+  } catch {
+    return null; // compositor not up yet, or not a Wayland session
+  }
+}
+
+function describePowerMethod() {
+  if (hasCommand('wlr-randr') && resolveWaylandEnv()) return 'wlr-randr';
+  if (hasCommand('xset') && process.env.DISPLAY) return 'xset';
+  if (hasCommand('vcgencmd')) return 'vcgencmd (fallback -- often a no-op on Bookworm/full-KMS)';
   return 'simulator';
 }
 
 function setPower(on) {
-  switch (POWER_METHOD) {
-    case 'vcgencmd':
-      // Pi firmware: 0 = off, 1 = on
-      run('vcgencmd', ['display_power', on ? '1' : '0']);
-      break;
-    case 'wlr-randr': {
-      // Wayland: find active outputs and toggle
-      const output = process.env.PANEO_DISPLAY_OUTPUT || 'HDMI-A-1';
-      run('wlr-randr', ['--output', output, on ? '--on' : '--off']);
-      break;
-    }
-    case 'xset':
-      run('xset', ['dpms', 'force', on ? 'on' : 'off']);
-      break;
-    default:
-      // Simulator mode -- just log
-      console.log(`[agent] [SIMULATED] screen power ${on ? 'ON' : 'OFF'}`);
+  // Prefer wlr-randr whenever a live Wayland compositor socket can actually be
+  // found -- on modern (Bookworm/full-KMS) Raspberry Pi OS, `vcgencmd
+  // display_power` frequently exists but silently does nothing (the legacy
+  // firmware call doesn't control the panel under the KMS driver), while
+  // wlr-randr talks to the real compositor and is what actually worked in the
+  // previous MagicMirror-based setup this replaces.
+  const waylandEnv = resolveWaylandEnv();
+  if (hasCommand('wlr-randr') && waylandEnv) {
+    const output = process.env.PANEO_DISPLAY_OUTPUT || 'HDMI-A-1';
+    run('wlr-randr', ['--output', output, on ? '--on' : '--off'], waylandEnv);
+    return;
   }
+  if (hasCommand('xset') && process.env.DISPLAY) {
+    run('xset', ['dpms', 'force', on ? 'on' : 'off']);
+    return;
+  }
+  if (hasCommand('vcgencmd')) {
+    run('vcgencmd', ['display_power', on ? '1' : '0']);
+    return;
+  }
+  // Simulator mode -- just log
+  console.log(`[agent] [SIMULATED] screen power ${on ? 'ON' : 'OFF'}`);
 }
 
-function run(cmd, args) {
-  execFile(cmd, args, (err, stdout, stderr) => {
+function run(cmd, args, extraEnv) {
+  const opts = extraEnv ? { env: { ...process.env, ...extraEnv } } : undefined;
+  execFile(cmd, args, opts, (err) => {
     if (err) console.error(`[agent] ${cmd} failed: ${err.message}`);
     else console.log(`[agent] ${cmd} ${args.join(' ')} -> ok`);
   });

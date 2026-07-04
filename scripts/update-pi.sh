@@ -85,7 +85,19 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 5. Update the kiosk launcher script
+# 5. Best-effort: proprietary video codecs for Chromium (H.264/AAC — an .mp4
+#    in paneo.photo otherwise silently fails to decode; Debian's chromium
+#    package ships without them for licensing reasons). Not present in every
+#    repo/arch, so failure here is not fatal — .webm videos work regardless.
+# ---------------------------------------------------------------------------
+if command -v apt-get >/dev/null 2>&1; then
+  apt-get install -y chromium-codecs-ffmpeg-extra 2>/dev/null \
+    && log "Installed chromium-codecs-ffmpeg-extra" \
+    || log "chromium-codecs-ffmpeg-extra not available — skipping (unrelated to this update)"
+fi
+
+# ---------------------------------------------------------------------------
+# 6. Update the kiosk launcher script
 # ---------------------------------------------------------------------------
 KIOSK_BIN="/usr/local/bin/paneo-kiosk"
 if [ -f "$KIOSK_BIN" ]; then
@@ -118,7 +130,7 @@ if [ -f "$KIOSK_BIN" ]; then
       '  xset s noblank >/dev/null 2>&1 || true' \
       'fi' \
       > "$KIOSK_BIN"
-    printf 'exec "%s" $OZONE \\\n  --kiosk --noerrdialogs --disable-infobars \\\n  --disable-session-crashed-bubble \\\n  --no-first-run \\\n  --disable-translate \\\n  --disable-features=Translate \\\n  --password-store=basic \\\n  "%s"\n' \
+    printf 'exec "%s" $OZONE \\\n  --kiosk --noerrdialogs --disable-infobars \\\n  --disable-session-crashed-bubble \\\n  --no-first-run \\\n  --disable-translate \\\n  --disable-features=Translate \\\n  --password-store=basic \\\n  --autoplay-policy=no-user-gesture-required \\\n  "%s"\n' \
       "$CHROME" "$DISPLAY_URL" >> "$KIOSK_BIN"
     chmod +x "$KIOSK_BIN"
     log "Kiosk launcher updated"
@@ -130,7 +142,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 6. Restart the kiosk browser
+# 7. Restart the kiosk browser
 # ---------------------------------------------------------------------------
 log "Restarting kiosk..."
 
@@ -201,7 +213,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 7. Summary
+# 8. Summary
 # ---------------------------------------------------------------------------
 log "Done"
 if curl -fsS "$SERVER/api/version" >/dev/null 2>&1; then

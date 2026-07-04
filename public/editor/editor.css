@@ -273,9 +273,10 @@ main { flex: 1; display: flex; min-height: 0; }
   border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
 .group-new-row button:hover { background: #232c3d; }
 #device-connected { margin-bottom: 8px; }
-.button-row { display: flex; gap: 8px; }
+.button-row { display: flex; gap: 8px; align-items: stretch; }
+.button-row + .button-row { margin-top: 8px; } /* e.g. reload/identify row stacked above the power on/off row */
 .button-row button { flex: 1 1 0; background: #1c2330; color: #cfe0ff; border: 1px solid #2a3040;
-  border-radius: 8px; padding: 8px; cursor: pointer; font-size: 13px; }
+  border-radius: 8px; padding: 8px; cursor: pointer; font-size: 13px; line-height: 1.2; }
 .button-row button:hover { background: #232c3d; }
 #device-delete-btn { width: 100%; margin-top: 10px; }
 
@@ -301,6 +302,10 @@ main { flex: 1; display: flex; min-height: 0; }
 .agent-badge { font-size: 12px; margin: 4px 0 8px; opacity: 0.75; }
 .agent-badge.connected { color: #4ade80; opacity: 1; }
 
+/* §M4: power schedule set/not-set indicator */
+.power-schedule-status { font-size: 12px; margin: 4px 0 8px; opacity: 0.6; }
+.power-schedule-status.set { color: #4ade80; opacity: 1; }
+
 /* §M4: power on/off buttons */
 .button-row button.power-on  { color: #4ade80; border-color: #14532d; }
 .button-row button.power-on:hover:not(:disabled) { background: #14532d; }
@@ -311,7 +316,7 @@ main { flex: 1; display: flex; min-height: 0; }
 /* §M4: power schedule form */
 .power-schedule-row { grid-template-columns: auto 1fr; align-items: center; gap: 8px 12px; margin: 8px 0; }
 .power-schedule-row label { font-size: 12px; opacity: 0.75; }
-.power-schedule-row input[type="time"] { width: 100%; }
+.power-schedule-row input[type="text"] { width: 100%; font-variant-numeric: tabular-nums; }
 
 /* ---- §M5: Home Assistant (paneo.homeassistant) ---- */
 .w-ha { display: flex; flex-direction: column; height: 100%; padding: 12px; justify-content: space-between; box-sizing: border-box; }
@@ -364,6 +369,14 @@ main { flex: 1; display: flex; min-height: 0; }
   0% { transform: scale(1) translate(0, 0); }
   100% { transform: scale(1.12) translate(-2%, -1%); }
 }
+
+/* ---- paneo.photo transition effects (D30) ---- */
+.ms-stage { position: relative; width: 100%; height: 100%; }
+.ms-layer { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ms-fade-enter { opacity: 0; transition: opacity 0.7s ease; }
+.ms-fade-enter.ms-active { opacity: 1; }
+.ms-slide-enter { transform: translateX(100%); transition: transform 0.7s ease; }
+.ms-slide-enter.ms-active { transform: translateX(0); }
 
 /* ---- §Photo Overlay & Transparent BG ---- */
 .ed-widget { z-index: 2; }

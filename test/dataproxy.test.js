@@ -57,6 +57,77 @@ test('fetchCalendarSource with a range excludes events outside [from, to)', asyn
 
 test.after(() => server.close());
 
+// Recurring events (RRULE) — e.g. Apple's holiday calendars, which store one
+// VEVENT with FREQ=YEARLY per holiday instead of a separate VEVENT per year.
+// node-ical only reports the *first* occurrence as `e.start`; without expanding
+// the rule, every later recurrence is invisible once "now" has passed it.
+const DAY = 24 * HOUR;
+// Rounded to the second, matching icsTimestamp()'s truncation — otherwise these
+// expected values would carry sub-second precision the ICS round-trip can't.
+const roundToSec = (ms) => Math.floor(ms / 1000) * 1000;
+const rruleOffsets = {
+  past40d: roundToSec(now - 40 * DAY),   // first-ever occurrence — long past
+  future5d: roundToSec(now + 5 * DAY),   // next occurrence — should surface in "upcoming" mode
+  future50d: roundToSec(now + 50 * DAY), // still within the 90-day lookahead
+  future95d: roundToSec(now + 95 * DAY), // beyond the 90-day lookahead — should NOT surface
+};
+const RRULE_ICS_BODY = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Paneo//Test//EN\r\n` +
+  `BEGIN:VEVENT\r\nUID:holiday\r\nDTSTAMP:${icsTimestamp(rruleOffsets.past40d)}\r\n` +
+  `DTSTART:${icsTimestamp(rruleOffsets.past40d)}\r\nDTEND:${icsTimestamp(rruleOffsets.past40d + HOUR)}\r\n` +
+  `RRULE:FREQ=DAILY;INTERVAL=45;COUNT=4\r\nSUMMARY:holiday\r\nEND:VEVENT\r\n` +
+  `END:VCALENDAR\r\n`;
+
+const rruleServer = createServer((req, res) => {
+  res.writeHead(200, { 'content-type': 'text/calendar' });
+  res.end(RRULE_ICS_BODY);
+});
+await new Promise((resolve) => rruleServer.listen(0, resolve));
+const rruleUrl = `http://localhost:${rruleServer.address().port}/holiday.ics`;
+
+test('fetchCalendarSource expands a recurring (RRULE) event\'s future occurrences in "upcoming" mode', async () => {
+  const events = await fetchCalendarSource(rruleUrl);
+  const starts = events.map((e) => new Date(e.start).getTime()).sort((a, b) => a - b);
+  // past40d (already passed) and future95d (beyond the 90-day lookahead) must
+  // NOT appear — only the two occurrences actually "upcoming" within the window.
+  assert.deepEqual(starts, [rruleOffsets.future5d, rruleOffsets.future50d]);
+});
+
+test('fetchCalendarSource expands a recurring (RRULE) event\'s occurrence inside an arbitrary range', async () => {
+  // A range far from the original DTSTART (past40d) that only overlaps the
+  // future50d recurrence — proves the rule is expanded, not just the first date checked.
+  const events = await fetchCalendarSource(rruleUrl, {
+    from: rruleOffsets.future50d - DAY,
+    to: rruleOffsets.future50d + DAY,
+  });
+  assert.equal(events.length, 1);
+  assert.equal(new Date(events[0].start).getTime(), rruleOffsets.future50d);
+});
+
+test.after(() => rruleServer.close());
+
+// Apple's calendars attach a LANGUAGE parameter to SUMMARY (e.g. the iCloud
+// holiday calendars); node-ical then returns `{ params, val }` instead of a
+// plain string, which would otherwise stringify to "[object Object]".
+const PARAM_SUMMARY_ICS_BODY = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Paneo//Test//EN\r\n` +
+  `BEGIN:VEVENT\r\nUID:paramtest\r\nDTSTAMP:${icsTimestamp(offsets.future1h)}\r\n` +
+  `DTSTART:${icsTimestamp(offsets.future1h)}\r\nDTEND:${icsTimestamp(offsets.future1h + HOUR)}\r\n` +
+  `SUMMARY;LANGUAGE=ko:새해\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`;
+
+const paramSummaryServer = createServer((req, res) => {
+  res.writeHead(200, { 'content-type': 'text/calendar' });
+  res.end(PARAM_SUMMARY_ICS_BODY);
+});
+await new Promise((resolve) => paramSummaryServer.listen(0, resolve));
+const paramSummaryUrl = `http://localhost:${paramSummaryServer.address().port}/param.ics`;
+
+test('fetchCalendarSource unwraps a parameterized SUMMARY (e.g. SUMMARY;LANGUAGE=ko:...) to a plain string', async () => {
+  const events = await fetchCalendarSource(paramSummaryUrl);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].summary, '새해');
+});
+
+test.after(() => paramSummaryServer.close());
+
 test('gradeIndex maps values to tier index, boundaries inclusive on the lower tier', () => {
   const thresholds = [30, 80, 150]; // PM10-style
   assert.equal(gradeIndex(0, thresholds), 0);

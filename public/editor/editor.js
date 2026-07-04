@@ -133,6 +133,7 @@ const powerOnInput = document.getElementById('power-on-time');
 const powerOffInput = document.getElementById('power-off-time');
 const powerSaveBtn = document.getElementById('power-save-btn');
 const powerClearBtn = document.getElementById('power-clear-btn');
+const powerScheduleStatus = document.getElementById('power-schedule-status');
 const palette = document.getElementById('palette');
 const paletteBtn = document.getElementById('palette-btn');
 const inspectorBody = document.getElementById('inspector-body');
@@ -143,6 +144,16 @@ let groups = [];
 let versionManifest = null;
 
 const uid = () => Math.random().toString(36).slice(2, 9);
+const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/; // 24-hour HH:MM
+
+function renderPowerScheduleStatus() {
+  if (!powerScheduleStatus || !device) return;
+  const ps = device.powerSchedule;
+  const s = Array.isArray(ps) ? ps[0] : ps;
+  const isSet = !!(s?.on || s?.off);
+  powerScheduleStatus.textContent = isSet ? t('powerScheduleSet', s.on, s.off) : t('powerScheduleNotSet');
+  powerScheduleStatus.className = 'power-schedule-status' + (isSet ? ' set' : '');
+}
 // `w` is optional context about the widget being rendered — `widgetId` lets a
 // widget address itself in a server call (e.g. paneo.todo's tap-to-toggle),
 // and `preview: true` tells widgets they're in the editor canvas, not a live
@@ -358,9 +369,18 @@ function initSelectors() {
     if (!device) return;
     const on = powerOnInput.value.trim();
     const off = powerOffInput.value.trim();
+    // Plain text HH:MM inputs (not <input type=time>) so the displayed format
+    // is always 24-hour regardless of the browser/OS locale, matching how
+    // paneo.timer's inspector fields already avoid the native time picker's
+    // locale-dependent (12h/AM-PM in some locales) rendering.
+    if ((on && !HHMM_RE.test(on)) || (off && !HHMM_RE.test(off))) {
+      toast(t('powerTimeInvalid'));
+      return;
+    }
     const schedule = (on || off) ? [{ on: on || null, off: off || null }] : null;
     device.powerSchedule = schedule;
     await api(`/api/devices/${device.id}`, { method: 'PATCH', body: JSON.stringify({ powerSchedule: schedule }) });
+    renderPowerScheduleStatus();
     toast(t('powerSaved'));
   });
   if (powerClearBtn) powerClearBtn.addEventListener('click', async () => {
@@ -369,6 +389,7 @@ function initSelectors() {
     powerOnInput.value = '';
     powerOffInput.value = '';
     await api(`/api/devices/${device.id}`, { method: 'PATCH', body: JSON.stringify({ powerSchedule: null }) });
+    renderPowerScheduleStatus();
     toast(t('powerSaved'));
   });
 
@@ -441,6 +462,7 @@ function syncDeviceMetaUI() {
     powerOnInput.value = s?.on ?? '';
     powerOffInput.value = s?.off ?? '';
   }
+  renderPowerScheduleStatus();
   // §M4: power buttons
   const hasAgent = device.agentPresent ?? false;
   if (cmdPowerOnBtn) { cmdPowerOnBtn.disabled = !hasAgent; cmdPowerOnBtn.title = hasAgent ? '' : t('agentMissingTip'); }

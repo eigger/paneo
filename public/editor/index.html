@@ -88,14 +88,15 @@
 
       <div class="field">
         <label data-i18n="powerLabel"></label>
+        <div class="power-schedule-status" id="power-schedule-status"></div>
         <div class="grid2 power-schedule-row">
           <label data-i18n="powerOnTime"></label>
-          <input type="time" id="power-on-time" />
+          <input type="text" id="power-on-time" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" maxlength="5" inputmode="numeric" />
           <label data-i18n="powerOffTime"></label>
-          <input type="time" id="power-off-time" />
+          <input type="text" id="power-off-time" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" maxlength="5" inputmode="numeric" />
         </div>
         <div class="button-row">
-          <button type="button" id="power-save-btn" class="settings-close" data-i18n="powerSave"></button>
+          <button type="button" id="power-save-btn" data-i18n="powerSave"></button>
           <button type="button" id="power-clear-btn" data-i18n="powerClear"></button>
         </div>
       </div>
