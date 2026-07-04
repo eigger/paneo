@@ -52,8 +52,20 @@ if (!existingColumns.has('powerSchedule')) db.exec('ALTER TABLE devices ADD COLU
 if (!existingColumns.has('agentPresent')) db.exec('ALTER TABLE devices ADD COLUMN agentPresent INTEGER NOT NULL DEFAULT 0');
 
 function defaultLayout() {
-  // rows is a *minimum* — grows automatically to fit content (public/shared/gridlayout.js)
-  return { grid: { cols: 12, rows: 7, gap: 8 }, background: '#0b0f19', widgets: [] };
+  // Multi-page shape (editor.js's `layout.pages[]`) — each page carries its own
+  // grid/background/widgets. New devices are seeded directly in this shape so the
+  // editor never has to migrate a fresh device's layout; only pre-existing devices
+  // saved before multi-page support ever hit editor.js's migrateToPages() fallback.
+  return {
+    pages: [{
+      id: 'page-0',
+      widgets: [],
+      // rows is a *minimum* — grows automatically to fit content (public/shared/gridlayout.js)
+      grid: { cols: 12, rows: 7, gap: 8 },
+      background: '#0b0f19',
+    }],
+    currentPageIndex: 0,
+  };
 }
 
 function rowToDevice(row) {
@@ -248,6 +260,54 @@ export async function publish(id) {
   const publishedAt = new Date().toISOString();
   stmt.updatePublish.run(JSON.stringify(d.draft), publishedAt, id);
   return getDevice(id);
+}
+
+function findWidgetInLayout(layout, widgetId) {
+  if (!layout) return null;
+  const all = layout.pages?.length ? layout.pages.flatMap((p) => p.widgets || []) : (layout.widgets || []);
+  return all.find((w) => w.id === widgetId) || null;
+}
+
+// paneo.todo runtime edits from the display (docs/design.md D27/D28): these are
+// runtime interactions, not design-time edits, so they write straight to
+// `published` (what displays render) and never touch `draft` — they can't
+// collide with someone mid-edit in the inspector, and a later "적용" naturally
+// overwrites them like any other unpublished draft change would.
+function mutateTodoItems(token, widgetId, mutate) {
+  const device = getDeviceByToken(token);
+  if (!device) return null;
+  const w = findWidgetInLayout(device.published, widgetId);
+  if (!w || w.type !== 'paneo.todo') return null;
+  if (!Array.isArray(w.config?.todoItems)) w.config = { ...w.config, todoItems: [] };
+  if (!mutate(w.config.todoItems)) return null;
+  stmt.updatePublish.run(JSON.stringify(device.published), device.publishedAt, device.id);
+  return device;
+}
+
+export function toggleTodoItem(token, widgetId, index) {
+  return mutateTodoItems(token, widgetId, (items) => {
+    const item = items[index];
+    if (!item) return false;
+    item.done = !item.done;
+    return true;
+  });
+}
+
+export function addTodoItem(token, widgetId, text) {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return null;
+  return mutateTodoItems(token, widgetId, (items) => {
+    items.push({ done: false, text: trimmed });
+    return true;
+  });
+}
+
+export function deleteTodoItem(token, widgetId, index) {
+  return mutateTodoItems(token, widgetId, (items) => {
+    if (index < 0 || index >= items.length) return false;
+    items.splice(index, 1);
+    return true;
+  });
 }
 
 // §M5 settings store helpers

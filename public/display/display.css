@@ -16,7 +16,7 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 
 .w-clock {
   display: flex;
-  align-items: center;
+  align-items: center; /* centers the whole h:m + sec row in the widget box */
   justify-content: center;
   gap: 0.3em;
   width: 100%;
@@ -25,8 +25,11 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
-.clock-hm { font-size: clamp(28px, 58cqmin, 84px); font-weight: 600; letter-spacing: 0.02em; }
-.clock-sec { font-size: 0.36em; opacity: 0.55; align-self: flex-end; margin-bottom: 0.14em; }
+.clock-hm { font-size: clamp(32px, 64cqmin, 96px); font-weight: 600; letter-spacing: 0.02em; }
+/* No align-self override here (previously flex-end + margin-bottom, which is what
+   dropped the seconds well below the h:m line) — inheriting align-items: center
+   from .w-clock keeps both pieces on the same vertical center. */
+.clock-sec { font-size: 0.36em; opacity: 0.55; }
 .w-date { text-align: center; }
 .w-date .date-main { font-size: clamp(16px, 3vw, 40px); font-weight: 500; }
 .w-date .date-weekday { font-size: clamp(13px, 2vw, 24px); opacity: 0.6; margin-top: 4px; }
@@ -43,6 +46,17 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 .weather-temp { font-size: clamp(24px, 6vw, 56px); font-weight: 600; }
 .weather-text { font-size: clamp(13px, 2vw, 20px); opacity: 0.75; margin-top: 2px; }
 .weather-loc { font-size: clamp(11px, 1.6vw, 16px); opacity: 0.5; margin-top: 4px; }
+
+.w-airquality { display: flex; flex-direction: column; justify-content: center; gap: 6px;
+  width: 100%; height: 100%; padding: 10px 14px; box-sizing: border-box; }
+.aq-loc { font-size: clamp(11px, 1.5vw, 15px); opacity: 0.6; text-align: center; margin-bottom: 2px; }
+.aq-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.aq-label { font-size: clamp(11px, 1.6vw, 16px); opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.aq-value { font-size: clamp(14px, 2.2vw, 22px); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
+.aq-grade-0 { color: #60a5fa; }
+.aq-grade-1 { color: #86efac; }
+.aq-grade-2 { color: #fbbf24; }
+.aq-grade-3 { color: #f87171; }
 
 .w-calendar, .w-rss { list-style: none; width: 100%; height: 100%; padding: 12px;
   overflow: hidden; font-size: clamp(12px, 1.8vw, 18px); }
@@ -115,9 +129,59 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 .ha-toggle-btn:hover { background: #2563eb; }
 .ha-toggle-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
+/* ---- World clock (paneo.worldclock) ---- */
+.w-worldclock { display: flex; flex-direction: column; justify-content: center; gap: 6px; width: 100%; height: 100%; padding: 10px 14px; box-sizing: border-box; overflow: hidden; }
+.wc-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.wc-label { font-size: clamp(11px, 1.6vw, 16px); opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.wc-time { font-size: clamp(14px, 2.4vw, 26px); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
+
+/* ---- D-Day countdown (paneo.dday) ---- */
+.w-dday { display: flex; flex-direction: column; justify-content: center; gap: 6px; width: 100%; height: 100%; padding: 10px 14px; box-sizing: border-box; overflow: hidden; }
+.dday-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.dday-label { font-size: clamp(11px, 1.6vw, 16px); opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.dday-val { font-size: clamp(14px, 2.6vw, 28px); font-weight: 700; color: #60a5fa; white-space: nowrap; flex-shrink: 0; }
+
+/* ---- To-do list (paneo.todo) ---- */
+.w-todo { list-style: none; width: 100%; height: 100%; padding: 12px; overflow: hidden auto; font-size: clamp(12px, 1.8vw, 18px); display: flex; flex-direction: column; gap: 4px; }
+.todo-row { display: flex; align-items: center; gap: 8px; }
+.todo-check { flex-shrink: 0; opacity: 0.7; }
+.todo-done .todo-check { color: #86efac; }
+.todo-done .todo-text { text-decoration: line-through; opacity: 0.5; }
+.todo-interactive .todo-row { cursor: pointer; padding: 4px 6px; margin: 0 -6px; border-radius: 6px; transition: background 0.15s; }
+.todo-interactive .todo-row:active { background: rgba(255, 255, 255, 0.08); }
+.todo-delete { margin-left: auto; flex-shrink: 0; background: none; border: none; color: inherit; opacity: 0.4;
+  font-size: 1.2em; line-height: 1; cursor: pointer; padding: 2px 6px; }
+.todo-delete:hover { opacity: 0.9; color: #ff9aa7; }
+.todo-empty-hint { opacity: 0.4; font-size: 0.85em; padding: 4px 6px; }
+.todo-add-row { display: flex; gap: 6px; margin-top: 4px; padding: 0 6px; }
+.todo-add-input { flex: 1 1 auto; min-width: 0; background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 6px; color: inherit;
+  padding: 4px 8px; font-size: 0.9em; font-family: inherit; }
+.todo-add-input::placeholder { color: rgba(255, 255, 255, 0.35); }
+.todo-add-btn { flex: 0 0 auto; width: 28px; background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 6px; color: inherit;
+  cursor: pointer; font-size: 1.1em; line-height: 1; }
+.todo-add-btn:hover { background: rgba(255, 255, 255, 0.18); }
+
+/* ---- Exchange rate (paneo.exchangerate) ---- */
+.w-exchangerate { text-align: center; }
+.fx-pair { font-size: clamp(12px, 1.8vw, 18px); opacity: 0.7; }
+.fx-rate { font-size: clamp(18px, 3.2vw, 34px); font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.fx-date { font-size: clamp(10px, 1.3vw, 13px); opacity: 0.4; margin-top: 4px; }
+
+/* ---- QR code (paneo.qrcode) ---- */
+.w-qrcode { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 100%; padding: 8px; box-sizing: border-box; }
+.qr-img { max-width: 100%; max-height: 100%; object-fit: contain; background: #fff; border-radius: 6px; padding: 6px; }
+.qr-caption { font-size: clamp(10px, 1.4vw, 14px); opacity: 0.7; text-align: center; }
+
 /* ---- §M5: Ken Burns Photo slide & fit mode ---- */
 .fit-contain { background-size: contain !important; background-repeat: no-repeat !important; }
 .fit-cover { background-size: cover !important; }
+/* .fit-cover/.fit-contain above target background-size (images); object-fit is the
+   video equivalent — background-size is simply a no-op on a <video> element. */
+.w-video { width: 100%; height: 100%; display: block; background: #000; }
+.w-video.fit-cover { object-fit: cover; }
+.w-video.fit-contain { object-fit: contain; }
 .w-image-container { position: relative; width: 100%; height: 100%; overflow: hidden; border-radius: inherit; }
 .w-image-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-position: center; transform: scale(1); }
 .w-image-bg.kenburns { animation: kenburns-anim 16s ease-in-out infinite alternate; }
@@ -128,4 +192,11 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
   100% { transform: scale(1.12) translate(-2%, -1%); }
 }
 
-
+/* ---- §Photo Overlay & Transparent BG ---- */
+.widget { z-index: 2; }
+/* Generic "background layer" widgets (widgets.js: backgroundLayer:true, e.g.
+   paneo.photo) render behind everything else — driven by a data attribute set
+   from the widget-def flag, not this widget type's name, so any other widget
+   (built-in or plugin) can opt into the same behavior. */
+.widget[data-background-layer="true"] { z-index: 1; }
+.widget-content.transparent-bg { background: transparent !important; border-color: transparent !important; }

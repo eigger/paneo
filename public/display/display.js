@@ -1,5 +1,6 @@
-import { renderWidget, loadPlugins } from '/shared/widgets.js';
+import { widgets, renderWidget, loadPlugins } from '/shared/widgets.js';
 import { applyGridContainer, applyGridItem, applyCustomCss } from '/shared/gridlayout.js';
+import { attachSwipeNavigation } from '/shared/swipe.js';
 
 const stage = document.getElementById('stage');
 const statusEl = document.getElementById('status');
@@ -27,29 +28,72 @@ function resolvePerformanceProfile(profile) {
   return (mem && mem <= 1) || cores <= 2 ? 'low' : 'high';
 }
 
+let currentPageIndex = 0;
+
+function getPageWidgets(layout) {
+  if (layout.pages && layout.pages.length > 0) {
+    const idx = Math.min(currentPageIndex, layout.pages.length - 1);
+    return { widgets: layout.pages[idx].widgets || [], pageCount: layout.pages.length };
+  }
+  return { widgets: layout.widgets || [], pageCount: 1 };
+}
+
+function renderPageIndicator(layout) {
+  let indicator = document.getElementById('page-indicator');
+  const hasPages = layout.pages && layout.pages.length > 1;
+  if (!hasPages) {
+    if (indicator) indicator.style.display = 'none';
+    return;
+  }
+  if (!indicator) {
+    indicator = document.createElement('div');
+    indicator.id = 'page-indicator';
+    indicator.style.cssText = 'position:fixed;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:7px;z-index:100;pointer-events:none;';
+    document.body.appendChild(indicator);
+  }
+  indicator.style.display = 'flex';
+  indicator.innerHTML = '';
+  const count = layout.pages.length;
+  for (let i = 0; i < count; i++) {
+    const dot = document.createElement('span');
+    dot.style.cssText = `width:7px;height:7px;border-radius:50%;background:${i === currentPageIndex ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.25)'};transition:background 0.3s,transform 0.3s;${i === currentPageIndex ? 'transform:scale(1.3);' : ''}`;
+    indicator.appendChild(dot);
+  }
+}
+
 function applyLayout(layout, ctx) {
   if (!layout) return;
   lastLayout = layout;
   if (ctx) lastCtx = { ...ctx, performanceProfile: resolvePerformanceProfile(ctx.performanceProfile) };
   document.documentElement.lang = (lastCtx.locale || 'ko-KR').split('-')[0];
-  document.body.style.background = layout.background || '#0b0f19';
-  applyGridContainer(stage, layout);
+
+  const { widgets: pageWidgets, pageCount } = getPageWidgets(layout);
+  const page = (layout.pages && layout.pages[Math.min(currentPageIndex, layout.pages.length - 1)]) || layout;
+  document.body.style.background = page.background || layout.background || '#0b0f19';
+  applyGridContainer(stage, page);
 
   // clean up any running widget timers before wiping the DOM
   stage.querySelectorAll('.widget-content').forEach((c) => c._cleanup?.());
   stage.innerHTML = '';
 
-  for (const w of layout.widgets || []) {
+  for (const w of pageWidgets) {
     const node = document.createElement('div');
     node.className = 'widget';
+    node.dataset.type = w.type;
+    if (widgets[w.type]?.backgroundLayer) node.dataset.backgroundLayer = 'true';
     applyGridItem(node, w);
     const content = document.createElement('div');
-    content.className = 'widget-content';
+    content.className = 'widget-content' + (w.transparentBg ? ' transparent-bg' : '');
     node.appendChild(content);
     stage.appendChild(node);
-    renderWidget(content, w.type, w.config, lastCtx);
+    // widgetId + deviceToken let a widget address itself in a runtime write-back
+    // call (e.g. paneo.todo's tap-to-toggle) — the display only ever knows its
+    // own pairing token, never the internal device id.
+    renderWidget(content, w.type, w.config, { ...lastCtx, widgetId: w.id, deviceToken: token });
     applyCustomCss(content, w.customCss);
   }
+
+  renderPageIndicator(layout);
 
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify({ layout, ctx: lastCtx }));
@@ -109,3 +153,23 @@ function connect() {
 connect();
 
 window.addEventListener('resize', () => applyLayout(lastLayout));
+
+// ---- Page navigation (swipe/drag + keyboard) ----
+function switchDisplayPage(delta) {
+  if (!lastLayout || !lastLayout.pages || lastLayout.pages.length <= 1) return;
+  const count = lastLayout.pages.length;
+  currentPageIndex = (currentPageIndex + delta + count) % count;
+  applyLayout(lastLayout);
+}
+
+// Swipe-to-switch-page — works for mouse and touch alike (see shared/swipe.js;
+// there is no separate touch-only fallback here, since Pointer Events already
+// fire for touch input and a second listener set would double-advance pages
+// on every real swipe).
+attachSwipeNavigation(document, (dir) => switchDisplayPage(dir));
+
+// Keyboard navigation
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft') switchDisplayPage(-1);
+  else if (e.key === 'ArrowRight') switchDisplayPage(1);
+});

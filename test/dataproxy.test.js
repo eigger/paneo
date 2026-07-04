@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchCalendarSource } from '../src/dataproxy.js';
+import { fetchCalendarSource, gradeIndex, fetchQrCode } from '../src/dataproxy.js';
 
 // Timestamps relative to "now" so the test doesn't depend on when it's run.
 const HOUR = 3600 * 1000;
@@ -56,3 +56,27 @@ test('fetchCalendarSource with a range excludes events outside [from, to)', asyn
 });
 
 test.after(() => server.close());
+
+test('gradeIndex maps values to tier index, boundaries inclusive on the lower tier', () => {
+  const thresholds = [30, 80, 150]; // PM10-style
+  assert.equal(gradeIndex(0, thresholds), 0);
+  assert.equal(gradeIndex(30, thresholds), 0); // boundary belongs to the lower ("좋음") tier
+  assert.equal(gradeIndex(31, thresholds), 1);
+  assert.equal(gradeIndex(80, thresholds), 1);
+  assert.equal(gradeIndex(81, thresholds), 2);
+  assert.equal(gradeIndex(150, thresholds), 2);
+  assert.equal(gradeIndex(151, thresholds), 3);
+  assert.equal(gradeIndex(1000, thresholds), 3);
+});
+
+test('fetchQrCode generates a local PNG data URL (no network call)', async () => {
+  const { dataUrl } = await fetchQrCode('https://example.com', 300);
+  assert.match(dataUrl, /^data:image\/png;base64,/);
+});
+
+test('fetchQrCode clamps size to the [64, 1000] range', async () => {
+  const tooSmall = await fetchQrCode('x', 10);
+  const tooBig = await fetchQrCode('x', 5000);
+  assert.match(tooSmall.dataUrl, /^data:image\/png;base64,/);
+  assert.match(tooBig.dataUrl, /^data:image\/png;base64,/);
+});
