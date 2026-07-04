@@ -147,6 +147,25 @@ create_token_if_needed() {
   log "Created display token: ${TOKEN}"
 }
 
+install_korean_fonts() {
+  # Check if Nanum fonts are already installed
+  if fc-list :lang=ko 2>/dev/null | grep -qi nanum; then
+    log "Korean fonts already installed"
+    return
+  fi
+
+  log "Installing Korean fonts (Nanum)"
+  apt-get update -qq
+  # fonts-nanum      : NanumGothic, NanumMyeongjo, NanumBarunGothic
+  # fonts-nanum-extra: NanumSquare, NanumBarunpen, etc.
+  apt-get install -y fonts-nanum fonts-nanum-extra 2>/dev/null \
+    || apt-get install -y fonts-nanum 2>/dev/null \
+    || log "Warning: could not install Nanum fonts — Korean text may not render correctly"
+  # Rebuild font cache so Chromium picks up the new fonts immediately
+  fc-cache -fv >/dev/null 2>&1 || true
+  log "Korean fonts installed"
+}
+
 install_chromium() {
   if command -v chromium-browser >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1; then
     return
@@ -321,12 +340,14 @@ main() {
       install_server
       ;;
     display)
+      install_korean_fonts
       create_token_if_needed
       install_kiosk
       install_agent
       ;;
     all)
       install_server
+      install_korean_fonts
       create_token_if_needed
       install_kiosk
       install_agent
