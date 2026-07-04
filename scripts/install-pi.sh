@@ -269,6 +269,7 @@ exec "$chrome" \$OZONE \\
   --no-first-run \\
   --disable-translate \\
   --disable-features=Translate \\
+  --password-store=basic \\
   "$display_url"
 EOF
   chmod +x /usr/local/bin/paneo-kiosk
