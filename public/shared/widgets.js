@@ -230,7 +230,7 @@ function weatherCodeIcon(code) {
 
 export const widgets = {
   'paneo.clock': {
-    version: '1.0.0',
+    version: '1.1.0',
     label: { ko: '시계', en: 'Clock' },
     icon: '🕐',
     category: 'basic',
@@ -238,31 +238,64 @@ export const widgets = {
     minSize: { w: 2, h: 1 },
     requires: [],
     permissions: [],
-    config: [{ key: 'hour12', label: { ko: '12시간제', en: '12-hour' }, type: 'checkbox', default: false }],
+    config: [
+      { key: 'hour12', label: { ko: '12시간제', en: '12-hour' }, type: 'checkbox', default: false },
+      { key: 'showSeconds', label: { ko: '초 표시', en: 'Show seconds' }, type: 'checkbox', default: true },
+    ],
     render(el, config, ctx = {}) {
       const locale = ctx.locale || 'ko-KR';
       const tz = ctx.timezone || undefined;
-      const hm = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', hour12: !!config.hour12, timeZone: tz });
-      const sec = new Intl.DateTimeFormat(locale, { second: '2-digit', hour12: false, timeZone: tz });
+      const showSeconds = config.showSeconds !== false;
+      const fmt = new Intl.DateTimeFormat(locale, {
+        hour: '2-digit', minute: '2-digit',
+        ...(showSeconds ? { second: '2-digit' } : {}),
+        hour12: !!config.hour12, timeZone: tz,
+      });
+
+      function fit() {
+        const hmEl = el.querySelector('.clock-hm');
+        if (!hmEl) return;
+        // Reset to the CSS clamp() value before measuring — content length
+        // (hour12 adds " AM"/"PM", showSeconds adds ":SS") varies per config,
+        // and the clamp()'s cqmin-based max doesn't know about that, so
+        // without this the text can wrap/overflow its box at some sizes.
+        hmEl.style.fontSize = '';
+        fitTextToBox(hmEl, 0.4);
+      }
+
       const update = () => {
         const now = new Date();
-        const hmStr = hm.formatToParts(now).map((p) => {
-          if ((p.type === 'hour' || p.type === 'minute') && /^\d+$/.test(p.value)) {
-            return p.value.padStart(2, '0');
+        // Split formatToParts into three buckets so the seconds portion can
+        // be wrapped in its own (smaller) span *between* minutes and any
+        // hour12 AM/PM suffix — e.g. "12:58" + small ":33" + " AM" — instead
+        // of just appending it after the whole string.
+        let before = '', secPart = '', after = '';
+        const parts = fmt.formatToParts(now);
+        for (let i = 0; i < parts.length; i++) {
+          const p = parts[i];
+          let val = p.value;
+          if ((p.type === 'hour' || p.type === 'minute' || p.type === 'second') && /^\d+$/.test(val)) {
+            val = val.padStart(2, '0');
           }
-          return p.value;
-        }).join('');
-        const secStr = sec.formatToParts(now).map((p) => {
-          if (p.type === 'second' && /^\d+$/.test(p.value)) {
-            return p.value.padStart(2, '0');
-          }
-          return p.value;
-        }).join('');
-        el.innerHTML = `<div class="w-clock"><span class="clock-hm">${hmStr}</span><span class="clock-sec">${secStr}</span></div>`;
+          if (p.type === 'second') secPart += val;
+          else if (parts[i + 1]?.type === 'second') secPart += val; // the ':' right before seconds
+          else if (secPart) after += val;
+          else before += val;
+        }
+        el.innerHTML = `<div class="w-clock"><span class="clock-hm">${before}${secPart ? `<span class="clock-sec">${secPart}</span>` : ''}${after}</span></div>`;
+        // update() replaces .clock-hm's innerHTML wholesale every tick, which
+        // would otherwise throw away the previous fit() shrink along with
+        // the old node — content length is stable tick-to-tick (always the
+        // same digit count), but re-fitting after every tick is cheap and
+        // keeps this correct without tracking whether a resize happened.
+        fit();
       };
       update();
       const t = setInterval(update, 1000);
-      el._cleanup = () => clearInterval(t);
+
+      const ro = new ResizeObserver(fit);
+      ro.observe(el);
+      el._cleanup = () => { clearInterval(t); ro.disconnect(); };
     },
   },
 

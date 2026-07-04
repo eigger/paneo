@@ -345,24 +345,31 @@ async function publishLayout(base, deviceId, layout) {
   if (!pub.ok) throw new Error(`publish failed: ${pub.status}`);
 }
 
+// Reference grid for legacy (non-boxW/boxH) specs — matches the main
+// dashboard capture (12x9 @ 1280x720) so vw/vh-sized text (clock/date/timer
+// use vw, same as a real kiosk display) renders at realistic sizes instead
+// of hitting its CSS clamp() *floor* just because the capture viewport
+// happens to be small. The widget only spans its own w/h in the corner of
+// that full-size grid — the screenshot still crops to just the widget.
+const REFERENCE_VIEWPORT = { width: 1280, height: 720 };
+
 function soloLayout(spec) {
-  // boxW/boxH specs want an exact pixel box, not a grid-cell count — a 1x1
-  // grid with the single widget spanning it renders at exactly the viewport
-  // size (minus the fixed outer pad computed in captureWidgetShots below).
-  const cols = spec.boxW ? 1 : spec.w;
-  const rows = spec.boxH ? 1 : spec.h;
+  if (spec.boxW || spec.boxH) {
+    // Exact-pixel-box specs (size-adaptive widgets): a 1x1 grid with the
+    // single widget spanning it renders at exactly the viewport size (minus
+    // the outer pad computed in captureWidgetShots below) — these widgets
+    // size off container-query units, not vw/vh, so there's no reference
+    // grid needed for them.
+    return {
+      grid: { cols: 1, rows: 1, gap: 8 },
+      background: '#0b0f19',
+      widgets: [{ id: 'solo', type: spec.type, x: 0, y: 0, w: 1, h: 1, config: spec.config }],
+    };
+  }
   return {
-    grid: { cols, rows, gap: 8 },
+    grid: { cols: 12, rows: 9, gap: 8 },
     background: '#0b0f19',
-    widgets: [{
-      id: 'solo',
-      type: spec.type,
-      x: 0,
-      y: 0,
-      w: cols,
-      h: rows,
-      config: spec.config,
-    }],
+    widgets: [{ id: 'solo', type: spec.type, x: 0, y: 0, w: spec.w, h: spec.h, config: spec.config }],
   };
 }
 
@@ -432,19 +439,17 @@ async function captureWidgetShots(browser, base, deviceId, token) {
       : rawSpec;
     await publishLayout(base, deviceId, soloLayout(spec));
 
-    const cellW = 130;
-    const cellH = 96;
-    const pad = 24;
     // applyGridContainer() sets the canvas's own outer padding equal to the
     // grid `gap` (see gridlayout.js) — for a boxW/boxH spec the 1x1 grid's
     // single cell *is* the whole widget, so its actual rendered size is
-    // exactly `viewport - 2*gap`. The legacy w/h (grid-cell-count) specs
-    // below aren't precision-sensitive (no size threshold to hit), so they
-    // keep the more generous `pad` margin instead.
+    // exactly `viewport - 2*gap`. Legacy specs use the fixed REFERENCE_VIEWPORT
+    // instead (see soloLayout) so their vw/vh-sized text renders realistically.
     const GRID_GAP = 8;
-    const width = spec.boxW ? spec.boxW + GRID_GAP * 2 : spec.w * cellW + pad * 2;
-    const height = spec.boxH ? spec.boxH + GRID_GAP * 2 : spec.h * cellH + pad * 2;
-    await page.setViewportSize({ width, height });
+    if (spec.boxW || spec.boxH) {
+      await page.setViewportSize({ width: spec.boxW + GRID_GAP * 2, height: spec.boxH + GRID_GAP * 2 });
+    } else {
+      await page.setViewportSize(REFERENCE_VIEWPORT);
+    }
 
     await page.goto(`${base}/d/${token}`, { waitUntil: 'networkidle' });
     await page.waitForSelector(spec.ready, { timeout: 30_000 });

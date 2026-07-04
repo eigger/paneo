@@ -103,11 +103,12 @@ main { flex: 1; display: flex; min-height: 0; }
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
-.clock-hm { font-size: clamp(28px, 60cqmin, 82px); font-weight: 600; }
-/* No align-self override here (previously flex-end + margin-bottom, which is what
-   dropped the seconds well below the h:m line) — inheriting align-items: center
-   from .w-clock keeps both pieces on the same vertical center. */
-.clock-sec { font-size: 0.36em; opacity: 0.55; }
+.clock-hm { font-size: clamp(28px, 60cqmin, 82px); font-weight: 600; white-space: nowrap; max-width: 100%; }
+/* .clock-sec is nested *inside* .clock-hm (not a flex sibling) so its `em`
+   resolves against .clock-hm's own font-size, not .w-clock's — as a sibling
+   it was inheriting the ancestor's base 16px font-size instead, rendering
+   at an illegibly tiny ~6px regardless of the clock's actual size. */
+.clock-sec { font-size: 0.5em; opacity: 0.6; }
 .w-date { text-align: center; }
 .w-date .date-main { font-size: clamp(14px, 2.2vw, 28px); font-weight: 500; }
 .w-date .date-weekday { font-size: clamp(11px, 1.6vw, 18px); opacity: 0.6; margin-top: 3px; }
