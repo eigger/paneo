@@ -691,12 +691,18 @@ function render() {
     const content = document.createElement('div');
     content.className = 'widget-content' + (w.transparentBg ? ' transparent-bg' : '');
     node.appendChild(content);
+    // Attach to the document *before* renderWidget() — some widgets (e.g.
+    // paneo.calendar.month) synchronously measure their own box on first
+    // render to pick a size-appropriate view without waiting a frame for
+    // ResizeObserver. Measuring a still-detached node returns 0x0, which
+    // picked the smallest view every time the canvas re-rendered (e.g. on
+    // every widget click, since attachDrag's plain-click path calls render()).
+    canvas.appendChild(node);
     renderWidget(content, w.type, w.config, ctx(w));
     applyCustomCss(content, w.customCss);
     const handle = document.createElement('div');
     handle.className = 'resize-handle';
     node.appendChild(handle);
-    canvas.appendChild(node);
     attachDrag(node, w, handle);
   }
   renderPageSelector();
@@ -853,7 +859,13 @@ function renderInspector() {
     // reactively below whenever that controlling field changes.
     if (c.showIf && (w.config?.[c.showIf.key] ?? '') !== c.showIf.equals) continue;
     if (c.type === 'checkbox') {
-      html += `<div class="field check"><label><input type="checkbox" data-config="${c.key}" ${w.config?.[c.key] ? 'checked' : ''}> ${fieldLabel(c, lang)}</label></div>`;
+      // Fall back to the field's own default when the key is absent from a
+      // widget's saved config (e.g. a widget saved before a new checkbox
+      // field with default:true was added) — reading only w.config?.[c.key]
+      // would show unchecked even though the widget itself treats a missing
+      // key as its default (true), misrepresenting the actually-applied state.
+      const checked = w.config?.[c.key] ?? c.default;
+      html += `<div class="field check"><label><input type="checkbox" data-config="${c.key}" ${checked ? 'checked' : ''}> ${fieldLabel(c, lang)}</label></div>`;
     } else if (c.type === 'number') {
       html += `<div class="field"><label>${fieldLabel(c, lang)}</label><input type="number" data-config="${c.key}" data-config-type="number" value="${esc(w.config?.[c.key])}"></div>`;
     } else if (c.type === 'textarea') {

@@ -1,4 +1,16 @@
-@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css');
+/* Self-hosted (not a CDN @import) — see the matching comment in display.css.
+   The editor doesn't need to work fully offline the way the kiosk display
+   does, but sharing one font file/path keeps the two UIs' text rendering
+   identical rather than depending on whether jsdelivr happens to be
+   reachable from wherever the editor is opened. */
+@font-face {
+  font-family: 'Pretendard Variable';
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+  src: url('/shared/fonts/PretendardVariable.woff2') format('woff2-variations'),
+       url('/shared/fonts/PretendardVariable.woff2') format('woff2');
+}
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; font-family: 'Pretendard Variable', Pretendard, -apple-system, 'Segoe UI', system-ui, sans-serif;
@@ -90,13 +102,19 @@ main { flex: 1; display: flex; min-height: 0; }
   box-shadow: 0 2px 6px rgba(0,0,0,0.4); transition: transform 0.15s ease; }
 .resize-handle:hover { transform: scale(1.15); }
 .ed-widget .widget-content.transparent-bg { background: transparent !important; border-color: transparent !important; box-shadow: none !important; }
+/* transparent-bg's box-shadow:none above and .selected's glow above both target
+   .widget-content with equal specificity, so whichever rule comes later in the
+   file wins outright — a selected widget with a transparent background (e.g.
+   paneo.photo set to full-bleed) silently lost its selection glow entirely.
+   This selector has one more class than either, so it always wins regardless
+   of source order. */
+.ed-widget.selected .widget-content.transparent-bg { box-shadow: 0 0 0 2px #3b82f6, 0 0 22px rgba(59,130,246,0.35) !important; }
 
 /* widget visuals mirror the display (kept minimal for editor) */
 .w-clock {
   display: flex;
-  align-items: center; /* centers the whole h:m + sec row in the widget box */
+  align-items: center;
   justify-content: center;
-  gap: 0.3em;
   width: 100%;
   height: 100%;
   padding: 6px 10px;
@@ -435,7 +453,6 @@ main { flex: 1; display: flex; min-height: 0; }
    from the widget-def flag, not this widget type's name, so any other widget
    (built-in or plugin) can opt into the same behavior. */
 .ed-widget[data-background-layer="true"] { z-index: 1; }
-.ed-widget .widget-content.transparent-bg { background: transparent !important; border-color: transparent !important; }
 
 /* ---- §Page Selector ----
    #page-selector is a static, empty div in index.html; renderPageSelector() in

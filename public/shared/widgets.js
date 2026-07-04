@@ -40,6 +40,13 @@ function escapeAttr(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }
 
+// For text interpolated into innerHTML (event summaries, RSS titles, ...) —
+// these come from third-party calendars/feeds a user subscribes to, so a
+// hostile source could otherwise inject markup/scripts into the kiosk/editor.
+function escapeHtml(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 function escapeStyleUrl(s) {
   return String(s ?? '').replace(/'/g, '%27').replace(/\)/g, '%29');
 }
@@ -746,7 +753,7 @@ export const widgets = {
           const color = urlColors[e.source] || '';
           const style = color ? `style="border-left:3px solid ${color}; padding-left:6px; margin-left:0"` : '';
           const timeHtml = expanded ? `<span class="cal-time">${timeFmt.format(new Date(e.start))}</span>` : '';
-          return `<li ${style}><span class="cal-date">${dateFmt.format(new Date(e.start))}</span>${timeHtml}<span class="cal-summary">${e.summary}</span></li>`;
+          return `<li ${style}><span class="cal-date">${dateFmt.format(new Date(e.start))}</span>${timeHtml}<span class="cal-summary">${escapeHtml(e.summary)}</span></li>`;
         }).join('');
         const legendHtml = (expanded && hasColors)
           ? `<div class="cal-legend">${parsedUrls.filter((u) => urlColors[u]).map((u) => {
@@ -865,7 +872,7 @@ export const widgets = {
               const style = color ? `style="border-left:3px solid ${color}"` : '';
               return `<div class="cal-d-item" ${style}>
                 <span class="cal-d-time">${timeFmt.format(new Date(e.start))}</span>
-                <span class="cal-d-summary">${String(e.summary || '').replace(/</g, '&lt;')}</span>
+                <span class="cal-d-summary">${escapeHtml(e.summary)}</span>
               </div>`;
             }).join('')
           : `<div class="cal-d-empty">${isKo ? '일정 없음' : 'No events'}</div>`;
@@ -920,7 +927,7 @@ export const widgets = {
               const title = String(e.summary || '').slice(0, 14);
               const color = urlColors[e.source] || '';
               const style = color ? `style="background:${color}33; border-left:2px solid ${color}; padding-left:2px"` : '';
-              return `<div class="cal-m-event" ${style} title="${String(e.summary || '').replace(/"/g, '&quot;')}">${title}</div>`;
+              return `<div class="cal-m-event" ${style} title="${escapeAttr(e.summary)}">${escapeHtml(title)}</div>`;
             }).join('');
             const moreCount = events.length > 3 ? `<div class="cal-m-more">+${events.length - 3}</div>` : '';
 
@@ -1042,7 +1049,8 @@ export const widgets = {
       function renderList(items, showDate) {
         const html = items.map((it) => {
           const dateHtml = (showDate && it.isoDate) ? `<span class="rss-date">${dateFmt.format(new Date(it.isoDate))}</span>` : '';
-          return `<li><a href="${it.link}" target="_blank" rel="noopener">${it.title}</a>${dateHtml}</li>`;
+          const href = safeHttpUrl(it.link);
+          return `<li><a href="${escapeAttr(href)}" target="_blank" rel="noopener">${escapeHtml(it.title)}</a>${dateHtml}</li>`;
         }).join('');
         el.innerHTML = `<ul class="w-rss">${html || '<li>-</li>'}</ul>`;
       }

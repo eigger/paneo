@@ -1,4 +1,16 @@
-@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css');
+/* Self-hosted (not a CDN @import) — this is a kiosk display that must render
+   correctly with no internet access at all (docs/design.md §6 offline
+   resilience), and the font file is installed onto the Pi itself alongside
+   the app by scripts/install-pi.sh / update-pi.sh, so editor and display
+   always render identically regardless of what the device can reach. */
+@font-face {
+  font-family: 'Pretendard Variable';
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+  src: url('/shared/fonts/PretendardVariable.woff2') format('woff2-variations'),
+       url('/shared/fonts/PretendardVariable.woff2') format('woff2');
+}
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; background: #0b0f19;
@@ -20,9 +32,8 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 
 .w-clock {
   display: flex;
-  align-items: center; /* centers the whole h:m + sec row in the widget box */
+  align-items: center;
   justify-content: center;
-  gap: 0.3em;
   width: 100%;
   height: 100%;
   padding: 8px 12px;
