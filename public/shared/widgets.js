@@ -18,6 +18,24 @@ function errorBox(el, text) {
   el.innerHTML = `<div class="w-error">${text}</div>`;
 }
 
+// Shrinks an element's font size (in px) until its content actually fits its
+// own box — for text whose length isn't knowable ahead of time (e.g. a Home
+// Assistant entity's friendly_name/state can be arbitrarily long). CSS
+// clamp() alone scales with container/viewport size, not content length, so
+// a long value can still overflow. Starts from whatever clamp() already
+// computed for the current size and only shrinks further as needed.
+function fitTextToBox(el, minRatio = 0.4) {
+  if (!el) return;
+  const startSize = parseFloat(getComputedStyle(el).fontSize) || 16;
+  const minSize = Math.max(9, startSize * minRatio);
+  let size = startSize;
+  el.style.fontSize = size + 'px';
+  while (size > minSize && (el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight)) {
+    size -= 1;
+    el.style.fontSize = size + 'px';
+  }
+}
+
 function escapeAttr(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }
@@ -122,6 +140,22 @@ function isoDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// N full Monday-start weeks centered on `date`'s own week — weeksBefore=0,
+// weeksAfter=0 gives exactly this week (7 cells); 1/1 gives prev+this+next
+// (21 cells). Used by paneo.calendar.month's week/3-week auto views; the
+// month view keeps using buildMonthGrid() since a month doesn't align to
+// week boundaries the same way (it pads to the *calendar* month, not N weeks).
+function buildWeekRows(date, weeksBefore, weeksAfter) {
+  const mondayOffset = (date.getDay() + 6) % 7; // days since this week's Monday
+  const firstDay = new Date(date.getFullYear(), date.getMonth(), date.getDate() - mondayOffset - weeksBefore * 7);
+  const totalDays = (weeksBefore + 1 + weeksAfter) * 7;
+  const cells = [];
+  for (let i = 0; i < totalDays; i++) {
+    cells.push(new Date(firstDay.getFullYear(), firstDay.getMonth(), firstDay.getDate() + i));
+  }
+  return cells;
+}
+
 // ---- timer helpers ----
 // Accepts "HH:MM" or "HH:MM:SS" — seconds default to 0 when omitted.
 function parseTargetTime(hhmmss) {
@@ -157,9 +191,46 @@ function formatDuration(totalSeconds, signed) {
   return `${sign}${hh}${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
+// Home Assistant's documented weather.* condition strings (state), mapped to
+// an icon + localized label for paneo.homeassistant's dedicated weather card.
+const HA_WEATHER_ICONS = {
+  'clear-night': '🌙', cloudy: '☁️', fog: '🌫️', hail: '🌨️',
+  lightning: '⚡', 'lightning-rainy': '⛈️', partlycloudy: '⛅',
+  pouring: '🌧️', rainy: '🌦️', snowy: '🌨️', 'snowy-rainy': '🌨️',
+  sunny: '☀️', windy: '💨', 'windy-variant': '💨', exceptional: '⚠️',
+};
+const HA_WEATHER_TEXT_KO = {
+  'clear-night': '맑은 밤', cloudy: '흐림', fog: '안개', hail: '우박',
+  lightning: '번개', 'lightning-rainy': '뇌우', partlycloudy: '구름 조금',
+  pouring: '폭우', rainy: '비', snowy: '눈', 'snowy-rainy': '진눈깨비',
+  sunny: '맑음', windy: '바람', 'windy-variant': '바람', exceptional: '특이 기상',
+};
+const HA_WEATHER_TEXT_EN = {
+  'clear-night': 'Clear night', cloudy: 'Cloudy', fog: 'Fog', hail: 'Hail',
+  lightning: 'Lightning', 'lightning-rainy': 'Thunderstorm', partlycloudy: 'Partly cloudy',
+  pouring: 'Pouring', rainy: 'Rainy', snowy: 'Snowy', 'snowy-rainy': 'Snowy/rainy',
+  sunny: 'Sunny', windy: 'Windy', 'windy-variant': 'Windy', exceptional: 'Exceptional',
+};
+
+// Open-Meteo's WMO weather-code table, mapped to an icon for paneo.weather's
+// forecast strip (its data source uses numeric codes, unlike HA's condition
+// strings above).
+const WEATHER_CODE_ICON = {
+  0: '☀️', 1: '🌤️', 2: '⛅', 3: '☁️',
+  45: '🌫️', 48: '🌫️',
+  51: '🌦️', 53: '🌦️', 55: '🌧️',
+  61: '🌧️', 63: '🌧️', 65: '🌧️',
+  71: '🌨️', 73: '🌨️', 75: '❄️', 77: '🌨️',
+  80: '🌦️', 81: '🌧️', 82: '⛈️',
+  95: '⛈️', 96: '⛈️', 99: '⛈️',
+};
+function weatherCodeIcon(code) {
+  return WEATHER_CODE_ICON[code] ?? '🌡️';
+}
+
 export const widgets = {
   'paneo.clock': {
-    version: '1.0.0',
+    version: '1.1.0',
     label: { ko: '시계', en: 'Clock' },
     icon: '🕐',
     category: 'basic',
@@ -167,31 +238,64 @@ export const widgets = {
     minSize: { w: 2, h: 1 },
     requires: [],
     permissions: [],
-    config: [{ key: 'hour12', label: { ko: '12시간제', en: '12-hour' }, type: 'checkbox', default: false }],
+    config: [
+      { key: 'hour12', label: { ko: '12시간제', en: '12-hour' }, type: 'checkbox', default: false },
+      { key: 'showSeconds', label: { ko: '초 표시', en: 'Show seconds' }, type: 'checkbox', default: true },
+    ],
     render(el, config, ctx = {}) {
       const locale = ctx.locale || 'ko-KR';
       const tz = ctx.timezone || undefined;
-      const hm = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', hour12: !!config.hour12, timeZone: tz });
-      const sec = new Intl.DateTimeFormat(locale, { second: '2-digit', hour12: false, timeZone: tz });
+      const showSeconds = config.showSeconds !== false;
+      const fmt = new Intl.DateTimeFormat(locale, {
+        hour: '2-digit', minute: '2-digit',
+        ...(showSeconds ? { second: '2-digit' } : {}),
+        hour12: !!config.hour12, timeZone: tz,
+      });
+
+      function fit() {
+        const hmEl = el.querySelector('.clock-hm');
+        if (!hmEl) return;
+        // Reset to the CSS clamp() value before measuring — content length
+        // (hour12 adds " AM"/"PM", showSeconds adds ":SS") varies per config,
+        // and the clamp()'s cqmin-based max doesn't know about that, so
+        // without this the text can wrap/overflow its box at some sizes.
+        hmEl.style.fontSize = '';
+        fitTextToBox(hmEl, 0.4);
+      }
+
       const update = () => {
         const now = new Date();
-        const hmStr = hm.formatToParts(now).map((p) => {
-          if ((p.type === 'hour' || p.type === 'minute') && /^\d+$/.test(p.value)) {
-            return p.value.padStart(2, '0');
+        // Split formatToParts into three buckets so the seconds portion can
+        // be wrapped in its own (smaller) span *between* minutes and any
+        // hour12 AM/PM suffix — e.g. "12:58" + small ":33" + " AM" — instead
+        // of just appending it after the whole string.
+        let before = '', secPart = '', after = '';
+        const parts = fmt.formatToParts(now);
+        for (let i = 0; i < parts.length; i++) {
+          const p = parts[i];
+          let val = p.value;
+          if ((p.type === 'hour' || p.type === 'minute' || p.type === 'second') && /^\d+$/.test(val)) {
+            val = val.padStart(2, '0');
           }
-          return p.value;
-        }).join('');
-        const secStr = sec.formatToParts(now).map((p) => {
-          if (p.type === 'second' && /^\d+$/.test(p.value)) {
-            return p.value.padStart(2, '0');
-          }
-          return p.value;
-        }).join('');
-        el.innerHTML = `<div class="w-clock"><span class="clock-hm">${hmStr}</span><span class="clock-sec">${secStr}</span></div>`;
+          if (p.type === 'second') secPart += val;
+          else if (parts[i + 1]?.type === 'second') secPart += val; // the ':' right before seconds
+          else if (secPart) after += val;
+          else before += val;
+        }
+        el.innerHTML = `<div class="w-clock"><span class="clock-hm">${before}${secPart ? `<span class="clock-sec">${secPart}</span>` : ''}${after}</span></div>`;
+        // update() replaces .clock-hm's innerHTML wholesale every tick, which
+        // would otherwise throw away the previous fit() shrink along with
+        // the old node — content length is stable tick-to-tick (always the
+        // same digit count), but re-fitting after every tick is cheap and
+        // keeps this correct without tracking whether a resize happened.
+        fit();
       };
       update();
       const t = setInterval(update, 1000);
-      el._cleanup = () => clearInterval(t);
+
+      const ro = new ResizeObserver(fit);
+      ro.observe(el);
+      el._cleanup = () => { clearInterval(t); ro.disconnect(); };
     },
   },
 
@@ -288,6 +392,7 @@ export const widgets = {
       let pendingNextIndex = 0;
       let activeVideoEl = null;
       let hasPainted = false;
+      let paintGeneration = 0; // guards against a stale preload finishing after a newer paint() started
 
       // Random-without-immediate-repeat when shuffle is on, otherwise plain sequential.
       const pickNextIndex = () => {
@@ -312,6 +417,7 @@ export const widgets = {
       const paint = () => {
         clearTimeout(timer);
         if (activeVideoEl) { activeVideoEl.pause(); activeVideoEl = null; }
+        const myGeneration = ++paintGeneration;
 
         if (!items.length) {
           el.innerHTML = `<div class="w-image w-placeholder"></div>`;
@@ -329,55 +435,75 @@ export const widgets = {
         // video forever instead of moving to the next item.
         pendingNextIndex = pickNextIndex();
 
-        let innerHtml;
-        if (isVideo) {
-          innerHtml = `<video class="w-video${fitClass}" src="${escapeAttr(currentUrl)}" autoplay muted playsinline ${loopSingle ? 'loop' : ''}></video>`;
-        } else {
-          const nextUrl = items[pendingNextIndex] ?? currentUrl;
-          innerHtml = useEffects
-            ? `<div class="w-image-container">
-                <div class="w-image-bg kenburns${fitClass}" style="background-image:url('${escapeStyleUrl(currentUrl)}')"></div>
-                <div class="w-image-bg-preload" style="background-image:url('${escapeStyleUrl(nextUrl)}')"></div>
-              </div>`
-            : `<div class="w-image${fitClass}" style="background-image:url('${escapeStyleUrl(currentUrl)}')"></div>`;
-        }
+        const commitPaint = () => {
+          if (myGeneration !== paintGeneration) return; // a newer paint() started meanwhile — abandon this one
 
-        // First paint (or transition:none) swaps content instantly, same as before
-        // this option existed. Otherwise the new layer fades/slides in on top of
-        // the old one, which is removed once the CSS transition finishes.
-        let newLayer;
-        if (!hasPainted || transition === 'none') {
-          el.innerHTML = `<div class="ms-stage"><div class="ms-layer ms-active">${innerHtml}</div></div>`;
-          newLayer = el.querySelector('.ms-layer');
-        } else {
-          const stage = el.querySelector('.ms-stage');
-          newLayer = document.createElement('div');
-          newLayer.className = `ms-layer ms-${transition}-enter`;
-          newLayer.innerHTML = innerHtml;
-          stage.appendChild(newLayer);
-          void newLayer.offsetWidth; // force a reflow so the enter->active transition actually runs
-          newLayer.classList.add('ms-active');
-          const oldLayers = [...stage.children].filter((c) => c !== newLayer);
-          setTimeout(() => oldLayers.forEach((l) => l.remove()), TRANSITION_MS);
-        }
-        hasPainted = true;
-
-        // Videos drive their own advance via 'ended' (so playback isn't cut short
-        // by the photo interval) instead of the setTimeout used for images below.
-        // 'error' also advances — a video that fails to decode (e.g. an unsupported
-        // codec) would otherwise freeze the slideshow on that item forever, since
-        // 'ended' never fires for a video that never started playing.
-        if (isVideo) {
-          activeVideoEl = newLayer.querySelector('video');
-          if (!loopSingle) {
-            activeVideoEl.addEventListener('ended', advance);
-            activeVideoEl.addEventListener('error', advance);
+          let innerHtml;
+          if (isVideo) {
+            innerHtml = `<video class="w-video${fitClass}" src="${escapeAttr(currentUrl)}" autoplay muted playsinline ${loopSingle ? 'loop' : ''}></video>`;
+          } else {
+            const nextUrl = items[pendingNextIndex] ?? currentUrl;
+            innerHtml = useEffects
+              ? `<div class="w-image-container">
+                  <div class="w-image-bg kenburns${fitClass}" style="background-image:url('${escapeStyleUrl(currentUrl)}')"></div>
+                  <div class="w-image-bg-preload" style="background-image:url('${escapeStyleUrl(nextUrl)}')"></div>
+                </div>`
+              : `<div class="w-image${fitClass}" style="background-image:url('${escapeStyleUrl(currentUrl)}')"></div>`;
           }
-          return;
-        }
 
-        if (items.length > 1 || source === 'unsplash') {
-          timer = setTimeout(advance, delayUntilNextBoundary(intervalSec * 1000));
+          // First paint (or transition:none) swaps content instantly, same as before
+          // this option existed. Otherwise the new layer fades/slides in on top of
+          // the old one, which is removed once the CSS transition finishes.
+          let newLayer;
+          if (!hasPainted || transition === 'none') {
+            el.innerHTML = `<div class="ms-stage"><div class="ms-layer ms-active">${innerHtml}</div></div>`;
+            newLayer = el.querySelector('.ms-layer');
+          } else {
+            const stage = el.querySelector('.ms-stage');
+            newLayer = document.createElement('div');
+            newLayer.className = `ms-layer ms-${transition}-enter`;
+            newLayer.innerHTML = innerHtml;
+            stage.appendChild(newLayer);
+            void newLayer.offsetWidth; // force a reflow so the enter->active transition actually runs
+            newLayer.classList.add('ms-active');
+            const oldLayers = [...stage.children].filter((c) => c !== newLayer);
+            setTimeout(() => oldLayers.forEach((l) => l.remove()), TRANSITION_MS);
+          }
+          hasPainted = true;
+
+          // Videos drive their own advance via 'ended' (so playback isn't cut short
+          // by the photo interval) instead of the setTimeout used for images below.
+          // 'error' also advances — a video that fails to decode (e.g. an unsupported
+          // codec) would otherwise freeze the slideshow on that item forever, since
+          // 'ended' never fires for a video that never started playing.
+          if (isVideo) {
+            activeVideoEl = newLayer.querySelector('video');
+            if (!loopSingle) {
+              activeVideoEl.addEventListener('ended', advance);
+              activeVideoEl.addEventListener('error', advance);
+            }
+            return;
+          }
+
+          if (items.length > 1 || source === 'unsplash') {
+            timer = setTimeout(advance, delayUntilNextBoundary(intervalSec * 1000));
+          }
+        };
+
+        // Cross-fade/slide only ever animates fully-loaded content — without this,
+        // a cold-cache image starts its fade-in as a blank layer and "pops in" once
+        // the download finishes mid-transition, seen as an intermittent flicker
+        // (worse the slower the network / the less likely the image is cached).
+        if (!isVideo && hasPainted && transition !== 'none') {
+          let settled = false;
+          const proceed = () => { if (!settled) { settled = true; commitPaint(); } };
+          const preloadImg = new Image();
+          preloadImg.onload = proceed;
+          preloadImg.onerror = proceed; // don't block forever on a broken URL
+          preloadImg.src = currentUrl;
+          if (preloadImg.complete) proceed();
+        } else {
+          commitPaint();
         }
       };
 
@@ -433,7 +559,7 @@ export const widgets = {
   },
 
   'paneo.weather': {
-    version: '1.0.0',
+    version: '1.1.0',
     label: { ko: '날씨', en: 'Weather' },
     icon: '☀️',
     category: 'data',
@@ -451,22 +577,68 @@ export const widgets = {
       const units = config.units === 'imperial' ? 'imperial' : 'metric';
       const unitSymbol = units === 'imperial' ? '°F' : '°C';
       loadingBox(el, '...');
-      pollJson(
-        el, `/api/proxy/weather?location=${encodeURIComponent(loc)}&units=${units}&locale=${encodeURIComponent(ctx.locale || 'ko-KR')}`, pollInterval(10 * 60_000, ctx),
-        (data) => {
-          el.innerHTML = `<div class="w-weather">
+      const locale = ctx.locale || 'ko-KR';
+      const tz = ctx.timezone || undefined;
+
+      // Same size-adaptive pattern as the HA weather.* card: the forecast
+      // strip only appears once the widget is resized tall enough for it —
+      // below that, unchanged current-conditions-only card.
+      const WEATHER_FORECAST_MIN_HEIGHT = 200;
+      let latestData = null;
+
+      function renderCard(data, showForecast) {
+        const forecast = data.forecast || [];
+        const forecastHtml = (showForecast && forecast.length)
+          ? `<div class="weather-forecast">${forecast.slice(0, 5).map((f) => {
+              const wd = new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: tz }).format(new Date(f.date));
+              const icon = weatherCodeIcon(f.weatherCode);
+              const hi = f.tempMax != null ? `${Math.round(f.tempMax)}°` : '-';
+              const lo = f.tempMin != null ? `/${Math.round(f.tempMin)}°` : '';
+              return `<div class="weather-fc-day">
+                <div class="weather-fc-wd">${wd}</div>
+                <div class="weather-fc-icon">${icon}</div>
+                <div class="weather-fc-temp">${hi}${lo}</div>
+              </div>`;
+            }).join('')}</div>`
+          : '';
+
+        el.innerHTML = `<div class="w-weather">
+          <div class="weather-body">
             <div class="weather-temp">${Math.round(data.temperature)}${unitSymbol}</div>
             <div class="weather-text">${data.weatherText}</div>
             <div class="weather-loc">${data.location}</div>
-          </div>`;
+          </div>
+          ${forecastHtml}
+        </div>`;
+      }
+
+      const ro = new ResizeObserver((entries) => {
+        if (!latestData) return;
+        const showForecast = entries[0].contentRect.height >= WEATHER_FORECAST_MIN_HEIGHT;
+        const alreadyShown = !!el.querySelector('.weather-forecast');
+        if (showForecast === alreadyShown) return;
+        renderCard(latestData, showForecast);
+      });
+      ro.observe(el);
+
+      pollJson(
+        el, `/api/proxy/weather?location=${encodeURIComponent(loc)}&units=${units}&locale=${encodeURIComponent(locale)}`, pollInterval(10 * 60_000, ctx),
+        (data) => {
+          latestData = data;
+          const rect = el.getBoundingClientRect();
+          renderCard(data, rect.height >= WEATHER_FORECAST_MIN_HEIGHT);
         },
         (err) => errorBox(el, err.message),
       );
+      // pollJson just overwrote el._cleanup with its own poll-interval cleanup
+      // — wrap it so the ResizeObserver still gets disconnected.
+      const pollCleanup = el._cleanup;
+      el._cleanup = () => { pollCleanup?.(); ro.disconnect(); };
     },
   },
 
   'paneo.airquality': {
-    version: '1.0.0',
+    version: '1.1.0',
     label: { ko: '대기질', en: 'Air Quality' },
     icon: '🌫️',
     category: 'data',
@@ -482,26 +654,59 @@ export const widgets = {
       if (!loc) { errorBox(el, ctx.locale?.startsWith('ko') !== false ? '지역을 입력하세요' : 'Set a location'); return; }
       const isKo = ctx.locale?.startsWith('ko') !== false;
       loadingBox(el, '...');
+
+      // PM10/PM2.5 (with KR grade badges) always show — CO/NO2/O3/SO2 have no
+      // grade table and are only useful once the widget is resized tall
+      // enough to hold them, same pattern as the HA/paneo.weather forecast rows.
+      const AQ_EXTRA_MIN_HEIGHT = 220;
+      let latestData = null;
+
+      function renderCard(data, showExtra) {
+        const row = (label, value, grade, idx, unit = '') => `<div class="aq-row">
+          <span class="aq-label">${label}</span>
+          <span class="aq-value aq-grade-${idx ?? 'na'}">${value != null ? Math.round(value) : '-'}${unit}${grade ? ` · ${grade}` : ''}</span>
+        </div>`;
+        const extraHtml = showExtra
+          ? `<div class="aq-extra">
+              ${row('CO', data.co, null, null, ' µg/m³')}
+              ${row('NO2', data.no2, null, null, ' µg/m³')}
+              ${row('O3', data.o3, null, null, ' µg/m³')}
+              ${row('SO2', data.so2, null, null, ' µg/m³')}
+            </div>`
+          : '';
+        el.innerHTML = `<div class="w-airquality">
+          <div class="aq-loc">${data.location}</div>
+          ${row(isKo ? '미세먼지' : 'PM10', data.pm10, data.pm10Grade, data.pm10GradeIndex)}
+          ${row(isKo ? '초미세먼지' : 'PM2.5', data.pm25, data.pm25Grade, data.pm25GradeIndex)}
+          ${extraHtml}
+        </div>`;
+      }
+
+      const ro = new ResizeObserver((entries) => {
+        if (!latestData) return;
+        const showExtra = entries[0].contentRect.height >= AQ_EXTRA_MIN_HEIGHT;
+        const alreadyShown = !!el.querySelector('.aq-extra');
+        if (showExtra === alreadyShown) return;
+        renderCard(latestData, showExtra);
+      });
+      ro.observe(el);
+
       pollJson(
         el, `/api/proxy/airquality?location=${encodeURIComponent(loc)}&locale=${encodeURIComponent(ctx.locale || 'ko-KR')}`, pollInterval(10 * 60_000, ctx),
         (data) => {
-          const row = (label, value, grade, idx) => `<div class="aq-row">
-            <span class="aq-label">${label}</span>
-            <span class="aq-value aq-grade-${idx ?? 'na'}">${value != null ? Math.round(value) : '-'}${grade ? ` · ${grade}` : ''}</span>
-          </div>`;
-          el.innerHTML = `<div class="w-airquality">
-            <div class="aq-loc">${data.location}</div>
-            ${row(isKo ? '미세먼지' : 'PM10', data.pm10, data.pm10Grade, data.pm10GradeIndex)}
-            ${row(isKo ? '초미세먼지' : 'PM2.5', data.pm25, data.pm25Grade, data.pm25GradeIndex)}
-          </div>`;
+          latestData = data;
+          const rect = el.getBoundingClientRect();
+          renderCard(data, rect.height >= AQ_EXTRA_MIN_HEIGHT);
         },
         (err) => errorBox(el, err.message),
       );
+      const pollCleanup = el._cleanup;
+      el._cleanup = () => { pollCleanup?.(); ro.disconnect(); };
     },
   },
 
   'paneo.calendar': {
-    version: '1.0.0',
+    version: '1.1.0',
     label: { ko: '일정 목록', en: 'Event list' },
     icon: '🗓️',
     category: 'data',
@@ -525,31 +730,72 @@ export const widgets = {
       const locale = ctx.locale || 'ko-KR';
       const tz = ctx.timezone || undefined;
       const dateFmt = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', weekday: 'short', timeZone: tz });
+      const timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', timeZone: tz });
+      const hasColors = Object.values(urlColors).some(Boolean);
+
+      // Below the threshold: unchanged compact "date + summary" rows. Above
+      // it: also show each event's time-of-day, plus (when sources have
+      // assigned colors) a legend mapping color → source, so a multi-source
+      // list stays readable once there's room for it — same pattern as the
+      // other adaptive widgets in this batch.
+      const CAL_DETAIL_MIN_HEIGHT = 220;
+      let latestEvents = null;
+
+      function renderList(events, expanded) {
+        const items = events.map((e) => {
+          const color = urlColors[e.source] || '';
+          const style = color ? `style="border-left:3px solid ${color}; padding-left:6px; margin-left:0"` : '';
+          const timeHtml = expanded ? `<span class="cal-time">${timeFmt.format(new Date(e.start))}</span>` : '';
+          return `<li ${style}><span class="cal-date">${dateFmt.format(new Date(e.start))}</span>${timeHtml}<span class="cal-summary">${e.summary}</span></li>`;
+        }).join('');
+        const legendHtml = (expanded && hasColors)
+          ? `<div class="cal-legend">${parsedUrls.filter((u) => urlColors[u]).map((u) => {
+              let label = u;
+              try { label = new URL(u).hostname; } catch { /* keep raw url as fallback label */ }
+              return `<span class="cal-legend-item"><span class="cal-legend-dot" style="background:${urlColors[u]}"></span>${label}</span>`;
+            }).join('')}</div>`
+          : '';
+        el.innerHTML = `<div class="w-cal-list">
+          <ul class="w-calendar">${items || '<li class="cal-empty">-</li>'}</ul>
+          ${legendHtml}
+        </div>`;
+      }
+
+      const ro = new ResizeObserver((entries) => {
+        if (!latestEvents) return;
+        const expanded = entries[0].contentRect.height >= CAL_DETAIL_MIN_HEIGHT;
+        const alreadyExpanded = !!el.querySelector('.cal-time, .cal-legend');
+        if (expanded === alreadyExpanded) return;
+        renderList(latestEvents, expanded);
+      });
+      ro.observe(el);
+
       pollJson(
         el, `/api/proxy/ical?${multiUrlQuery(parsedUrls)}`, pollInterval(15 * 60_000, ctx),
         (data) => {
-          const items = (data.events || []).map((e) => {
-            const color = urlColors[e.source] || '';
-            const style = color ? `style="border-left:3px solid ${color}; padding-left:6px; margin-left:0"` : '';
-            return `<li ${style}><span class="cal-date">${dateFmt.format(new Date(e.start))}</span><span class="cal-summary">${e.summary}</span></li>`;
-          }).join('');
-          el.innerHTML = `<ul class="w-calendar">${items || '<li class="cal-empty">-</li>'}</ul>`;
+          latestEvents = data.events || [];
+          const rect = el.getBoundingClientRect();
+          renderList(latestEvents, rect.height >= CAL_DETAIL_MIN_HEIGHT);
         },
         (err) => errorBox(el, err.message),
       );
+      const pollCleanup = el._cleanup;
+      el._cleanup = () => { pollCleanup?.(); ro.disconnect(); };
     },
   },
 
-  // §M3 D8: Full monthly calendar grid — separate widget from paneo.calendar (event list).
-  // Reuses /api/proxy/ical, renders a 7-column grid with today highlighted and event
-  // titles clipped inside the day cell (design decision B from implementation_plan.md).
+  // §M3 D8, extended D#: adaptive calendar grid — separate widget from
+  // paneo.calendar (event list). Reuses /api/proxy/ical; the view (day / week
+  // / 3-week / month) is picked automatically from the widget's own rendered
+  // box size via ResizeObserver, not a manual setting — a 2×2 placement reads
+  // naturally as "today's agenda" while a 6×5 one reads as a full month.
   'paneo.calendar.month': {
-    version: '1.0.0',
-    label: { ko: '월간 달력', en: 'Monthly calendar' },
+    version: '2.0.0',
+    label: { ko: '캘린더', en: 'Calendar' },
     icon: '📆',
     category: 'data',
     defaultSize: { w: 6, h: 5 },
-    minSize: { w: 5, h: 4 },
+    minSize: { w: 2, h: 2 },
     requires: [],
     permissions: [],
     config: [
@@ -574,19 +820,65 @@ export const widgets = {
           urlColors[u] = color;
         }
       }
-      const now = new Date();
-      const todayStr = isoDate(now);
-      // Hoisted so the ICS fetch below can bound its request to exactly the
-      // dates this grid shows (including the leading/trailing adjacent-month
-      // padding cells) — see the `range` fix in src/dataproxy.js.
-      const gridCells = buildMonthGrid(now);
 
-      // Month header
+      // Thresholds are the widget's own rendered pixel box (via ResizeObserver
+      // below), not grid units — grid-cell pixel size varies by display
+      // resolution/grid config, but a rendered box size is directly measurable
+      // and comparable regardless of that. Width decides whether a 7-column
+      // week row fits legibly at all; height then decides how many such rows.
+      // Picked by eye against common Pi display resolutions — tune freely.
+      const CAL_MIN_WEEK_WIDTH = 260;
+      const CAL_MIN_3WEEK_HEIGHT = 220;
+      const CAL_MIN_MONTH_HEIGHT = 380;
+
+      function pickView(width, height) {
+        if (width < CAL_MIN_WEEK_WIDTH) return 'day';
+        if (height < CAL_MIN_3WEEK_HEIGHT) return 'week';
+        if (height < CAL_MIN_MONTH_HEIGHT) return '3week';
+        return 'month';
+      }
+
+      function cellsForView(view, now) {
+        if (view === 'day') return [now];
+        if (view === 'week') return buildWeekRows(now, 0, 0);
+        if (view === '3week') return buildWeekRows(now, 1, 1);
+        return buildMonthGrid(now);
+      }
+
+      const rangeFmt = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', timeZone: tz });
       const monthFmt = new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'long', timeZone: tz });
+      const dayFmt = new Intl.DateTimeFormat(locale, { month: 'long', day: 'numeric', weekday: 'short', timeZone: tz });
+      const timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', timeZone: tz });
 
-      function renderGrid(eventsByDate = {}) {
-        const cells = gridCells;
+      function headerFor(view, cells, now) {
+        if (view === 'month') return monthFmt.format(now);
+        if (view === 'day') return dayFmt.format(now);
+        return `${rangeFmt.format(cells[0])} – ${rangeFmt.format(cells[cells.length - 1])}`;
+      }
+
+      function renderDayView(now, eventsByDate) {
+        const ds = isoDate(now);
+        const events = (eventsByDate[ds] || []).slice().sort((a, b) => new Date(a.start) - new Date(b.start));
+        const rows = events.length
+          ? events.map((e) => {
+              const color = urlColors[e.source] || '';
+              const style = color ? `style="border-left:3px solid ${color}"` : '';
+              return `<div class="cal-d-item" ${style}>
+                <span class="cal-d-time">${timeFmt.format(new Date(e.start))}</span>
+                <span class="cal-d-summary">${String(e.summary || '').replace(/</g, '&lt;')}</span>
+              </div>`;
+            }).join('')
+          : `<div class="cal-d-empty">${isKo ? '일정 없음' : 'No events'}</div>`;
+        el.innerHTML = `<div class="w-cal-day">
+          <div class="cal-d-header">${headerFor('day', null, now)}</div>
+          <div class="cal-d-list">${rows}</div>
+        </div>`;
+      }
+
+      function renderGridView(view, now, cells, eventsByDate) {
+        const todayStr = isoDate(now);
         const curMonth = now.getMonth();
+        const dimOtherMonth = view === 'month'; // week/3-week cells are all "real" days, not padding
         const showWN = !!config.showWeekNumber;
         const cols = showWN ? 8 : 7;
         const weekRows = Math.ceil(cells.length / 7);
@@ -614,7 +906,7 @@ export const widgets = {
             if (!d) { bodyRows += `<div class="cal-m-cell"></div>`; continue; }
             const ds = isoDate(d);
             const isToday = ds === todayStr;
-            const isOtherMonth = d.getMonth() !== curMonth;
+            const isOtherMonth = dimOtherMonth && d.getMonth() !== curMonth;
             const isSat = col === 5;
             const isSun = col === 6;
             let cls = 'cal-m-cell cal-m-day';
@@ -640,56 +932,91 @@ export const widgets = {
         }
 
         el.innerHTML = `<div class="w-cal-month">
-          <div class="cal-m-header">${monthFmt.format(now)}</div>
+          <div class="cal-m-header">${headerFor(view, cells, now)}</div>
           <div class="cal-m-grid" style="grid-template-columns:repeat(${cols},1fr);grid-template-rows:auto repeat(${weekRows},1fr)">
             ${headerRow}${bodyRows}
           </div>
         </div>`;
       }
 
-      // Render empty grid immediately, then fetch events
-      renderGrid();
+      let currentView = null;
+      let ro = null;
 
-      if (!parsedUrls.length) return;
+      function paintAndFetch() {
+        const now = new Date();
+        const cells = cellsForView(currentView, now);
 
-      // Bound the fetch to exactly the span this grid shows (first cell's start of
-      // day .. day after the last cell) so every event in the visible month comes
-      // back, not just the next ~15 upcoming ones (that "upcoming" cap is correct
-      // for paneo.calendar's list view, but silently dropped events on later days
-      // of a busy month here).
-      const rangeFrom = gridCells[0];
-      const rangeTo = new Date(gridCells[gridCells.length - 1].getTime() + 24 * 3600 * 1000);
-      const rangeQuery = `&from=${encodeURIComponent(rangeFrom.toISOString())}&to=${encodeURIComponent(rangeTo.toISOString())}`;
+        function renderAll(eventsByDate = {}) {
+          if (currentView === 'day') renderDayView(now, eventsByDate);
+          else renderGridView(currentView, now, cells, eventsByDate);
+        }
 
-      pollJson(
-        el, `/api/proxy/ical?${multiUrlQuery(parsedUrls)}${rangeQuery}`, pollInterval(30 * 60_000, ctx),
-        (data) => {
-          // Index events by their local date string
-          const byDate = {};
-          for (const ev of data.events || []) {
-            // Use device timezone if set, otherwise local
-            const d = new Date(ev.start);
-            const ds = tz
-              ? new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: tz }).format(d)
-              : isoDate(d);
-            if (!byDate[ds]) byDate[ds] = [];
-            byDate[ds].push(ev);
-          }
-          renderGrid(byDate);
-        },
-        (err) => {
-          // Keep the empty grid, just show a small error indicator
-          const errEl = document.createElement('div');
-          errEl.className = 'cal-m-fetch-err';
-          errEl.textContent = err.message;
-          el.querySelector('.w-cal-month')?.appendChild(errEl);
-        },
-      );
+        // Paint immediately (empty or last-known events), then fetch.
+        renderAll();
+
+        if (!parsedUrls.length) return;
+
+        // Bound the fetch to exactly the span this view shows, so every event
+        // in view comes back — not just the next ~15 upcoming ones (that
+        // "upcoming" cap is correct for paneo.calendar's list view, but would
+        // silently drop events on later days of a busy week/month here).
+        const rangeFrom = cells[0];
+        const rangeTo = new Date(cells[cells.length - 1].getTime() + 24 * 3600 * 1000);
+        const rangeQuery = `&from=${encodeURIComponent(rangeFrom.toISOString())}&to=${encodeURIComponent(rangeTo.toISOString())}`;
+
+        pollJson(
+          el, `/api/proxy/ical?${multiUrlQuery(parsedUrls)}${rangeQuery}`, pollInterval(30 * 60_000, ctx),
+          (data) => {
+            // Index events by their local date string
+            const byDate = {};
+            for (const ev of data.events || []) {
+              // Use device timezone if set, otherwise local
+              const d = new Date(ev.start);
+              const ds = tz
+                ? new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: tz }).format(d)
+                : isoDate(d);
+              if (!byDate[ds]) byDate[ds] = [];
+              byDate[ds].push(ev);
+            }
+            renderAll(byDate);
+          },
+          (err) => {
+            // Keep the grid, just show a small error indicator
+            const errEl = document.createElement('div');
+            errEl.className = 'cal-m-fetch-err';
+            errEl.textContent = err.message;
+            el.querySelector('.w-cal-month, .w-cal-day')?.appendChild(errEl);
+          },
+        );
+        // pollJson just overwrote el._cleanup with its own poll-interval
+        // cleanup — wrap it so the ResizeObserver still gets disconnected
+        // when the widget is torn down or re-rendered.
+        const pollCleanup = el._cleanup;
+        el._cleanup = () => { pollCleanup?.(); ro?.disconnect(); };
+      }
+
+      ro = new ResizeObserver((entries) => {
+        const { width, height } = entries[0].contentRect;
+        const nextView = pickView(width, height);
+        if (nextView !== currentView) {
+          currentView = nextView;
+          paintAndFetch();
+        }
+      });
+      ro.observe(el);
+      el._cleanup = () => ro.disconnect(); // covers the no-ICS-configured case, where paintAndFetch() never reaches pollJson
+
+      // Initial paint uses the current box size synchronously — ResizeObserver's
+      // first callback fires on the next frame, and waiting for it would flash
+      // the wrong view for one frame on every fresh render.
+      const rect = el.getBoundingClientRect();
+      currentView = pickView(rect.width, rect.height);
+      paintAndFetch();
     },
   },
 
   'paneo.rss': {
-    version: '1.0.0',
+    version: '1.1.0',
     label: { ko: 'RSS/뉴스', en: 'RSS / News' },
     icon: '📰',
     category: 'data',
@@ -702,16 +1029,44 @@ export const widgets = {
       const urls = cleanUrlList(config.feedUrls);
       if (!urls.length) { errorBox(el, ctx.locale?.startsWith('ko') !== false ? 'RSS URL을 입력하세요' : 'Set an RSS URL'); return; }
       loadingBox(el, '...');
+      const locale = ctx.locale || 'ko-KR';
+      const tz = ctx.timezone || undefined;
+      const dateFmt = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: tz });
+
+      // Per-item publish date only shows once the widget is tall enough to
+      // afford the extra line — same size-adaptive pattern used elsewhere
+      // (calendar/HA weather/paneo.weather); title-only list below that.
+      const RSS_DATE_MIN_HEIGHT = 200;
+      let latestItems = null;
+
+      function renderList(items, showDate) {
+        const html = items.map((it) => {
+          const dateHtml = (showDate && it.isoDate) ? `<span class="rss-date">${dateFmt.format(new Date(it.isoDate))}</span>` : '';
+          return `<li><a href="${it.link}" target="_blank" rel="noopener">${it.title}</a>${dateHtml}</li>`;
+        }).join('');
+        el.innerHTML = `<ul class="w-rss">${html || '<li>-</li>'}</ul>`;
+      }
+
+      const ro = new ResizeObserver((entries) => {
+        if (!latestItems) return;
+        const showDate = entries[0].contentRect.height >= RSS_DATE_MIN_HEIGHT;
+        const alreadyShown = !!el.querySelector('.rss-date');
+        if (showDate === alreadyShown) return;
+        renderList(latestItems, showDate);
+      });
+      ro.observe(el);
+
       pollJson(
         el, `/api/proxy/rss?${multiUrlQuery(urls)}`, pollInterval(15 * 60_000, ctx),
         (data) => {
-          const items = (data.items || []).map((it) =>
-            `<li><a href="${it.link}" target="_blank" rel="noopener">${it.title}</a></li>`
-          ).join('');
-          el.innerHTML = `<ul class="w-rss">${items || '<li>-</li>'}</ul>`;
+          latestItems = data.items || [];
+          const rect = el.getBoundingClientRect();
+          renderList(latestItems, rect.height >= RSS_DATE_MIN_HEIGHT);
         },
         (err) => errorBox(el, err.message),
       );
+      const pollCleanup = el._cleanup;
+      el._cleanup = () => { pollCleanup?.(); ro.disconnect(); };
     },
   },
 
@@ -864,20 +1219,125 @@ export const widgets = {
       }
       loadingBox(el, '...');
 
-      const renderData = (data) => {
+      const isKo = ctx.locale?.startsWith('ko') !== false;
+      const locale = ctx.locale || 'ko-KR';
+      const tz = ctx.timezone || undefined;
+      const isWeather = entityId.startsWith('weather.');
+
+      // Forecast only makes sense (and is only fetched) for weather.* entities,
+      // and only shown once the widget is tall enough to hold a forecast row —
+      // otherwise it's the same compact current-conditions card as before.
+      // Fetched at most once per widget instance (memoized promise): forecast
+      // doesn't change on the state poll's 30s cadence the way current
+      // conditions do, and re-requesting it every tick would be pointless load
+      // on the HA server for data that's still the same.
+      const HA_WEATHER_FORECAST_MIN_HEIGHT = 200;
+      let forecastPromise = null;
+      let latestState = null;
+      let ro = null;
+
+      // Best-effort: forecast moved from a state attribute (older HA) to the
+      // weather.get_forecasts service (HA 2023.9+), which only returns data
+      // over the REST API via the `return_response` convention (src/server.js
+      // forwards it as a query param). Both shapes — and every failure mode
+      // (older HA without the service, network error, unexpected response
+      // shape) — degrade silently to the current-conditions-only card, since
+      // this is the one part of the widget genuinely dependent on the user's
+      // specific HA version.
+      async function fetchForecast() {
+        try {
+          const res = await fetch(`/api/proxy/ha/services/weather/get_forecasts?return_response`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entity_id: entityId, type: 'daily' }),
+          });
+          if (!res.ok) return null;
+          const json = await res.json();
+          return json?.service_response?.[entityId]?.forecast || null;
+        } catch {
+          return null;
+        }
+      }
+      function getForecast() {
+        if (!forecastPromise) forecastPromise = fetchForecast();
+        return forecastPromise;
+      }
+
+      function renderWeatherCard(data, forecast, showForecast) {
         const state = data.state;
         const attrs = data.attributes || {};
         const friendlyName = config.title || attrs.friendly_name || entityId;
+        const conditionIcon = HA_WEATHER_ICONS[state] || '🌡️';
+        const conditionText = (isKo ? HA_WEATHER_TEXT_KO : HA_WEATHER_TEXT_EN)[state] || state;
+        const temp = attrs.temperature;
+        const tempUnit = attrs.temperature_unit || '°C';
+        const humidity = attrs.humidity;
+        const windSpeed = attrs.wind_speed;
+        const windUnit = attrs.wind_speed_unit || '';
+
+        const forecastHtml = (showForecast && forecast?.length)
+          ? `<div class="ha-weather-forecast">${forecast.slice(0, 5).map((f) => {
+              const wd = new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: tz }).format(new Date(f.datetime));
+              const icon = HA_WEATHER_ICONS[f.condition] || '🌡️';
+              const hi = f.temperature != null ? `${Math.round(f.temperature)}°` : '-';
+              const lo = f.templow != null ? `/${Math.round(f.templow)}°` : '';
+              return `<div class="ha-fc-day">
+                <div class="ha-fc-wd">${wd}</div>
+                <div class="ha-fc-icon">${icon}</div>
+                <div class="ha-fc-temp">${hi}${lo}</div>
+              </div>`;
+            }).join('')}</div>`
+          : '';
+
+        el.innerHTML = `
+          <div class="w-ha w-ha-weather">
+            <div class="ha-header">
+              <span class="ha-icon">${conditionIcon}</span>
+              <span class="ha-title">${friendlyName}</span>
+            </div>
+            <div class="ha-weather-body">
+              ${temp != null ? `<div class="ha-weather-temp">${Math.round(temp)}${tempUnit}</div>` : ''}
+              <div class="ha-weather-cond">${conditionText}</div>
+              <div class="ha-weather-meta">
+                ${humidity != null ? `<span>💧 ${humidity}%</span>` : ''}
+                ${windSpeed != null ? `<span>💨 ${windSpeed}${windUnit}</span>` : ''}
+              </div>
+            </div>
+            ${forecastHtml}
+          </div>
+        `;
+        fitTextToBox(el.querySelector('.ha-title'));
+        fitTextToBox(el.querySelector('.ha-weather-temp'));
+      }
+
+      const renderData = async (data) => {
+        const attrs = data.attributes || {};
+        const state = data.state;
+
+        // weather.* entities get a dedicated card (icon/temp/condition/humidity,
+        // optionally + forecast) instead of the generic state display — the raw
+        // state is just a condition keyword ("sunny"/"rainy"/...), not something
+        // worth showing as-is next to a bare number the way a sensor's state is.
+        if (isWeather) {
+          latestState = data;
+          const rect = el.getBoundingClientRect();
+          const showForecast = rect.height >= HA_WEATHER_FORECAST_MIN_HEIGHT;
+          const forecast = showForecast ? (attrs.forecast || await getForecast()) : null;
+          renderWeatherCard(data, forecast, showForecast);
+          return;
+        }
+
+        const friendlyName = config.title || attrs.friendly_name || entityId;
         const emojiIcon = config.icon || (entityId.startsWith('light') ? '💡' : entityId.startsWith('switch') ? '🔌' : entityId.startsWith('sensor') ? '🌡️' : '⚙️');
         const unit = attrs.unit_of_measurement || '';
-        
+
         let displayState = state;
-        if (state === 'on') displayState = ctx.locale?.startsWith('ko') ? '켜짐' : 'ON';
-        else if (state === 'off') displayState = ctx.locale?.startsWith('ko') ? '꺼짐' : 'OFF';
-        else if (state === 'unavailable') displayState = ctx.locale?.startsWith('ko') ? '사용불가' : 'Unavailable';
-        
+        if (state === 'on') displayState = isKo ? '켜짐' : 'ON';
+        else if (state === 'off') displayState = isKo ? '꺼짐' : 'OFF';
+        else if (state === 'unavailable') displayState = isKo ? '사용불가' : 'Unavailable';
+
         const isControl = config.showToggle && (entityId.startsWith('switch') || entityId.startsWith('light') || entityId.startsWith('input_boolean'));
-        const controlBtnHtml = isControl 
+        const controlBtnHtml = isControl
           ? `<button class="ha-toggle-btn" data-entity-id="${entityId}">${displayState}</button>`
           : `<div class="ha-state-val">${displayState}${unit}</div>`;
 
@@ -892,6 +1352,11 @@ export const widgets = {
             </div>
           </div>
         `;
+        // The friendly_name/state come from Home Assistant and can be
+        // arbitrarily long (unlike our own built-in widgets' text) — shrink
+        // to fit rather than silently overflow the widget box.
+        fitTextToBox(el.querySelector('.ha-title'));
+        if (!isControl) fitTextToBox(el.querySelector('.ha-state-val'));
 
         if (isControl) {
           const btn = el.querySelector('.ha-toggle-btn');
@@ -906,7 +1371,7 @@ export const widgets = {
                 body: JSON.stringify({ entity_id: entityId })
               });
               if (!res.ok) throw new Error();
-              
+
               // 제어 후 즉시 상태 재조회
               const stateRes = await fetch(`/api/proxy/ha/states/${entityId}`);
               const newState = await stateRes.json();
@@ -919,11 +1384,36 @@ export const widgets = {
         }
       };
 
+      // Re-render (no re-fetch — the poll above already keeps latestState/the
+      // forecast promise current) whenever crossing the forecast-row height
+      // threshold, so resizing the widget in the editor toggles the forecast
+      // row live, the same way paneo.calendar.month's view switches.
+      if (isWeather) {
+        ro = new ResizeObserver((entries) => {
+          const showForecast = entries[0].contentRect.height >= HA_WEATHER_FORECAST_MIN_HEIGHT;
+          if (!latestState) return;
+          const alreadyShown = !!el.querySelector('.ha-weather-forecast');
+          if (showForecast === alreadyShown) return;
+          if (showForecast) {
+            getForecast().then((forecast) => renderWeatherCard(latestState, forecast, true));
+          } else {
+            renderWeatherCard(latestState, null, false);
+          }
+        });
+        ro.observe(el);
+      }
+
       pollJson(
         el, `/api/proxy/ha/states/${entityId}`, pollInterval(30_000, ctx),
         renderData,
         (err) => errorBox(el, err.message)
       );
+      if (ro) {
+        // pollJson just overwrote el._cleanup with its own poll-interval
+        // cleanup — wrap it so the ResizeObserver still gets disconnected.
+        const pollCleanup = el._cleanup;
+        el._cleanup = () => { pollCleanup?.(); ro.disconnect(); };
+      }
     }
   },
 

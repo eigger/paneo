@@ -1,30 +1,47 @@
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css');
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+html, body { height: 100%; font-family: 'Pretendard Variable', Pretendard, -apple-system, 'Segoe UI', system-ui, sans-serif;
   background: #10141c; color: #e8edf6; }
 body { display: flex; flex-direction: column; }
 
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a3242; border-radius: 20px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: #38445a; background-clip: padding-box; }
+
 header { display: flex; align-items: center; gap: 16px;
-  padding: 10px 16px; background: #161b26; border-bottom: 1px solid #232a38; }
+  padding: 10px 16px; background: linear-gradient(180deg, #181e2b, #141924);
+  border-bottom: 1px solid #232a38; box-shadow: 0 1px 0 rgba(255,255,255,0.03); }
 .brand { font-size: 18px; font-weight: 700; flex: 0 0 auto; }
 .brand .tag { font-size: 12px; font-weight: 400; opacity: 0.5; margin-left: 6px; }
 .toolbar { display: flex; align-items: center; gap: 14px; flex: 1 1 auto; }
 .sel { font-size: 13px; opacity: 0.85; display: inline-flex; align-items: center; gap: 6px; }
 .icon-btn { flex: 0 0 auto; background: #1c2330; color: #cfe0ff; border: 1px solid #2a3040;
-  border-radius: 8px; width: 36px; height: 36px; font-size: 16px; cursor: pointer; }
-.icon-btn:hover { background: #232c3d; }
+  border-radius: 8px; width: 36px; height: 36px; font-size: 16px; cursor: pointer;
+  transition: background 0.16s ease, transform 0.16s ease, border-color 0.16s ease; }
+.icon-btn:hover { background: #232c3d; transform: translateY(-1px); }
+.icon-btn:active { transform: translateY(0) scale(0.96); }
 .icon-btn.small { width: 26px; height: 26px; font-size: 14px; line-height: 1; }
 select, input { background: #0e1219; color: #e8edf6; border: 1px solid #2a3040;
-  border-radius: 8px; padding: 6px 8px; font: inherit; }
+  border-radius: 8px; padding: 6px 8px; font: inherit; transition: border-color 0.16s ease; }
+select:hover, input:hover { border-color: #384156; }
+select:focus, input:focus { outline: none; border-color: #4f8cff; }
 .palette-wrap { position: relative; }
 .palette-btn { background: #222a3a; color: #cfe0ff; border: 1px solid #2f3a4f;
-  border-radius: 8px; padding: 7px 14px; cursor: pointer; font-size: 13px; font-weight: 600; }
+  border-radius: 8px; padding: 7px 14px; cursor: pointer; font-size: 13px; font-weight: 600;
+  transition: background 0.16s ease, transform 0.16s ease, border-color 0.16s ease; }
 .palette-btn::before { content: '+ '; opacity: 0.7; }
-.palette-btn:hover { background: #2b3648; }
+.palette-btn:hover { background: #2b3648; transform: translateY(-1px); }
+.palette-btn:active { transform: translateY(0) scale(0.97); }
 .palette-btn[aria-expanded="true"] { background: #2b3648; border-color: #3b82f6; }
 
 .palette { position: absolute; top: calc(100% + 8px); left: 0; z-index: 40;
-  background: #161b26; border: 1px solid #2a3040; border-radius: 12px;
-  padding: 8px; width: 220px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  background: rgba(20, 25, 36, 0.88); backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
+  padding: 8px; width: 220px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255,255,255,0.05);
   max-height: 70vh; overflow-y: auto; }
 .palette.hidden { display: none; }
 .palette-group + .palette-group { margin-top: 6px; padding-top: 6px; border-top: 1px solid #232a38; }
@@ -32,15 +49,18 @@ select, input { background: #0e1219; color: #e8edf6; border: 1px solid #2a3040;
   opacity: 0.45; padding: 6px 8px 4px; }
 .palette button[role="menuitem"] { display: flex; align-items: center; gap: 10px; width: 100%;
   background: transparent; color: #e8edf6; border: 0; border-radius: 8px;
-  padding: 8px; cursor: pointer; font-size: 13px; text-align: left; }
-.palette button[role="menuitem"]:hover { background: #222a3a; }
+  padding: 8px; cursor: pointer; font-size: 13px; text-align: left; transition: background 0.14s ease; }
+.palette button[role="menuitem"]:hover { background: rgba(255,255,255,0.07); }
 .pw-icon { font-size: 16px; width: 20px; text-align: center; flex: 0 0 auto; }
 .save-state { font-size: 12px; opacity: 0.55; min-width: 52px; }
 .link { color: #8ab4ff; font-size: 13px; text-decoration: none; }
 .link:hover { text-decoration: underline; }
-.apply { background: #3b82f6; color: #fff; border: 0; border-radius: 8px;
-  padding: 8px 18px; font-weight: 600; cursor: pointer; }
-.apply:hover { background: #2f6fe0; }
+.apply { background: linear-gradient(135deg, #4f8cff, #6a5cf5); color: #fff; border: 0; border-radius: 8px;
+  padding: 8px 18px; font-weight: 600; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(79, 140, 255, 0.32);
+  transition: filter 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease; }
+.apply:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 6px 18px rgba(79, 140, 255, 0.4); }
+.apply:active { transform: translateY(0) scale(0.97); }
 
 main { flex: 1; display: flex; min-height: 0; }
 #canvas-wrap { flex: 1; padding: 24px; overflow: auto; display: flex; flex-direction: column; justify-content: flex-start; align-items: center; }
@@ -59,40 +79,17 @@ main { flex: 1; display: flex; min-height: 0; }
 .ed-widget { position: relative; cursor: move; min-width: 0; min-height: 0; }
 .ed-widget .widget-content { width: 100%; height: 100%;
   container-type: size;
-  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.10);
-  border-radius: 12px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-.ed-widget.selected { outline: 2px solid #3b82f6; outline-offset: 2px; border-radius: 12px; }
+  background: linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.025));
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.22);
+  border-radius: 12px; display: flex; align-items: center; justify-content: center; overflow: hidden;
+  transition: box-shadow 0.15s ease; }
+.ed-widget.selected .widget-content { box-shadow: 0 0 0 2px #3b82f6, 0 0 22px rgba(59,130,246,0.35); }
 .resize-handle { position: absolute; right: -4px; bottom: -4px; width: 16px; height: 16px;
-  background: #3b82f6; border: 2px solid #10141c; border-radius: 50%; cursor: nwse-resize; }
-.ed-widget .widget-content.transparent-bg { background: transparent !important; border-color: transparent !important; }
-
-/* Page selector (#page-selector is a static, empty div in index.html; renderPageSelector()
-   in editor.js only ever fills its *children* — these rules must live here, not be injected
-   via a <style> tag inside #inspector-body's innerHTML, which only exists while a widget is
-   selected and gets wiped (along with these rules) the moment nothing is selected. That's
-   what caused the page-dots/+/− row to visibly jump by its own margin-top on every
-   select/deselect. */
-#page-selector {
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: center;
-}
-.page-dots { display: flex; gap: 6px; }
-.page-dot { width: 12px; height: 12px; border-radius: 50%; background: #2a3040; position: relative; cursor: pointer; }
-.page-dot.active { background: #3b82f6; }
-.page-dot .page-del {
-  position: absolute; top: -4px; right: -4px; font-size: 10px; color: #ff9aa7;
-  background: #2a1a1f; border: 1px solid #4a2731; border-radius: 4px; width: 12px; height: 12px;
-  display: flex; align-items: center; justify-content: center; cursor: pointer;
-}
-.page-add, .page-del-btn {
-  padding: 4px 8px; background: #1c2330; color: #cfe0ff; border: 1px solid #2a3040;
-  border-radius: 8px; cursor: pointer;
-}
-.page-add:disabled, .page-del-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.page-del-btn { color: #ff9aa7; }
+  background: #3b82f6; border: 2px solid #10141c; border-radius: 50%; cursor: nwse-resize;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4); transition: transform 0.15s ease; }
+.resize-handle:hover { transform: scale(1.15); }
+.ed-widget .widget-content.transparent-bg { background: transparent !important; border-color: transparent !important; box-shadow: none !important; }
 
 /* widget visuals mirror the display (kept minimal for editor) */
 .w-clock {
@@ -106,11 +103,12 @@ main { flex: 1; display: flex; min-height: 0; }
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
-.clock-hm { font-size: clamp(28px, 60cqmin, 82px); font-weight: 600; }
-/* No align-self override here (previously flex-end + margin-bottom, which is what
-   dropped the seconds well below the h:m line) — inheriting align-items: center
-   from .w-clock keeps both pieces on the same vertical center. */
-.clock-sec { font-size: 0.36em; opacity: 0.55; }
+.clock-hm { font-size: clamp(28px, 60cqmin, 82px); font-weight: 600; white-space: nowrap; max-width: 100%; }
+/* .clock-sec is nested *inside* .clock-hm (not a flex sibling) so its `em`
+   resolves against .clock-hm's own font-size, not .w-clock's — as a sibling
+   it was inheriting the ancestor's base 16px font-size instead, rendering
+   at an illegibly tiny ~6px regardless of the clock's actual size. */
+.clock-sec { font-size: 0.5em; opacity: 0.6; }
 .w-date { text-align: center; }
 .w-date .date-main { font-size: clamp(14px, 2.2vw, 28px); font-weight: 500; }
 .w-date .date-weekday { font-size: clamp(11px, 1.6vw, 18px); opacity: 0.6; margin-top: 3px; }
@@ -121,10 +119,16 @@ main { flex: 1; display: flex; min-height: 0; }
 .w-loading, .w-error { opacity: 0.6; font-size: 12px; padding: 6px; text-align: center; }
 .w-error { color: #ff9aa7; }
 
-.w-weather { text-align: center; }
+.w-weather { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; padding: 6px 10px; box-sizing: border-box; text-align: center; gap: 1px; }
+.weather-body { display: flex; flex-direction: column; align-items: center; width: 100%; }
 .weather-temp { font-size: clamp(18px, 4vw, 40px); font-weight: 600; }
 .weather-text { font-size: clamp(11px, 1.6vw, 16px); opacity: 0.75; margin-top: 2px; }
 .weather-loc { font-size: clamp(10px, 1.3vw, 13px); opacity: 0.5; margin-top: 3px; }
+.weather-forecast { display: flex; justify-content: space-between; gap: 3px; width: 100%; padding-top: 4px; margin-top: 3px; border-top: 1px solid rgba(255,255,255,0.08); }
+.weather-fc-day { display: flex; flex-direction: column; align-items: center; gap: 1px; flex: 1 1 0; min-width: 0; }
+.weather-fc-wd { font-size: clamp(7px, 0.9vw, 9px); opacity: 0.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.weather-fc-icon { font-size: clamp(10px, 1.6vw, 14px); }
+.weather-fc-temp { font-size: clamp(7px, 0.9vw, 9px); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 .w-airquality { display: flex; flex-direction: column; justify-content: center; gap: 4px;
   width: 100%; height: 100%; padding: 6px 10px; box-sizing: border-box; }
@@ -136,24 +140,34 @@ main { flex: 1; display: flex; min-height: 0; }
 .aq-grade-1 { color: #86efac; }
 .aq-grade-2 { color: #fbbf24; }
 .aq-grade-3 { color: #f87171; }
+.aq-extra { display: flex; flex-direction: column; gap: 4px; margin-top: 3px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.08); }
 
 .w-calendar, .w-rss { list-style: none; width: 100%; height: 100%; padding: 8px;
   overflow: hidden; font-size: clamp(10px, 1.4vw, 15px); }
 .w-calendar li, .w-rss li { padding: 4px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
 .w-calendar li:last-child, .w-rss li:last-child { border-bottom: none; }
 .cal-date { opacity: 0.6; margin-right: 8px; font-variant-numeric: tabular-nums; }
+.cal-time { opacity: 0.6; margin-right: 6px; font-variant-numeric: tabular-nums; }
 .cal-empty { opacity: 0.4; }
 .w-rss a { color: inherit; text-decoration: none; pointer-events: none; }
+.rss-date { display: block; font-size: clamp(8px, 1vw, 10px); opacity: 0.5; margin-top: 1px; font-variant-numeric: tabular-nums; }
+
+.w-cal-list { width: 100%; height: 100%; display: flex; flex-direction: column; box-sizing: border-box; }
+.w-cal-list .w-calendar { flex: 1; min-height: 0; padding: 8px 8px 0; }
+.cal-legend { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 8px 8px; font-size: clamp(8px, 1vw, 10px); opacity: 0.7; }
+.cal-legend-item { display: flex; align-items: center; gap: 3px; }
+.cal-legend-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 
 .w-iframe { width: 100%; height: 100%; border: 0; pointer-events: none; }
 
 /* ---- §M3: Monthly calendar grid (paneo.calendar.month) ---- */
+/* cq* (container query) units, not vw/vh — see display.css for why. */
 .w-cal-month { display: flex; flex-direction: column; width: 100%; height: 100%; padding: 8px; gap: 4px; }
-.cal-m-header { font-size: clamp(11px, 1.8vw, 20px); font-weight: 600; text-align: center; opacity: 0.9; padding-bottom: 2px; }
+.cal-m-header { font-size: clamp(10px, 3.2cqh, 18px); font-weight: 600; text-align: center; opacity: 0.9; padding-bottom: 2px; }
 .cal-m-grid { display: grid; flex: 1; gap: 2px; }
-.cal-m-cell { min-width: 0; min-height: 0; overflow: hidden; font-size: clamp(9px, 1.2vw, 13px); }
-.cal-m-day-hdr { text-align: center; opacity: 0.45; font-size: clamp(9px, 1.1vw, 12px); font-weight: 600; padding: 2px 0; }
-.cal-m-wn-hdr, .cal-m-wn { text-align: center; opacity: 0.25; font-size: clamp(8px, 0.9vw, 11px); }
+.cal-m-cell { min-width: 0; min-height: 0; overflow: hidden; font-size: clamp(8px, 3.6cqh, 13px); }
+.cal-m-day-hdr { text-align: center; opacity: 0.45; font-size: clamp(8px, 2.7cqh, 11px); font-weight: 600; padding: 2px 0; }
+.cal-m-wn-hdr, .cal-m-wn { text-align: center; opacity: 0.25; font-size: clamp(7px, 2.2cqh, 10px); }
 .cal-m-day { background: rgba(255,255,255,0.03); border-radius: 4px; padding: 2px 3px; display: flex; flex-direction: column; gap: 1px; cursor: default; }
 .cal-m-day:hover { background: rgba(255,255,255,0.07); }
 .cal-m-today { background: rgba(96,165,250,0.18); border: 1px solid rgba(96,165,250,0.45); }
@@ -161,10 +175,19 @@ main { flex: 1; display: flex; min-height: 0; }
 .cal-m-other { opacity: 0.3; }
 .cal-m-sat .cal-m-dnum { color: #7dd3fc; }
 .cal-m-sun .cal-m-dnum { color: #f87171; }
-.cal-m-dnum { font-size: clamp(9px, 1.1vw, 13px); font-weight: 500; line-height: 1.2; }
-.cal-m-event { font-size: clamp(8px, 0.9vw, 11px); opacity: 0.8; background: rgba(96,165,250,0.2); border-radius: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
-.cal-m-more { font-size: clamp(7px, 0.8vw, 10px); opacity: 0.5; }
+.cal-m-dnum { font-size: clamp(8px, 3.2cqh, 13px); font-weight: 500; line-height: 1.2; }
+.cal-m-event { font-size: clamp(7px, 2.7cqh, 11px); opacity: 0.8; background: rgba(96,165,250,0.2); border-radius: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+.cal-m-more { font-size: clamp(6px, 2.2cqh, 10px); opacity: 0.5; }
 .cal-m-fetch-err { font-size: 11px; color: #ff9aa7; padding: 4px; text-align: center; }
+
+/* ---- Calendar day view (paneo.calendar.month at its smallest sizes) ---- */
+.w-cal-day { display: flex; flex-direction: column; width: 100%; height: 100%; padding: 8px 10px; gap: 5px; box-sizing: border-box; }
+.cal-d-header { font-size: clamp(11px, 5.5cqh, 18px); font-weight: 600; opacity: 0.9; text-align: center; }
+.cal-d-list { flex: 1; overflow: hidden auto; display: flex; flex-direction: column; gap: 3px; }
+.cal-d-item { display: flex; align-items: baseline; gap: 6px; padding: 2px 5px; border-radius: 4px; background: rgba(255,255,255,0.04); font-size: clamp(9px, 4cqh, 14px); }
+.cal-d-time { opacity: 0.6; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.cal-d-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-d-empty { opacity: 0.4; text-align: center; padding: 10px 0; font-size: clamp(9px, 3.5cqh, 12px); }
 
 #inspector { width: 280px; background: #161b26; border-left: 1px solid #232a38;
   padding: 16px; overflow: auto; }
@@ -250,12 +273,15 @@ main { flex: 1; display: flex; min-height: 0; }
 .danger:hover { background: #4a2731; }
 
 /* settings modal — separate from the editing toolbar (device/palette/apply) */
-.overlay { position: fixed; inset: 0; background: rgba(6, 9, 15, 0.55);
+.overlay { position: fixed; inset: 0; background: rgba(6, 9, 15, 0.6);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center; z-index: 50; }
 .overlay.hidden { display: none; }
-#settings-panel { background: #161b26; border: 1px solid #2a3040; border-radius: 14px;
+#settings-panel { background: rgba(20, 25, 36, 0.9); backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 14px;
   padding: 22px; width: 320px; max-height: 85vh; overflow-y: auto;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4); }
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05); }
 #settings-panel h3 { font-size: 15px; margin-bottom: 16px; }
 #settings-panel .field { margin-bottom: 14px; }
 #settings-panel .field label { display: block; font-size: 12px; opacity: 0.7; margin-bottom: 4px; }
@@ -264,8 +290,10 @@ main { flex: 1; display: flex; min-height: 0; }
 #resolution-custom.hidden { display: none; }
 #resolution-rotate { margin-top: 8px; width: 100%; }
 .settings-close { width: 100%; margin-top: 6px; background: #222a3a; color: #e8edf6;
-  border: 1px solid #2f3a4f; border-radius: 8px; padding: 8px; cursor: pointer; }
-.settings-close:hover { background: #2b3648; }
+  border: 1px solid #2f3a4f; border-radius: 8px; padding: 8px; cursor: pointer;
+  transition: background 0.16s ease, transform 0.16s ease; }
+.settings-close:hover { background: #2b3648; transform: translateY(-1px); }
+.settings-close:active { transform: translateY(0) scale(0.98); }
 .settings-divider { border: 0; border-top: 1px solid #232a38; margin: 16px 0; }
 .group-new-row { display: flex; gap: 6px; margin-top: 8px; }
 .group-new-row input { flex: 1 1 auto; min-width: 0; }
@@ -276,13 +304,19 @@ main { flex: 1; display: flex; min-height: 0; }
 .button-row { display: flex; gap: 8px; align-items: stretch; }
 .button-row + .button-row { margin-top: 8px; } /* e.g. reload/identify row stacked above the power on/off row */
 .button-row button { flex: 1 1 0; background: #1c2330; color: #cfe0ff; border: 1px solid #2a3040;
-  border-radius: 8px; padding: 8px; cursor: pointer; font-size: 13px; line-height: 1.2; }
-.button-row button:hover { background: #232c3d; }
+  border-radius: 8px; padding: 8px; cursor: pointer; font-size: 13px; line-height: 1.2;
+  transition: background 0.16s ease, transform 0.16s ease; }
+.button-row button:hover:not(:disabled) { background: #232c3d; transform: translateY(-1px); }
+.button-row button:active:not(:disabled) { transform: translateY(0) scale(0.98); }
 #device-delete-btn { width: 100%; margin-top: 10px; }
 
 #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
-  background: #1f2a3a; color: #e8edf6; padding: 10px 18px; border-radius: 10px;
-  border: 1px solid #2f3a4f; opacity: 0; pointer-events: none; transition: all 0.3s; font-size: 14px; }
+  background: rgba(28, 35, 48, 0.92); backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  color: #e8edf6; padding: 10px 18px; border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.09);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.4);
+  opacity: 0; pointer-events: none; transition: all 0.3s; font-size: 14px; }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 /* §M3: minSize warning in inspector */
@@ -306,6 +340,9 @@ main { flex: 1; display: flex; min-height: 0; }
 .power-schedule-status { font-size: 12px; margin: 4px 0 8px; opacity: 0.6; }
 .power-schedule-status.set { color: #4ade80; opacity: 1; }
 
+.update-check-status { font-size: 12px; margin: 6px 0 4px; opacity: 0.6; }
+.update-check-status.available { color: #fbbf24; opacity: 1; font-weight: 600; }
+
 /* §M4: power on/off buttons */
 .button-row button.power-on  { color: #4ade80; border-color: #14532d; }
 .button-row button.power-on:hover:not(:disabled) { background: #14532d; }
@@ -320,14 +357,27 @@ main { flex: 1; display: flex; min-height: 0; }
 
 /* ---- §M5: Home Assistant (paneo.homeassistant) ---- */
 .w-ha { display: flex; flex-direction: column; height: 100%; padding: 12px; justify-content: space-between; box-sizing: border-box; }
-.ha-header { display: flex; align-items: center; gap: 8px; font-size: clamp(11px, 1.4vw, 15px); font-weight: 600; opacity: 0.85; }
-.ha-icon { font-size: clamp(14px, 1.8vw, 20px); }
-.ha-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ha-header { display: flex; align-items: center; gap: 8px; font-size: clamp(11px, 1.4vw, 15px); font-weight: 600; opacity: 0.85; min-width: 0; }
+.ha-icon { font-size: clamp(14px, 1.8vw, 20px); flex-shrink: 0; }
+.ha-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ha-body { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; }
-.ha-state-val { font-size: clamp(20px, 3.5vw, 36px); font-weight: 700; color: #60a5fa; }
-.ha-toggle-btn { background: #3b82f6; color: #fff; border: 0; border-radius: 8px; padding: 6px 12px; font-size: clamp(12px, 1.8vw, 18px); font-weight: 600; cursor: pointer; width: 100%; max-width: 140px; transition: background 0.2s; white-space: nowrap; }
-.ha-toggle-btn:hover { background: #2563eb; }
+.ha-state-val { font-size: clamp(20px, 3.5vw, 36px); font-weight: 700; color: #60a5fa;
+  max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ha-toggle-btn { background: linear-gradient(135deg, #4f8cff, #6a5cf5); color: #fff; border: 0; border-radius: 8px; padding: 6px 12px; font-size: clamp(12px, 1.8vw, 18px); font-weight: 600; cursor: pointer; width: 100%; max-width: 140px; box-shadow: 0 3px 10px rgba(79,140,255,0.3); transition: filter 0.16s ease, transform 0.16s ease; white-space: nowrap; }
+.ha-toggle-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.ha-toggle-btn:active { transform: translateY(0) scale(0.97); }
 .ha-toggle-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ---- Home Assistant weather.* entity card ---- */
+.w-ha-weather .ha-weather-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 0; min-width: 0; width: 100%; }
+.ha-weather-temp { font-size: clamp(18px, 3.2vw, 32px); font-weight: 700; color: #60a5fa; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ha-weather-cond { font-size: clamp(10px, 1.4vw, 14px); opacity: 0.8; }
+.ha-weather-meta { display: flex; gap: 8px; font-size: clamp(9px, 1.1vw, 11px); opacity: 0.7; margin-top: 2px; }
+.ha-weather-forecast { display: flex; justify-content: space-between; gap: 3px; width: 100%; padding-top: 4px; margin-top: 3px; border-top: 1px solid rgba(255,255,255,0.08); }
+.ha-fc-day { display: flex; flex-direction: column; align-items: center; gap: 1px; flex: 1 1 0; min-width: 0; }
+.ha-fc-wd { font-size: clamp(7px, 0.9vw, 9px); opacity: 0.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ha-fc-icon { font-size: clamp(10px, 1.6vw, 14px); }
+.ha-fc-temp { font-size: clamp(7px, 0.9vw, 9px); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 .w-worldclock { display: flex; flex-direction: column; justify-content: center; gap: 4px; width: 100%; height: 100%; padding: 6px 10px; box-sizing: border-box; overflow: hidden; }
 .wc-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
@@ -387,7 +437,13 @@ main { flex: 1; display: flex; min-height: 0; }
 .ed-widget[data-background-layer="true"] { z-index: 1; }
 .ed-widget .widget-content.transparent-bg { background: transparent !important; border-color: transparent !important; }
 
-/* ---- §Page Selector ---- */
+/* ---- §Page Selector ----
+   #page-selector is a static, empty div in index.html; renderPageSelector() in
+   editor.js only ever fills its *children* — these rules must live here, not be
+   injected via a <style> tag inside #inspector-body's innerHTML, which only
+   exists while a widget is selected and gets wiped (along with those rules) the
+   moment nothing is selected. That's what caused the page-dots/+/− row to
+   visibly jump by its own margin-top on every select/deselect. */
 #page-selector {
   display: flex;
   align-items: center;

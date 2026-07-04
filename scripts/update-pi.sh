@@ -14,9 +14,21 @@ set -euo pipefail
 
 IMAGE="${PANEO_IMAGE:-ghcr.io/eigger/paneo:latest}"
 AGENT_DIR="${PANEO_AGENT_DIR:-/opt/paneo-agent}"
+# "all" (default): server + agent + kiosk (codecs, launcher flags, browser
+# restart). "server": server + agent only — skips every kiosk-touching step,
+# for a server-only install or when you don't want the kiosk browser
+# interrupted right now. Positional arg takes priority so a fixed sudoers
+# rule (see scripts/install-pi.sh's install_agent) can match on it directly;
+# the env var still works for the plain `curl | sudo bash` usage.
+MODE="${1:-${PANEO_UPDATE_MODE:-all}}"
 
 log()  { printf '[paneo-update] %s\n' "$*"; }
 fail() { printf '[paneo-update] ERROR: %s\n' "$*" >&2; exit 1; }
+
+case "$MODE" in
+  all|server) ;;
+  *) fail "unknown mode: $MODE (use 'all' or 'server')" ;;
+esac
 
 [ "$(id -u)" -eq 0 ] || fail "run with sudo"
 
@@ -35,6 +47,7 @@ SERVER="${SERVER:-http://localhost:4321}"
 
 log "Server : $SERVER"
 [ -n "$TOKEN" ] && log "Token  : ${TOKEN}"
+log "Mode   : $MODE"
 
 # ---------------------------------------------------------------------------
 # 1. Pull the latest server image
@@ -74,6 +87,24 @@ if [ -d "$AGENT_DIR" ] && [ -n "$TOKEN" ]; then
   curl -fsSL "$SERVER/agent/agent.js"      -o "$AGENT_DIR/agent.js"
   curl -fsSL "$SERVER/agent/version.json"  -o "$AGENT_DIR/version.json"
 
+  # Refresh this script's own installed copy (what the agent re-invokes via
+  # sudo next time) so it never drifts behind what's actually deployed.
+  # download-to-temp + mv (atomic rename), NOT an in-place overwrite — this
+  # script may currently be running *as* /usr/local/bin/paneo-update-pi.sh,
+  # and truncating that file out from under the still-executing interpreter
+  # would corrupt this very run.
+  update_trigger="/usr/local/bin/paneo-update-pi.sh"
+  if [ -f "$update_trigger" ]; then
+    if curl -fsSL "$SERVER/update.sh" -o "${update_trigger}.new"; then
+      chmod +x "${update_trigger}.new"
+      mv "${update_trigger}.new" "$update_trigger"
+      log "Update trigger script refreshed"
+    else
+      rm -f "${update_trigger}.new"
+      log "Could not refresh update trigger script — leaving existing copy in place"
+    fi
+  fi
+
   if systemctl is-active --quiet paneo-agent 2>/dev/null; then
     log "Restarting companion agent..."
     systemctl restart paneo-agent
@@ -83,6 +114,15 @@ if [ -d "$AGENT_DIR" ] && [ -n "$TOKEN" ]; then
 else
   log "Skipping agent update (AGENT_DIR or TOKEN not found)"
 fi
+
+# ---------------------------------------------------------------------------
+# 5-7. Kiosk-touching steps (codecs, launcher flags, browser restart) — only
+# in "all" mode. "server" mode stops here, having updated the Docker image
+# and companion agent without disturbing whatever's currently on the screen.
+# ---------------------------------------------------------------------------
+if [ "$MODE" != "all" ]; then
+  log "Mode is '$MODE' — skipping codec install / kiosk launcher update / kiosk restart"
+else
 
 # ---------------------------------------------------------------------------
 # 5. Best-effort: proprietary video codecs for Chromium (H.264/AAC — an .mp4
@@ -211,6 +251,8 @@ HELPER_EOF
 else
   log "Kiosk binary not found — skipping restart"
 fi
+
+fi # MODE = all
 
 # ---------------------------------------------------------------------------
 # 8. Summary

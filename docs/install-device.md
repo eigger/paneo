@@ -398,6 +398,38 @@ The external page widget accepts `http/https` URLs only. Sandbox modes:
 
 Some sites block iframe embedding via `X-Frame-Options` or CSP — that is the site's policy, not a Paneo bug.
 
+### 8.6 Screen power control *from* Home Assistant
+
+§8.3 covers pulling HA data *into* Paneo widgets. The reverse — letting an HA automation turn a Paneo display on/off — needs no Paneo-side changes: the editor's own "Screen on"/"Screen off" buttons already call a plain REST endpoint, and HA can call the same one directly via `rest_command`.
+
+1. Find the display's internal device ID (not its pairing token):
+
+   ```sh
+   curl http://<server-ip>:4321/api/devices
+   ```
+
+   Match the entry by `name` and note its `id`.
+
+2. Add a `rest_command` to Home Assistant's `configuration.yaml`:
+
+   ```yaml
+   rest_command:
+     paneo_screen_on:
+       url: "http://<server-ip>:4321/api/devices/<device-id>/command"
+       method: POST
+       content_type: "application/json"
+       payload: '{"action": "power", "on": true}'
+     paneo_screen_off:
+       url: "http://<server-ip>:4321/api/devices/<device-id>/command"
+       method: POST
+       content_type: "application/json"
+       payload: '{"action": "power", "on": false}'
+   ```
+
+3. Call `rest_command.paneo_screen_on` / `rest_command.paneo_screen_off` from any HA automation, script, or dashboard button.
+
+This needs the companion agent installed and connected on that display (§6) — the request is relayed to the agent exactly the way the editor's own power buttons work. Since the editor itself is intentionally unauthenticated on the LAN (§10), this endpoint has no separate access control either — treat network exposure the same way you'd treat the editor: LAN-only, or behind your own reverse proxy/VPN if reaching it from outside the LAN.
+
 ## 9. Version information
 
 Each component has its own version. Query from the server:
@@ -462,7 +494,37 @@ External page widget empty:
 
 ## 12. Updates
 
-On the server device, pull the latest released image and restart:
+### 12.1 One-click (devices installed via §2)
+
+Run on the Pi itself — updates the server image, the companion agent, and (in `all` mode) codecs
+and the kiosk browser restart, keeping all data (SQLite DB, photos, plugins) intact:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/scripts/update-pi.sh | sudo bash
+```
+
+Server-only device (skips every kiosk-touching step — codec install, kiosk launcher, browser restart):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/scripts/update-pi.sh | sudo bash -s server
+```
+
+If the server is already running on this Pi, you can fetch the script from it instead of GitHub:
+
+```sh
+curl -fsSL http://localhost:4321/update.sh | sudo bash
+```
+
+### 12.2 From the editor (no SSH needed)
+
+If a display's companion agent is connected, the editor's ⚙ **Settings** panel shows **Update all**
+and **Update server only** buttons that trigger the same `update-pi.sh` remotely over the existing
+WebSocket connection — useful once a device is already set up and you don't want to SSH in. The
+editor also shows whether a newer release is available before you click either button.
+
+### 12.3 Manual (no install script / Docker Compose)
+
+Pull the latest released image and restart:
 
 ```sh
 docker pull ghcr.io/eigger/paneo:latest

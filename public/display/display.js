@@ -136,7 +136,11 @@ function showIdentify(name) {
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${location.host}/ws?role=display&token=${encodeURIComponent(token)}`);
-  ws.onopen = () => setStatus('● 연결됨', 'online', true);
+  // Always bilingual — unlike widget content (which follows the device's
+  // configured locale), this status pill is the one piece of UI an installer
+  // sees before any layout/locale has ever loaded, so it can't rely on that
+  // locale to be readable.
+  ws.onopen = () => setStatus('● Connected · 연결됨', 'online', true);
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
     if (msg.type === 'layout.set') {
@@ -147,7 +151,7 @@ function connect() {
       showIdentify(msg.deviceName);
     }
   };
-  ws.onclose = () => { setStatus('○ 재연결 중…', 'offline', false); setTimeout(connect, 2000); };
+  ws.onclose = () => { setStatus('○ Reconnecting… · 재연결 중…', 'offline', false); setTimeout(connect, 2000); };
   ws.onerror = () => ws.close();
 }
 connect();

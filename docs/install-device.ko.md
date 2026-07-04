@@ -395,6 +395,38 @@ cp *.jpg data/photos/
 
 일부 사이트는 `X-Frame-Options` 또는 CSP 때문에 iframe 표시를 막을 수 있습니다. 이 경우 Paneo 문제가 아니라 해당 사이트의 보안 정책입니다.
 
+### 8.6 홈어시스턴트에서 화면 전원 제어하기
+
+§8.3은 HA 데이터를 Paneo 위젯으로 가져오는 방향입니다. 반대로 HA 자동화에서 Paneo 디스플레이를 켜고 끄는 건 Paneo 쪽 코드 변경이 필요 없습니다 — 에디터의 "화면 켜기"/"화면 끄기" 버튼도 평범한 REST 엔드포인트를 호출할 뿐이라, HA가 `rest_command`로 같은 엔드포인트를 직접 호출하면 됩니다.
+
+1. 화면의 내부 device ID를 확인합니다 (페어링 토큰이 아닙니다):
+
+   ```sh
+   curl http://<서버-IP>:4321/api/devices
+   ```
+
+   `name`으로 원하는 기기를 찾아 `id` 값을 기록하세요.
+
+2. 홈어시스턴트 `configuration.yaml`에 `rest_command`를 추가합니다:
+
+   ```yaml
+   rest_command:
+     paneo_screen_on:
+       url: "http://<서버-IP>:4321/api/devices/<device-id>/command"
+       method: POST
+       content_type: "application/json"
+       payload: '{"action": "power", "on": true}'
+     paneo_screen_off:
+       url: "http://<서버-IP>:4321/api/devices/<device-id>/command"
+       method: POST
+       content_type: "application/json"
+       payload: '{"action": "power", "on": false}'
+   ```
+
+3. 이제 어떤 HA 자동화·스크립트·대시보드 버튼에서든 `rest_command.paneo_screen_on` / `rest_command.paneo_screen_off`를 호출하면 됩니다.
+
+해당 화면에 컴패니언 에이전트가 설치되어 연결되어 있어야 합니다(§6) — 에디터 자체의 전원 버튼과 완전히 같은 경로로 에이전트에 명령이 전달됩니다. 에디터 자체가 LAN 내에서 의도적으로 인증 없이 열려 있으므로(§10) 이 엔드포인트도 별도 접근 제어가 없습니다 — 에디터를 노출할 때와 동일하게 LAN 내부로만 두거나, LAN 밖에서 접근해야 한다면 리버스 프록시·VPN을 앞에 두세요.
+
 ## 9. 버전 확인
 
 각 구성 요소는 독립적으로 버전을 가집니다. 서버에서 다음 API로 확인할 수 있습니다.
@@ -458,6 +490,35 @@ journalctl -u paneo-agent -f
 - 샌드박스 모드를 `scripts` 또는 `trusted`로 바꿔 봅니다.
 
 ## 12. 업데이트
+
+### 12.1 원클릭 (§2로 설치한 장치)
+
+라즈베리파이 본체에서 실행 — 서버 이미지, 컴패니언 에이전트, (`all` 모드일 때) 코덱과 키오스크 브라우저 재시작까지
+한 번에 갱신하며 데이터(SQLite DB, 사진, 플러그인)는 그대로 유지됩니다.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/scripts/update-pi.sh | sudo bash
+```
+
+서버 전용 장치(코덱 설치·키오스크 런처·브라우저 재시작 등 키오스크 관련 단계를 모두 건너뜀):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/scripts/update-pi.sh | sudo bash -s server
+```
+
+이 라즈베리파이에 서버가 이미 실행 중이라면 GitHub 대신 서버 자신에게서 스크립트를 받아올 수 있습니다.
+
+```sh
+curl -fsSL http://localhost:4321/update.sh | sudo bash
+```
+
+### 12.2 편집기에서 (SSH 불필요)
+
+디스플레이의 컴패니언 에이전트가 연결되어 있다면, 편집기 ⚙ **설정** 패널에 **전체 업데이트**/**서버만 업데이트**
+버튼이 나타나 기존 웹소켓 연결을 통해 동일한 `update-pi.sh`를 원격 실행합니다 — 이미 설치가 끝난 장치를
+SSH 접속 없이 갱신할 때 유용합니다. 새 버전이 있는지도 버튼을 누르기 전에 편집기에서 바로 확인할 수 있습니다.
+
+### 12.3 수동 (설치 스크립트/Docker Compose 미사용)
 
 서버 장치에서 최신 릴리즈 이미지를 받은 뒤 재시작합니다.
 

@@ -1,6 +1,8 @@
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css');
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; background: #0b0f19;
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #e8edf6;
+  font-family: 'Pretendard Variable', Pretendard, -apple-system, 'Segoe UI', system-ui, sans-serif; color: #e8edf6;
   cursor: none; }
 #stage { width: 100vw; height: 100vh; }
 
@@ -8,8 +10,9 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 .widget-content {
   width: 100%; height: 100%;
   container-type: size;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.025));
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
   border-radius: 14px;
   display: flex; align-items: center; justify-content: center;
   overflow: hidden;
@@ -26,11 +29,12 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
-.clock-hm { font-size: clamp(32px, 64cqmin, 96px); font-weight: 600; letter-spacing: 0.02em; }
-/* No align-self override here (previously flex-end + margin-bottom, which is what
-   dropped the seconds well below the h:m line) — inheriting align-items: center
-   from .w-clock keeps both pieces on the same vertical center. */
-.clock-sec { font-size: 0.36em; opacity: 0.55; }
+.clock-hm { font-size: clamp(32px, 64cqmin, 96px); font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; max-width: 100%; }
+/* .clock-sec is nested *inside* .clock-hm (not a flex sibling) so its `em`
+   resolves against .clock-hm's own font-size, not .w-clock's — as a sibling
+   it was inheriting the ancestor's base 16px font-size instead, rendering
+   at an illegibly tiny ~6px regardless of the clock's actual size. */
+.clock-sec { font-size: 0.5em; opacity: 0.6; }
 .w-date { text-align: center; }
 .w-date .date-main { font-size: clamp(16px, 3vw, 40px); font-weight: 500; }
 .w-date .date-weekday { font-size: clamp(13px, 2vw, 24px); opacity: 0.6; margin-top: 4px; }
@@ -43,10 +47,16 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 .w-loading, .w-error { opacity: 0.6; font-size: 14px; padding: 8px; text-align: center; }
 .w-error { color: #ff9aa7; }
 
-.w-weather { text-align: center; }
+.w-weather { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; padding: 8px 12px; box-sizing: border-box; text-align: center; gap: 2px; }
+.weather-body { display: flex; flex-direction: column; align-items: center; width: 100%; }
 .weather-temp { font-size: clamp(24px, 6vw, 56px); font-weight: 600; }
 .weather-text { font-size: clamp(13px, 2vw, 20px); opacity: 0.75; margin-top: 2px; }
 .weather-loc { font-size: clamp(11px, 1.6vw, 16px); opacity: 0.5; margin-top: 4px; }
+.weather-forecast { display: flex; justify-content: space-between; gap: 4px; width: 100%; padding-top: 6px; margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.08); }
+.weather-fc-day { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 1 1 0; min-width: 0; }
+.weather-fc-wd { font-size: clamp(8px, 1.1vw, 11px); opacity: 0.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.weather-fc-icon { font-size: clamp(12px, 2vw, 18px); }
+.weather-fc-temp { font-size: clamp(8px, 1.1vw, 11px); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 .w-airquality { display: flex; flex-direction: column; justify-content: center; gap: 6px;
   width: 100%; height: 100%; padding: 10px 14px; box-sizing: border-box; }
@@ -58,20 +68,32 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 .aq-grade-1 { color: #86efac; }
 .aq-grade-2 { color: #fbbf24; }
 .aq-grade-3 { color: #f87171; }
+.aq-extra { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.08); }
 
 .w-calendar, .w-rss { list-style: none; width: 100%; height: 100%; padding: 12px;
   overflow: hidden; font-size: clamp(12px, 1.8vw, 18px); }
 .w-calendar li, .w-rss li { padding: 5px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
 .w-calendar li:last-child, .w-rss li:last-child { border-bottom: none; }
 .cal-date { opacity: 0.6; margin-right: 10px; font-variant-numeric: tabular-nums; }
+.cal-time { opacity: 0.6; margin-right: 8px; font-variant-numeric: tabular-nums; }
 .cal-empty { opacity: 0.4; }
 .w-rss a { color: inherit; text-decoration: none; }
 .w-rss a:hover { text-decoration: underline; }
+.rss-date { display: block; font-size: clamp(9px, 1.2vw, 12px); opacity: 0.5; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+/* ---- paneo.calendar (event list) size-adaptive detail: time-of-day + source legend ---- */
+.w-cal-list { width: 100%; height: 100%; display: flex; flex-direction: column; box-sizing: border-box; }
+.w-cal-list .w-calendar { flex: 1; min-height: 0; padding: 12px 12px 0; }
+.cal-legend { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 12px 10px; font-size: clamp(9px, 1.2vw, 12px); opacity: 0.7; }
+.cal-legend-item { display: flex; align-items: center; gap: 4px; }
+.cal-legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 
 .w-iframe { width: 100%; height: 100%; border: 0; }
 
 #status { position: fixed; right: 12px; bottom: 12px; font-size: 13px;
-  padding: 4px 12px; border-radius: 20px; background: rgba(0, 0, 0, 0.45);
+  padding: 4px 12px; border-radius: 20px; background: rgba(15, 18, 26, 0.55);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.06);
   transition: opacity 0.6s; }
 #status.online { color: #7cffb2; }
 #status.offline { color: #ffc97c; }
@@ -91,12 +113,16 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 .w-image.no-transition { transition: none; }
 
 /* ---- §M3: Monthly calendar grid (paneo.calendar.month) ---- */
+/* cq* (container query) units, not vw/vh — this widget's own box size now
+   varies dramatically (day/week/3-week/month views), unlike most other
+   widgets, so sizing needs to scale with *its* box, not the viewport
+   (.widget-content already sets container-type:size, same as .w-clock). */
 .w-cal-month { display: flex; flex-direction: column; width: 100%; height: 100%; padding: 8px; gap: 4px; }
-.cal-m-header { font-size: clamp(11px, 1.8vw, 20px); font-weight: 600; text-align: center; opacity: 0.9; padding-bottom: 2px; }
+.cal-m-header { font-size: clamp(11px, 3.5cqh, 22px); font-weight: 600; text-align: center; opacity: 0.9; padding-bottom: 2px; }
 .cal-m-grid { display: grid; flex: 1; gap: 2px; }
-.cal-m-cell { min-width: 0; min-height: 0; overflow: hidden; font-size: clamp(9px, 1.2vw, 13px); }
-.cal-m-day-hdr { text-align: center; opacity: 0.45; font-size: clamp(9px, 1.1vw, 12px); font-weight: 600; padding: 2px 0; }
-.cal-m-wn-hdr, .cal-m-wn { text-align: center; opacity: 0.25; font-size: clamp(8px, 0.9vw, 11px); }
+.cal-m-cell { min-width: 0; min-height: 0; overflow: hidden; font-size: clamp(9px, 4cqh, 15px); }
+.cal-m-day-hdr { text-align: center; opacity: 0.45; font-size: clamp(9px, 3cqh, 13px); font-weight: 600; padding: 2px 0; }
+.cal-m-wn-hdr, .cal-m-wn { text-align: center; opacity: 0.25; font-size: clamp(8px, 2.5cqh, 11px); }
 .cal-m-day { background: rgba(255,255,255,0.03); border-radius: 4px; padding: 2px 3px; display: flex; flex-direction: column; gap: 1px; }
 .cal-m-day:hover { background: rgba(255,255,255,0.07); }
 .cal-m-today { background: rgba(96,165,250,0.18); border: 1px solid rgba(96,165,250,0.45); }
@@ -104,10 +130,19 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 .cal-m-other { opacity: 0.3; }
 .cal-m-sat .cal-m-dnum { color: #7dd3fc; }
 .cal-m-sun .cal-m-dnum { color: #f87171; }
-.cal-m-dnum { font-size: clamp(9px, 1.1vw, 13px); font-weight: 500; line-height: 1.2; }
-.cal-m-event { font-size: clamp(8px, 0.9vw, 11px); opacity: 0.8; background: rgba(96,165,250,0.2); border-radius: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
-.cal-m-more { font-size: clamp(7px, 0.8vw, 10px); opacity: 0.5; }
+.cal-m-dnum { font-size: clamp(9px, 3.5cqh, 15px); font-weight: 500; line-height: 1.2; }
+.cal-m-event { font-size: clamp(8px, 3cqh, 13px); opacity: 0.8; background: rgba(96,165,250,0.2); border-radius: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+.cal-m-more { font-size: clamp(7px, 2.5cqh, 11px); opacity: 0.5; }
 .cal-m-fetch-err { font-size: 11px; color: #ff9aa7; padding: 4px; text-align: center; }
+
+/* ---- Calendar day view (paneo.calendar.month at its smallest sizes) ---- */
+.w-cal-day { display: flex; flex-direction: column; width: 100%; height: 100%; padding: 10px 12px; gap: 6px; box-sizing: border-box; }
+.cal-d-header { font-size: clamp(12px, 6cqh, 22px); font-weight: 600; opacity: 0.9; text-align: center; }
+.cal-d-list { flex: 1; overflow: hidden auto; display: flex; flex-direction: column; gap: 4px; }
+.cal-d-item { display: flex; align-items: baseline; gap: 8px; padding: 3px 6px; border-radius: 4px; background: rgba(255,255,255,0.04); font-size: clamp(10px, 4.5cqh, 16px); }
+.cal-d-time { opacity: 0.6; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.cal-d-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-d-empty { opacity: 0.4; text-align: center; padding: 12px 0; font-size: clamp(10px, 4cqh, 14px); }
 
 /* ---- §M3: Alarm / countdown timer (paneo.timer) ---- */
 .w-timer { display: flex; flex-direction: column; justify-content: center; gap: 6px; width: 100%; height: 100%; padding: 10px 14px; }
@@ -121,14 +156,26 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 
 /* ---- §M5: Home Assistant (paneo.homeassistant) ---- */
 .w-ha { display: flex; flex-direction: column; height: 100%; padding: 12px; justify-content: space-between; box-sizing: border-box; }
-.ha-header { display: flex; align-items: center; gap: 8px; font-size: clamp(11px, 1.4vw, 15px); font-weight: 600; opacity: 0.85; }
-.ha-icon { font-size: clamp(14px, 1.8vw, 20px); }
-.ha-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ha-header { display: flex; align-items: center; gap: 8px; font-size: clamp(11px, 1.4vw, 15px); font-weight: 600; opacity: 0.85; min-width: 0; }
+.ha-icon { font-size: clamp(14px, 1.8vw, 20px); flex-shrink: 0; }
+.ha-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ha-body { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; }
-.ha-state-val { font-size: clamp(20px, 3.5vw, 36px); font-weight: 700; color: #60a5fa; }
-.ha-toggle-btn { background: #3b82f6; color: #fff; border: 0; border-radius: 8px; padding: 6px 12px; font-size: clamp(12px, 1.8vw, 18px); font-weight: 600; cursor: pointer; width: 100%; max-width: 140px; transition: background 0.2s; white-space: nowrap; }
-.ha-toggle-btn:hover { background: #2563eb; }
+.ha-state-val { font-size: clamp(20px, 3.5vw, 36px); font-weight: 700; color: #60a5fa;
+  max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ha-toggle-btn { background: linear-gradient(135deg, #4f8cff, #6a5cf5); color: #fff; border: 0; border-radius: 8px; padding: 6px 12px; font-size: clamp(12px, 1.8vw, 18px); font-weight: 600; cursor: pointer; width: 100%; max-width: 140px; box-shadow: 0 3px 10px rgba(79,140,255,0.3); transition: filter 0.16s ease; white-space: nowrap; }
+.ha-toggle-btn:hover { filter: brightness(1.08); }
 .ha-toggle-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ---- Home Assistant weather.* entity card ---- */
+.w-ha-weather .ha-weather-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 0; min-width: 0; width: 100%; }
+.ha-weather-temp { font-size: clamp(22px, 4vw, 44px); font-weight: 700; color: #60a5fa; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ha-weather-cond { font-size: clamp(11px, 1.6vw, 16px); opacity: 0.8; }
+.ha-weather-meta { display: flex; gap: 10px; font-size: clamp(10px, 1.3vw, 13px); opacity: 0.7; margin-top: 2px; }
+.ha-weather-forecast { display: flex; justify-content: space-between; gap: 4px; width: 100%; padding-top: 6px; margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.08); }
+.ha-fc-day { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 1 1 0; min-width: 0; }
+.ha-fc-wd { font-size: clamp(8px, 1.1vw, 11px); opacity: 0.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ha-fc-icon { font-size: clamp(12px, 2vw, 18px); }
+.ha-fc-temp { font-size: clamp(8px, 1.1vw, 11px); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* ---- World clock (paneo.worldclock) ---- */
 .w-worldclock { display: flex; flex-direction: column; justify-content: center; gap: 6px; width: 100%; height: 100%; padding: 10px 14px; box-sizing: border-box; overflow: hidden; }
@@ -208,4 +255,4 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
    from the widget-def flag, not this widget type's name, so any other widget
    (built-in or plugin) can opt into the same behavior. */
 .widget[data-background-layer="true"] { z-index: 1; }
-.widget-content.transparent-bg { background: transparent !important; border-color: transparent !important; }
+.widget-content.transparent-bg { background: transparent !important; border-color: transparent !important; box-shadow: none !important; }
