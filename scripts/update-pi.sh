@@ -85,41 +85,37 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 5. Update the kiosk launcher script from GitHub
+# 5. Update the kiosk launcher script
 # ---------------------------------------------------------------------------
 KIOSK_BIN="/usr/local/bin/paneo-kiosk"
 if [ -f "$KIOSK_BIN" ]; then
-  # Read the display URL embedded in the existing launcher (last non-empty line)
-  DISPLAY_URL="$(grep -o 'http[^ "]*' "$KIOSK_BIN" | tail -1 || true)"
-  if [ -n "$DISPLAY_URL" ]; then
-    CHROME="$(grep -o '^exec [^ ]*' "$KIOSK_BIN" | awk '{print $2}' || true)"
-    CHROME="${CHROME:-$(command -v chromium-browser 2>/dev/null || command -v chromium 2>/dev/null)}"
+  DISPLAY_URL="$(grep -o 'http[^ "]*' "$KIOSK_BIN" 2>/dev/null | tail -1 || true)"
+  CHROME="$(grep 'exec ' "$KIOSK_BIN" 2>/dev/null | grep -v '#' | head -1 | awk '{print $2}' || true)"
+  CHROME="${CHROME:-$(command -v chromium-browser 2>/dev/null || command -v chromium 2>/dev/null || true)}"
+
+  if [ -n "$DISPLAY_URL" ] && [ -n "$CHROME" ]; then
     log "Updating kiosk launcher for $DISPLAY_URL"
-    cat > "$KIOSK_BIN" <<'KIOSK_EOF'
-#!/usr/bin/env bash
-set -e
-if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then
-  OZONE="--ozone-platform=wayland --enable-features=UseOzonePlatform"
-  wlr-randr >/dev/null 2>&1 || true
-else
-  export DISPLAY="${DISPLAY:-:0}"
-  OZONE=""
-  xset s off     >/dev/null 2>&1 || true
-  xset -dpms     >/dev/null 2>&1 || true
-  xset s noblank >/dev/null 2>&1 || true
-fi
-KIOSK_EOF
-    cat >> "$KIOSK_BIN" <<EOF
-exec "$CHROME" \$OZONE \\
-  --kiosk --noerrdialogs --disable-infobars \\
-  --disable-session-crashed-bubble \\
-  --no-first-run \\
-  --disable-translate \\
-  --disable-features=Translate \\
-  "$DISPLAY_URL"
-EOF
+    # Use printf instead of heredoc to avoid stdin conflict when piped via curl|bash
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'set -e' \
+      'if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then' \
+      '  OZONE="--ozone-platform=wayland --enable-features=UseOzonePlatform"' \
+      '  wlr-randr >/dev/null 2>&1 || true' \
+      'else' \
+      '  export DISPLAY="${DISPLAY:-:0}"' \
+      '  OZONE=""' \
+      '  xset s off     >/dev/null 2>&1 || true' \
+      '  xset -dpms     >/dev/null 2>&1 || true' \
+      '  xset s noblank >/dev/null 2>&1 || true' \
+      'fi' \
+      > "$KIOSK_BIN"
+    printf 'exec "%s" $OZONE \\\n  --kiosk --noerrdialogs --disable-infobars \\\n  --disable-session-crashed-bubble \\\n  --no-first-run \\\n  --disable-translate \\\n  --disable-features=Translate \\\n  "%s"\n' \
+      "$CHROME" "$DISPLAY_URL" >> "$KIOSK_BIN"
     chmod +x "$KIOSK_BIN"
-    log "Kiosk launcher updated (restart desktop session to apply)"
+    log "Kiosk launcher updated"
+  else
+    log "Could not detect chrome/URL from existing launcher — skipping launcher update"
   fi
 else
   log "Skipping kiosk launcher update (not installed)"
@@ -128,62 +124,49 @@ fi
 # ---------------------------------------------------------------------------
 # 6. Restart the kiosk browser
 # ---------------------------------------------------------------------------
-restart_kiosk() {
-  [ -f "$KIOSK_BIN" ] || { log "Kiosk not installed — skipping restart"; return; }
+log "Restarting kiosk..."
 
-  # Find the desktop user who owns the running chromium/kiosk process
-  local kiosk_user uid runtime_dir
-  kiosk_user="$(ps aux \
-    | grep -E '[c]hromium.*(--kiosk|paneo-kiosk)|[p]aneo-kiosk' \
-    | awk '{print $1}' | grep -v root | head -1 || true)"
+# Determine the desktop user: prefer the user who invoked sudo
+KIOSK_USER="${SUDO_USER:-}"
+if [ -z "$KIOSK_USER" ]; then
+  # Try to read from agent service file
+  KIOSK_USER="$(grep -m1 'User=' /etc/systemd/system/paneo-agent.service 2>/dev/null \
+    | sed 's/User=//' | tr -d '[:space:]' || true)"
+fi
+KIOSK_USER="${KIOSK_USER:-pi}"
 
-  # Fall back to the SUDO_USER (who invoked sudo) or SERVICE_USER from agent service
-  if [ -z "$kiosk_user" ]; then
-    kiosk_user="${SUDO_USER:-$(read_service_env paneo-agent User 2>/dev/null || true)}"
-  fi
+KIOSK_UID="$(id -u "$KIOSK_USER" 2>/dev/null || echo 1000)"
+RUNTIME_DIR="/run/user/$KIOSK_UID"
 
-  if [ -z "$kiosk_user" ]; then
-    log "Could not determine kiosk user — kiosk NOT restarted"
-    log "Run manually: sudo -u pi /usr/local/bin/paneo-kiosk &"
-    return
-  fi
+# Kill existing kiosk/chromium processes
+pkill -f 'chromium.*--kiosk' 2>/dev/null || true
+pkill -f 'paneo-kiosk'       2>/dev/null || true
+sleep 2
 
-  uid="$(id -u "$kiosk_user" 2>/dev/null || true)"
-  runtime_dir="/run/user/$uid"
+if [ -f "$KIOSK_BIN" ]; then
+  # Find wayland socket (Bookworm default)
+  WAYLAND_SOCK="$(ls "$RUNTIME_DIR"/wayland-* 2>/dev/null | head -1 | xargs -I{} basename {} 2>/dev/null || true)"
 
-  # Kill the running kiosk/chromium (ignore if not running)
-  log "Stopping kiosk (user: $kiosk_user)..."
-  pkill -u "$kiosk_user" -f 'chromium.*--kiosk' 2>/dev/null || true
-  pkill -u "$kiosk_user" -f 'paneo-kiosk'        2>/dev/null || true
-  sleep 2
-
-  # Detect display server: Wayland socket lives under XDG_RUNTIME_DIR
-  local wayland_sock=""
-  if [ -d "$runtime_dir" ]; then
-    wayland_sock="$(ls "$runtime_dir"/wayland-* 2>/dev/null | head -1 | xargs -I{} basename {} 2>/dev/null || true)"
-  fi
-
-  log "Restarting kiosk as $kiosk_user..."
-  if [ -n "$wayland_sock" ]; then
-    # Wayland (Bookworm / Wayfire / Labwc)
-    sudo -u "$kiosk_user" env \
-      WAYLAND_DISPLAY="$wayland_sock" \
-      XDG_RUNTIME_DIR="$runtime_dir" \
+  if [ -n "$WAYLAND_SOCK" ]; then
+    log "Launching kiosk via Wayland ($WAYLAND_SOCK) as $KIOSK_USER"
+    sudo -u "$KIOSK_USER" \
+      WAYLAND_DISPLAY="$WAYLAND_SOCK" \
+      XDG_RUNTIME_DIR="$RUNTIME_DIR" \
       XDG_SESSION_TYPE="wayland" \
-      /usr/local/bin/paneo-kiosk &
+      setsid /usr/local/bin/paneo-kiosk </dev/null >/dev/null 2>&1 &
+    disown $! 2>/dev/null || true
   else
-    # X11 (Bullseye / LXDE)
-    local xauth="/home/$kiosk_user/.Xauthority"
-    sudo -u "$kiosk_user" env \
+    log "Launching kiosk via X11 as $KIOSK_USER"
+    sudo -u "$KIOSK_USER" \
       DISPLAY=":0" \
-      XAUTHORITY="$xauth" \
-      /usr/local/bin/paneo-kiosk &
+      XAUTHORITY="/home/$KIOSK_USER/.Xauthority" \
+      setsid /usr/local/bin/paneo-kiosk </dev/null >/dev/null 2>&1 &
+    disown $! 2>/dev/null || true
   fi
-
-  log "Kiosk restarted (display: ${wayland_sock:-:0})"
-}
-
-restart_kiosk
+  log "Kiosk launched"
+else
+  log "Kiosk binary not found — skipping restart"
+fi
 
 # ---------------------------------------------------------------------------
 # 7. Summary
@@ -194,3 +177,4 @@ if curl -fsS "$SERVER/api/version" >/dev/null 2>&1; then
 fi
 log "Server logs : docker logs -f paneo"
 log "Agent logs  : journalctl -u paneo-agent -f"
+
