@@ -55,17 +55,30 @@ async function geocode(location) {
 
 async function fetchWeather(location, locale) {
   const { lat, lon, name } = await geocode(location);
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`;
+  // daily=... + timezone=auto: same call also returns a short forecast, used by
+  // paneo.weather to show a forecast strip once the widget is resized tall
+  // enough for it — timezone=auto is required for open-meteo to bucket the
+  // daily values into the location's own calendar days, not UTC's.
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=auto`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`forecast failed: ${res.status}`);
   const data = await res.json();
   const cw = data.current_weather;
+  const daily = data.daily || {};
+  const forecast = (daily.time || []).map((date, i) => ({
+    date,
+    weatherCode: daily.weathercode?.[i],
+    weatherText: weatherCodeText(daily.weathercode?.[i], locale),
+    tempMax: daily.temperature_2m_max?.[i],
+    tempMin: daily.temperature_2m_min?.[i],
+  }));
   return {
     location: name,
     temperature: cw?.temperature,
     weatherCode: cw?.weathercode,
     weatherText: weatherCodeText(cw?.weathercode, locale),
     isDay: !!cw?.is_day,
+    forecast,
     fetchedAt: new Date().toISOString(),
   };
 }
@@ -104,7 +117,10 @@ export async function fetchQrCode(data, size) {
 
 async function fetchAirQuality(location, locale) {
   const { lat, lon, name } = await geocode(location);
-  const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm10,pm2_5`;
+  // co/no2/so2/o3 have no KR-style grade table (only PM10/PM2.5 do, see
+  // *_THRESHOLDS above) — they're returned as plain µg/m³ values, shown only
+  // once paneo.airquality is resized tall enough for the extra rows.
+  const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`air quality failed: ${res.status}`);
   const data = await res.json();
@@ -118,6 +134,7 @@ async function fetchAirQuality(location, locale) {
     location: name,
     pm10, pm10Grade: pm10Idx != null ? gradeText[pm10Idx] : null, pm10GradeIndex: pm10Idx,
     pm25, pm25Grade: pm25Idx != null ? gradeText[pm25Idx] : null, pm25GradeIndex: pm25Idx,
+    co: cur.carbon_monoxide, no2: cur.nitrogen_dioxide, so2: cur.sulphur_dioxide, o3: cur.ozone,
     fetchedAt: new Date().toISOString(),
   };
 }

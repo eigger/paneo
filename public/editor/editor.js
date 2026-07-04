@@ -129,6 +129,8 @@ const cmdIdentifyBtn = document.getElementById('cmd-identify-btn');
 const agentStatus = document.getElementById('agent-status');
 const cmdPowerOnBtn = document.getElementById('cmd-power-on-btn');
 const cmdPowerOffBtn = document.getElementById('cmd-power-off-btn');
+const cmdUpdateAllBtn = document.getElementById('cmd-update-all-btn');
+const cmdUpdateServerBtn = document.getElementById('cmd-update-server-btn');
 const powerOnInput = document.getElementById('power-on-time');
 const powerOffInput = document.getElementById('power-off-time');
 const powerSaveBtn = document.getElementById('power-save-btn');
@@ -183,6 +185,7 @@ function applyI18n() {
   document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => (el.placeholder = t(el.dataset.i18nPlaceholder)));
   saveState.textContent = t('saved');
   applyVersionUI();
+  applyUpdateCheckUI();
   buildPalette();
   renderInspector();
 }
@@ -208,6 +211,35 @@ function applyVersionUI() {
 async function loadVersions() {
   versionManifest = await api('/api/version');
   applyVersionUI();
+}
+
+// Whether a newer release exists on GitHub than what this server is running
+// (docs/design.md D#) — informational only, shown next to the update buttons
+// so "업데이트 가능한 상태인지" doesn't require blindly running an update to find out.
+let updateCheckResult = null;
+
+function applyUpdateCheckUI() {
+  const box = document.getElementById('update-check-status');
+  if (!box || !updateCheckResult) return;
+  if (updateCheckResult.error) {
+    box.textContent = t('updateCheckFailed');
+    box.className = 'update-check-status';
+  } else if (updateCheckResult.updateAvailable) {
+    box.textContent = t('updateCheckAvailable', updateCheckResult.latest);
+    box.className = 'update-check-status available';
+  } else {
+    box.textContent = t('updateCheckLatest');
+    box.className = 'update-check-status';
+  }
+}
+
+async function loadUpdateCheck() {
+  try {
+    updateCheckResult = await api('/api/update-check');
+  } catch {
+    updateCheckResult = { error: true };
+  }
+  applyUpdateCheckUI();
 }
 
 const CATEGORY_KEY = { basic: 'categoryBasic', data: 'categoryData', media: 'categoryMedia', plugin: 'categoryPlugin' };
@@ -364,6 +396,16 @@ function initSelectors() {
   if (cmdPowerOnBtn) cmdPowerOnBtn.addEventListener('click', () => sendPower(true));
   if (cmdPowerOffBtn) cmdPowerOffBtn.addEventListener('click', () => sendPower(false));
 
+  // Remote update trigger (agent-relayed — docs/design.md D#)
+  if (cmdUpdateAllBtn) cmdUpdateAllBtn.addEventListener('click', () => {
+    if (!confirm(t('updateHint'))) return;
+    sendUpdate('all');
+  });
+  if (cmdUpdateServerBtn) cmdUpdateServerBtn.addEventListener('click', () => {
+    if (!confirm(t('updateHint'))) return;
+    sendUpdate('server');
+  });
+
   // §M4: power schedule save / clear
   if (powerSaveBtn) powerSaveBtn.addEventListener('click', async () => {
     if (!device) return;
@@ -425,6 +467,14 @@ async function sendPower(on) {
   }
 }
 
+// Remote update trigger — agent-relayed, like sendPower() (docs/design.md D#).
+// mode: 'all' (server+agent+kiosk) or 'server' (Docker image + agent only).
+async function sendUpdate(mode) {
+  if (!device) return;
+  const res = await api(`/api/devices/${device.id}/command`, { method: 'POST', body: JSON.stringify({ action: 'update', mode }) });
+  toast(res.agentPresent ? t('updateSent') : t('updateNoAgent'));
+}
+
 function populateGroupSelect() {
   groupSelect.innerHTML = '';
   const none = document.createElement('option');
@@ -467,6 +517,8 @@ function syncDeviceMetaUI() {
   const hasAgent = device.agentPresent ?? false;
   if (cmdPowerOnBtn) { cmdPowerOnBtn.disabled = !hasAgent; cmdPowerOnBtn.title = hasAgent ? '' : t('agentMissingTip'); }
   if (cmdPowerOffBtn) { cmdPowerOffBtn.disabled = !hasAgent; cmdPowerOffBtn.title = hasAgent ? '' : t('agentMissingTip'); }
+  if (cmdUpdateAllBtn) { cmdUpdateAllBtn.disabled = !hasAgent; cmdUpdateAllBtn.title = hasAgent ? '' : t('agentMissingTip'); }
+  if (cmdUpdateServerBtn) { cmdUpdateServerBtn.disabled = !hasAgent; cmdUpdateServerBtn.title = hasAgent ? '' : t('agentMissingTip'); }
 }
 
 function saveResolution() {
@@ -1311,4 +1363,5 @@ canvas.addEventListener('pointerdown', (e) => {
 window.addEventListener('resize', render);
 
 loadVersions().catch(() => {});
+loadUpdateCheck().catch(() => {});
 loadDevices().catch((err) => toast(t('loadFail', err.message)));

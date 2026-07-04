@@ -18,8 +18,8 @@
  *   4. [simulator mode] console log only
  */
 
-import { execSync, execFile } from 'node:child_process';
-import { readFileSync, readdirSync } from 'node:fs';
+import { execSync, execFile, spawn } from 'node:child_process';
+import { readFileSync, readdirSync, openSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -88,6 +88,10 @@ function connect() {
       if (msg.action === 'power') {
         console.log(`[agent] power command: ${msg.on ? 'ON' : 'OFF'}`);
         setPower(msg.on);
+      } else if (msg.action === 'update') {
+        const mode = msg.mode === 'server' ? 'server' : 'all';
+        console.log(`[agent] update command: mode=${mode}`);
+        runUpdate(mode);
       }
     } else if (msg.type === 'agent.schedule') {
       console.log(`[agent] schedule received: ${JSON.stringify(msg.schedule)}`);
@@ -187,6 +191,38 @@ function run(cmd, args, extraEnv) {
     if (err) console.error(`[agent] ${cmd} failed: ${err.message}`);
     else console.log(`[agent] ${cmd} ${args.join(' ')} -> ok`);
   });
+}
+
+// ---------------------------------------------------------------------------
+// Remote update trigger (editor "update" button -> here) — runs the update
+// script installed + sudo-whitelisted by scripts/install-pi.sh's
+// install_update_trigger(), scoped to exactly that one script path.
+//
+// mode 'all': server + agent + kiosk (codecs, launcher flags, browser
+// restart). mode 'server': server + agent only, kiosk left untouched.
+//
+// The update script restarts this very agent process (systemctl restart
+// paneo-agent) partway through in both modes, so the child is spawned fully
+// detached (own process group, stdio redirected to a log file) — it must
+// keep running after this process is killed out from under it, and a fresh
+// agent instance reconnects once the restart completes.
+// ---------------------------------------------------------------------------
+
+function runUpdate(mode) {
+  const scriptPath = '/usr/local/bin/paneo-update-pi.sh';
+  const logFile = '/tmp/paneo-update.log';
+  try {
+    const out = openSync(logFile, 'a');
+    const err = openSync(logFile, 'a');
+    const child = spawn('sudo', [scriptPath, mode], {
+      detached: true,
+      stdio: ['ignore', out, err],
+    });
+    child.unref();
+    console.log(`[agent] update started (mode=${mode}, pid=${child.pid}) — log: ${logFile}`);
+  } catch (e) {
+    console.error(`[agent] failed to start update: ${e.message}`);
+  }
 }
 
 // ---------------------------------------------------------------------------

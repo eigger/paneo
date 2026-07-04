@@ -3,7 +3,10 @@
 const catalogs = {
   ko: {
     tag: 'editor',
-    lang: '편집기 언어',
+    // Always bilingual, unlike every other key here — this is the control that
+    // switches away from the Korean default, so a non-Korean speaker needs to
+    // recognize it before they've ever seen an English label anywhere else.
+    lang: '편집기 언어 / Editor language',
     device: '화면',
     localeLabel: '디스플레이 로케일',
     resolutionLabel: '해상도',
@@ -99,6 +102,14 @@ const catalogs = {
     powerOnSent: '화면 켜기 명령 전송',
     powerOffSent: '화면 끄기 명령 전송',
     powerNoAgent: '에이전트 미연결 — 명령 전송 불가',
+    updateAll: '전체 업데이트',
+    updateServer: '서버만 업데이트',
+    updateHint: '전체: 서버+에이전트+키오스크(코덱·재시작 포함). 서버만: 도커 이미지만 갱신, 화면은 그대로 둠. 컴패니언 에이전트가 연결된 화면에서만 가능합니다.',
+    updateSent: '업데이트 명령 전송 — 완료까지 몇 분 걸릴 수 있습니다',
+    updateNoAgent: '에이전트 미연결 — 업데이트 명령 전송 불가',
+    updateCheckAvailable: (v) => `🆕 업데이트 가능 — v${v}`,
+    updateCheckLatest: '✓ 최신 버전입니다',
+    updateCheckFailed: '업데이트 확인 실패 (네트워크 확인 필요)',
     // §M5 Home Assistant
     haSettingsLabel: '홈어시스턴트 연동 설정',
     haUrlLabel: '서버 주소 (URL)',
@@ -210,6 +221,14 @@ const catalogs = {
     powerOnSent: 'Screen ON command sent',
     powerOffSent: 'Screen OFF command sent',
     powerNoAgent: 'Agent not connected — command not delivered',
+    updateAll: 'Update all',
+    updateServer: 'Update server only',
+    updateHint: 'All: server+agent+kiosk (codecs, browser restart included). Server only: refreshes the Docker image, leaves the screen untouched. Needs a connected companion agent.',
+    updateSent: 'Update command sent — this can take a few minutes to finish',
+    updateNoAgent: 'Agent not connected — update not delivered',
+    updateCheckAvailable: (v) => `🆕 Update available — v${v}`,
+    updateCheckLatest: '✓ Up to date',
+    updateCheckFailed: 'Update check failed (check network)',
     // §M5 Home Assistant
     haSettingsLabel: 'Home Assistant Settings',
     haUrlLabel: 'Server URL',

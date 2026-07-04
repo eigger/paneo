@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { BRAND } from './brand.js';
-import { COMPONENTS, getVersionManifest } from './version.js';
+import { COMPONENTS, getVersionManifest, checkForUpdate } from './version.js';
 import * as store from './store.js';
 import { registerDataProxy } from './dataproxy.js';
 import { setAgentPresent } from './store.js';
@@ -169,6 +169,14 @@ app.get('/ws/agent', { websocket: true }, (socket, req) => {
 // --- REST API ---
 app.get('/api/brand', async () => BRAND);
 app.get('/api/version', async () => getVersionManifest());
+
+app.get('/api/update-check', async (req, reply) => {
+  try {
+    return await checkForUpdate();
+  } catch (err) {
+    return reply.code(502).send({ error: String(err.message || err) });
+  }
+});
 app.get('/api/plugins', async () => plugins.listPlugins());
 app.get('/api/devices', async () => store.listDevices().map(publicDevice));
 
@@ -258,8 +266,13 @@ app.post('/api/proxy/ha/services/:domain/:service', async (req, reply) => {
   }
   const cleanUrl = url.replace(/\/$/, '');
   const { domain, service } = req.params;
+  // Forwarded as-is — e.g. paneo.homeassistant's weather forecast card needs
+  // `?return_response` on weather/get_forecasts (HA's response-returning
+  // services convention); nothing else currently uses query params here, but
+  // there's no reason to hardcode just that one case into a generic proxy.
+  const qs = new URLSearchParams(req.query || {}).toString();
   try {
-    const res = await fetch(`${cleanUrl}/api/services/${domain}/${service}`, {
+    const res = await fetch(`${cleanUrl}/api/services/${domain}/${service}${qs ? `?${qs}` : ''}`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -414,14 +427,21 @@ app.post('/api/devices/:id/apply-to-group', async (req, reply) => {
 
 // --- remote commands (§M2): reload / identify | §M4: power ---
 app.post('/api/devices/:id/command', async (req, reply) => {
-  const { action, on } = req.body || {};
-  if (!['reload', 'identify', 'power'].includes(action)) return reply.code(400).send({ error: 'invalid action' });
+  const { action, on, mode } = req.body || {};
+  if (!['reload', 'identify', 'power', 'update'].includes(action)) return reply.code(400).send({ error: 'invalid action' });
   const d = store.getDevice(req.params.id);
   if (!d) return reply.code(404).send({ error: 'not found' });
   if (action === 'power') {
     // Power commands are routed to the companion agent, not the display browser
     const hasAgent = agents.has(d.id);
     sendToAgent(d.id, { type: 'command', action: 'power', on: Boolean(on) });
+    return { ok: true, agentPresent: hasAgent };
+  }
+  if (action === 'update') {
+    // Also agent-routed (docs/design.md D#) — runs scripts/update-pi.sh on the
+    // Pi via a narrowly sudo-whitelisted script, not the display browser.
+    const hasAgent = agents.has(d.id);
+    sendToAgent(d.id, { type: 'command', action: 'update', mode: mode === 'server' ? 'server' : 'all' });
     return { ok: true, agentPresent: hasAgent };
   }
   broadcast(d.id, { type: 'command', action, deviceName: d.name });

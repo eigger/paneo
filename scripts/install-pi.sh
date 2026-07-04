@@ -332,6 +332,25 @@ EOF
   log "Kiosk autostart registered. It will launch after the desktop session starts."
 }
 
+# Lets the (non-root) companion agent trigger `sudo <this exact script>` when
+# told to by the editor's update button — fetches this server's own copy of
+# update-pi.sh (same route it's normally curled from) so the installed copy
+# can never drift from what's actually deployed, and scopes sudo to exactly
+# that one script path rather than granting the agent's user broader access.
+install_update_trigger() {
+  local update_script="/usr/local/bin/paneo-update-pi.sh"
+  curl -fsSL "$SERVER/update.sh" -o "$update_script"
+  chmod +x "$update_script"
+
+  cat > /etc/sudoers.d/paneo-agent-update <<EOF
+$SERVICE_USER ALL=(root) NOPASSWD: $update_script *
+EOF
+  chmod 440 /etc/sudoers.d/paneo-agent-update
+  visudo -cf /etc/sudoers.d/paneo-agent-update >/dev/null \
+    || fail "generated sudoers file for paneo-agent-update is invalid"
+  log "Update trigger installed ($update_script, sudoers scoped to $SERVICE_USER)"
+}
+
 install_agent() {
   [ "$ENABLE_AGENT" = "1" ] || { log "Skipping companion agent"; return; }
   [ -n "$TOKEN" ] || fail "PANEO_TOKEN is required for companion agent"
@@ -341,6 +360,7 @@ install_agent() {
   mkdir -p "$AGENT_DIR"
   curl -fsSL "$SERVER/agent/agent.js" -o "$AGENT_DIR/agent.js"
   curl -fsSL "$SERVER/agent/version.json" -o "$AGENT_DIR/version.json"
+  install_update_trigger
 
   local node_bin
   node_bin="$(command -v node)"
