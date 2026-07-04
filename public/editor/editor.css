@@ -361,6 +361,12 @@ main { flex: 1; display: flex; min-height: 0; }
 .update-check-status { font-size: 12px; margin: 6px 0 4px; opacity: 0.6; }
 .update-check-status.available { color: #fbbf24; opacity: 1; font-weight: 600; }
 
+.update-progress-status { font-size: 12px; margin: 4px 0; opacity: 0; height: 0; overflow: hidden; transition: opacity 0.2s ease; }
+.update-progress-status.visible { opacity: 1; height: auto; }
+.update-progress-status.running { color: #60a5fa; }
+.update-progress-status.done { color: #4ade80; }
+.update-progress-status.failed { color: #f87171; }
+
 /* §M4: power on/off buttons */
 .button-row button.power-on  { color: #4ade80; border-color: #14532d; }
 .button-row button.power-on:hover:not(:disabled) { background: #14532d; }

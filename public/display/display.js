@@ -133,6 +133,34 @@ function showIdentify(name) {
   identifyTimer = setTimeout(() => el.classList.add('hidden'), 4000);
 }
 
+// Remote-update progress (docs/design.md D#), broadcast by the server
+// whenever it changes (src/server.js setUpdateStatus) — best-effort, since
+// the kiosk browser itself gets killed and relaunched partway through an
+// "all"-mode update anyway (this banner just covers the window before that
+// happens: agent/codec update, before the kiosk restart step). Always
+// bilingual, same reasoning as the connection-status pill.
+let updateBannerTimer = null;
+function showUpdateStatus(status, mode) {
+  const el = document.getElementById('update-status-banner');
+  if (!el) return;
+  clearTimeout(updateBannerTimer);
+  const modeLabel = mode === 'server' ? 'server · 서버' : 'all · 전체';
+  if (status === 'running') {
+    el.textContent = `⏳ Updating… · 업데이트 중… (${modeLabel})`;
+    el.className = 'visible running';
+  } else if (status === 'done') {
+    el.textContent = '✓ Update complete · 업데이트 완료';
+    el.className = 'visible done';
+    updateBannerTimer = setTimeout(() => el.classList.remove('visible'), 6000);
+  } else if (status === 'failed') {
+    el.textContent = '✗ Update failed · 업데이트 실패';
+    el.className = 'visible failed';
+    updateBannerTimer = setTimeout(() => el.classList.remove('visible'), 8000);
+  } else {
+    el.className = '';
+  }
+}
+
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${location.host}/ws?role=display&token=${encodeURIComponent(token)}`);
@@ -149,6 +177,8 @@ function connect() {
       location.reload();
     } else if (msg.type === 'command' && msg.action === 'identify') {
       showIdentify(msg.deviceName);
+    } else if (msg.type === 'update.status') {
+      showUpdateStatus(msg.status, msg.mode);
     }
   };
   ws.onclose = () => { setStatus('○ Reconnecting… · 재연결 중…', 'offline', false); setTimeout(connect, 2000); };

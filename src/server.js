@@ -118,13 +118,24 @@ function sendToAgent(id, msg) {
   const s = agents.get(id);
   if (s) try { s.send(JSON.stringify(msg)); } catch { /* dropped */ }
 }
-function broadcastEditors(msg) {
-  // re-use the displays map to find editor WS connections is not feasible
-  // (editors connect via REST+polling); instead we push device.status via
-  // the display WS channel so both display and editor can receive it.
-  // Editors that have an editor-WS (future feature) will piggyback here.
-  // For now, the editor re-fetches on tab focus. The agent heartbeat sets
-  // agentPresent in the DB so the next poll reflects it.
+
+// Remote-update progress (docs/design.md D#): in-memory only, like agents/
+// agentVersions above — a lost server restart mid-update just means the
+// editor falls back to "idle" and the user can check /tmp/paneo-update.log
+// on the device directly. Set optimistically the moment a command is sent
+// (before the agent's own 'running' ack can arrive — it may be racing its
+// own restart) and updated again from the agent's agent.status messages,
+// including after a reconnect once the update has actually finished.
+const updateStatus = new Map(); // Map<deviceId, { status, mode, ts }>
+const UPDATE_STATUS_STALE_MS = 20 * 60_000;
+function setUpdateStatus(id, status, mode) {
+  updateStatus.set(id, { status, mode, ts: Date.now() });
+  broadcast(id, { type: 'update.status', status, mode });
+}
+function getUpdateStatus(id) {
+  const entry = updateStatus.get(id);
+  if (!entry || Date.now() - entry.ts > UPDATE_STATUS_STALE_MS) return { status: 'idle' };
+  return entry;
 }
 
 app.get('/ws/agent', { websocket: true }, (socket, req) => {
@@ -152,6 +163,7 @@ app.get('/ws/agent', { websocket: true }, (socket, req) => {
         }
       } else if (msg.type === 'agent.status') {
         app.log.info(`agent status from ${device.name}: ${JSON.stringify(msg)}`);
+        if (msg.status) setUpdateStatus(device.id, msg.status, msg.mode);
       }
     } catch { /* ignore malformed */ }
   });
@@ -441,11 +453,24 @@ app.post('/api/devices/:id/command', async (req, reply) => {
     // Also agent-routed (docs/design.md D#) — runs scripts/update-pi.sh on the
     // Pi via a narrowly sudo-whitelisted script, not the display browser.
     const hasAgent = agents.has(d.id);
-    sendToAgent(d.id, { type: 'command', action: 'update', mode: mode === 'server' ? 'server' : 'all' });
+    const updateMode = mode === 'server' ? 'server' : 'all';
+    if (hasAgent) {
+      // Optimistic — set before the agent's own ack arrives, which may be
+      // racing its own restart partway through the update and never arrive
+      // for this specific command at all.
+      setUpdateStatus(d.id, 'running', updateMode);
+      sendToAgent(d.id, { type: 'command', action: 'update', mode: updateMode });
+    }
     return { ok: true, agentPresent: hasAgent };
   }
   broadcast(d.id, { type: 'command', action, deviceName: d.name });
   return { ok: true, displays: displayCount(d.id) };
+});
+
+app.get('/api/devices/:id/update-status', async (req, reply) => {
+  const d = store.getDevice(req.params.id);
+  if (!d) return reply.code(404).send({ error: 'not found' });
+  return getUpdateStatus(d.id);
 });
 
 // --- pages ---
