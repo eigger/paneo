@@ -40,16 +40,16 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
-.clock-hm { font-size: clamp(32px, 64cqmin, 96px); font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; max-width: 100%; }
+.clock-hm { display: inline-block; font-size: clamp(20px, 60cqmin, 200px); font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; max-width: 100%; }
 /* .clock-sec is nested *inside* .clock-hm (not a flex sibling) so its `em`
    resolves against .clock-hm's own font-size, not .w-clock's — as a sibling
    it was inheriting the ancestor's base 16px font-size instead, rendering
    at an illegibly tiny ~6px regardless of the clock's actual size. */
 .clock-sec { font-size: 0.5em; opacity: 0.6; }
 .w-date { text-align: center; }
-.w-date .date-main { font-size: clamp(16px, 3vw, 40px); font-weight: 500; }
-.w-date .date-weekday { font-size: clamp(13px, 2vw, 24px); opacity: 0.6; margin-top: 4px; }
-.w-text { font-size: clamp(16px, 3vw, 40px); padding: 12px; text-align: center; }
+.w-date .date-main { font-size: clamp(16px, 24cqmin, 80px); font-weight: 500; }
+.w-date .date-weekday { font-size: clamp(13px, 15cqmin, 48px); opacity: 0.6; margin-top: 4px; }
+.w-text { font-size: clamp(16px, 20cqmin, 64px); padding: 12px; text-align: center; }
 .w-image { width: 100%; height: 100%; background-size: cover; background-position: center;
   transition: background-image 0.6s ease; }
 .w-placeholder { display: flex; align-items: center; justify-content: center;
@@ -60,21 +60,21 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 
 .w-weather { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; padding: 8px 12px; box-sizing: border-box; text-align: center; gap: 2px; }
 .weather-body { display: flex; flex-direction: column; align-items: center; width: 100%; }
-.weather-temp { font-size: clamp(24px, 6vw, 56px); font-weight: 600; }
-.weather-text { font-size: clamp(13px, 2vw, 20px); opacity: 0.75; margin-top: 2px; }
-.weather-loc { font-size: clamp(11px, 1.6vw, 16px); opacity: 0.5; margin-top: 4px; }
+.weather-temp { font-size: clamp(24px, 30cqmin, 96px); font-weight: 600; }
+.weather-text { font-size: clamp(13px, 10cqmin, 32px); opacity: 0.75; margin-top: 2px; }
+.weather-loc { font-size: clamp(11px, 8cqmin, 24px); opacity: 0.5; margin-top: 4px; }
 .weather-forecast { display: flex; justify-content: space-between; gap: 4px; width: 100%; padding-top: 6px; margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.08); }
 .weather-fc-day { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 1 1 0; min-width: 0; }
-.weather-fc-wd { font-size: clamp(8px, 1.1vw, 11px); opacity: 0.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.weather-fc-icon { font-size: clamp(12px, 2vw, 18px); }
-.weather-fc-temp { font-size: clamp(8px, 1.1vw, 11px); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.weather-fc-wd { font-size: clamp(8px, 6cqmin, 16px); opacity: 0.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.weather-fc-icon { font-size: clamp(12px, 10cqmin, 32px); }
+.weather-fc-temp { font-size: clamp(8px, 6cqmin, 16px); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 .w-airquality { display: flex; flex-direction: column; justify-content: center; gap: 6px;
   width: 100%; height: 100%; padding: 10px 14px; box-sizing: border-box; }
-.aq-loc { font-size: clamp(11px, 1.5vw, 15px); opacity: 0.6; text-align: center; margin-bottom: 2px; }
+.aq-loc { font-size: clamp(11px, 9cqmin, 24px); opacity: 0.6; text-align: center; margin-bottom: 2px; }
 .aq-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.aq-label { font-size: clamp(11px, 1.6vw, 16px); opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.aq-value { font-size: clamp(14px, 2.2vw, 22px); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
+.aq-label { font-size: clamp(11px, 9cqmin, 24px); opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.aq-value { font-size: clamp(14px, 14cqmin, 40px); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
 .aq-grade-0 { color: #60a5fa; }
 .aq-grade-1 { color: #86efac; }
 .aq-grade-2 { color: #fbbf24; }
@@ -82,7 +82,7 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 .aq-extra { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.08); }
 
 .w-calendar, .w-rss { list-style: none; width: 100%; height: 100%; padding: 12px;
-  overflow: hidden; font-size: clamp(12px, 1.8vw, 18px); }
+  overflow: hidden; font-size: clamp(12px, 9cqmin, 28px); }
 .w-calendar li, .w-rss li { padding: 5px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
 .w-calendar li:last-child, .w-rss li:last-child { border-bottom: none; }
 .cal-date { opacity: 0.6; margin-right: 10px; font-variant-numeric: tabular-nums; }
@@ -90,12 +90,12 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 .cal-empty { opacity: 0.4; }
 .w-rss a { color: inherit; text-decoration: none; }
 .w-rss a:hover { text-decoration: underline; }
-.rss-date { display: block; font-size: clamp(9px, 1.2vw, 12px); opacity: 0.5; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.rss-date { display: block; font-size: clamp(9px, 6cqmin, 18px); opacity: 0.5; margin-top: 2px; font-variant-numeric: tabular-nums; }
 
 /* ---- paneo.calendar (event list) size-adaptive detail: time-of-day + source legend ---- */
 .w-cal-list { width: 100%; height: 100%; display: flex; flex-direction: column; box-sizing: border-box; }
 .w-cal-list .w-calendar { flex: 1; min-height: 0; padding: 12px 12px 0; }
-.cal-legend { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 12px 10px; font-size: clamp(9px, 1.2vw, 12px); opacity: 0.7; }
+.cal-legend { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 12px 10px; font-size: clamp(9px, 6cqmin, 18px); opacity: 0.7; }
 .cal-legend-item { display: flex; align-items: center; gap: 4px; }
 .cal-legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 
@@ -169,51 +169,51 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 
 /* ---- §M3: Alarm / countdown timer (paneo.timer) ---- */
 .w-timer { display: flex; flex-direction: column; justify-content: center; gap: 6px; width: 100%; height: 100%; padding: 10px 14px; }
-.w-timer-empty .timer-hint { font-size: clamp(11px, 1.5vw, 15px); opacity: 0.4; text-align: center; white-space: pre-line; }
+.w-timer-empty .timer-hint { font-size: clamp(11px, 6cqmin, 15px); opacity: 0.4; text-align: center; white-space: pre-line; }
 .timer-row { display: flex; flex-direction: column; gap: 1px; }
-.timer-label { font-size: clamp(10px, 1.3vw, 14px); opacity: 0.6; font-weight: 500; }
-.timer-val { font-size: clamp(14px, 2.5vw, 28px); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+.timer-label { font-size: clamp(10px, 5cqmin, 14px); opacity: 0.6; font-weight: 500; }
+.timer-val { font-size: clamp(14px, 14cqmin, 38px); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
 .timer-future { color: #f87171; } /* counts down — time still in the future */
 .timer-past   { color: #86efac; } /* elapsed — target time has passed */
 .timer-invalid { font-size: 12px; opacity: 0.4; }
 
 /* ---- §M5: Home Assistant (paneo.homeassistant) ---- */
 .w-ha { display: flex; flex-direction: column; height: 100%; padding: 12px; justify-content: space-between; box-sizing: border-box; }
-.ha-header { display: flex; align-items: center; gap: 8px; font-size: clamp(11px, 1.4vw, 15px); font-weight: 600; opacity: 0.85; min-width: 0; }
-.ha-icon { font-size: clamp(14px, 1.8vw, 20px); flex-shrink: 0; }
-.ha-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+..ha-header { display: flex; align-items: center; gap: 8px; font-size: clamp(11px, 9cqmin, 24px); font-weight: 600; opacity: 0.85; min-width: 0; }
+.ha-icon { font-size: clamp(14px, 10cqmin, 32px); flex-shrink: 0; }
+.ha-title { display: inline-block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ha-body { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; }
-.ha-state-val { font-size: clamp(20px, 3.5vw, 36px); font-weight: 700; color: #60a5fa;
+.ha-state-val { display: inline-block; font-size: clamp(20px, 16cqmin, 48px); font-weight: 700; color: #60a5fa;
   max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ha-toggle-btn { background: linear-gradient(135deg, #4f8cff, #6a5cf5); color: #fff; border: 0; border-radius: 8px; padding: 6px 12px; font-size: clamp(12px, 1.8vw, 18px); font-weight: 600; cursor: pointer; width: 100%; max-width: 140px; box-shadow: 0 3px 10px rgba(79,140,255,0.3); transition: filter 0.16s ease; white-space: nowrap; }
+.ha-toggle-btn { background: linear-gradient(135deg, #4f8cff, #6a5cf5); color: #fff; border: 0; border-radius: 8px; padding: 6px 12px; font-size: clamp(12px, 10cqmin, 28px); font-weight: 600; cursor: pointer; width: 100%; max-width: 140px; box-shadow: 0 3px 10px rgba(79,140,255,0.3); transition: filter 0.16s ease; white-space: nowrap; }
 .ha-toggle-btn:hover { filter: brightness(1.08); }
 .ha-toggle-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* ---- Home Assistant weather.* entity card ---- */
 .w-ha-weather .ha-weather-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 0; min-width: 0; width: 100%; }
-.ha-weather-temp { font-size: clamp(22px, 4vw, 44px); font-weight: 700; color: #60a5fa; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ha-weather-cond { font-size: clamp(11px, 1.6vw, 16px); opacity: 0.8; }
-.ha-weather-meta { display: flex; gap: 10px; font-size: clamp(10px, 1.3vw, 13px); opacity: 0.7; margin-top: 2px; }
+.ha-weather-temp { display: inline-block; font-size: clamp(22px, 20cqmin, 56px); font-weight: 700; color: #60a5fa; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ha-weather-cond { font-size: clamp(11px, 8cqmin, 24px); opacity: 0.8; }
+.ha-weather-meta { display: flex; gap: 10px; font-size: clamp(10px, 6cqmin, 18px); opacity: 0.7; margin-top: 2px; }
 .ha-weather-forecast { display: flex; justify-content: space-between; gap: 4px; width: 100%; padding-top: 6px; margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.08); }
 .ha-fc-day { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 1 1 0; min-width: 0; }
-.ha-fc-wd { font-size: clamp(8px, 1.1vw, 11px); opacity: 0.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ha-fc-icon { font-size: clamp(12px, 2vw, 18px); }
-.ha-fc-temp { font-size: clamp(8px, 1.1vw, 11px); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ha-fc-wd { font-size: clamp(8px, 6cqmin, 16px); opacity: 0.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ha-fc-icon { font-size: clamp(12px, 10cqmin, 32px); }
+.ha-fc-temp { font-size: clamp(8px, 6cqmin, 16px); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* ---- World clock (paneo.worldclock) ---- */
 .w-worldclock { display: flex; flex-direction: column; justify-content: center; gap: 6px; width: 100%; height: 100%; padding: 10px 14px; box-sizing: border-box; overflow: hidden; }
 .wc-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.wc-label { font-size: clamp(11px, 1.6vw, 16px); opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.wc-time { font-size: clamp(14px, 2.4vw, 26px); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
+.wc-label { font-size: clamp(11px, 9cqmin, 24px); opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.wc-time { font-size: clamp(14px, 14cqmin, 40px); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
 
 /* ---- D-Day countdown (paneo.dday) ---- */
 .w-dday { display: flex; flex-direction: column; justify-content: center; gap: 6px; width: 100%; height: 100%; padding: 10px 14px; box-sizing: border-box; overflow: hidden; }
 .dday-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.dday-label { font-size: clamp(11px, 1.6vw, 16px); opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.dday-val { font-size: clamp(14px, 2.6vw, 28px); font-weight: 700; color: #60a5fa; white-space: nowrap; flex-shrink: 0; }
+.dday-label { font-size: clamp(11px, 9cqmin, 24px); opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.dday-val { font-size: clamp(14px, 15cqmin, 40px); font-weight: 700; color: #60a5fa; white-space: nowrap; flex-shrink: 0; }
 
 /* ---- To-do list (paneo.todo) ---- */
-.w-todo { list-style: none; width: 100%; height: 100%; padding: 12px; overflow: hidden auto; font-size: clamp(12px, 1.8vw, 18px); display: flex; flex-direction: column; gap: 4px; }
+.w-todo { list-style: none; width: 100%; height: 100%; padding: 12px; overflow: hidden auto; font-size: clamp(12px, 9cqmin, 28px); display: flex; flex-direction: column; gap: 4px; }
 .todo-row { display: flex; align-items: center; gap: 8px; }
 .todo-check { flex-shrink: 0; opacity: 0.7; }
 .todo-done .todo-check { color: #86efac; }
@@ -236,14 +236,14 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 
 /* ---- Exchange rate (paneo.exchangerate) ---- */
 .w-exchangerate { text-align: center; }
-.fx-pair { font-size: clamp(12px, 1.8vw, 18px); opacity: 0.7; }
-.fx-rate { font-size: clamp(18px, 3.2vw, 34px); font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
-.fx-date { font-size: clamp(10px, 1.3vw, 13px); opacity: 0.4; margin-top: 4px; }
+.fx-pair { font-size: clamp(12px, 9cqmin, 28px); opacity: 0.7; }
+.fx-rate { font-size: clamp(18px, 16cqmin, 48px); font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.fx-date { font-size: clamp(10px, 5cqmin, 16px); opacity: 0.4; margin-top: 4px; }
 
 /* ---- QR code (paneo.qrcode) ---- */
 .w-qrcode { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 100%; padding: 8px; box-sizing: border-box; }
 .qr-img { max-width: 100%; max-height: 100%; object-fit: contain; background: #fff; border-radius: 6px; padding: 6px; }
-.qr-caption { font-size: clamp(10px, 1.4vw, 14px); opacity: 0.7; text-align: center; }
+.qr-caption { font-size: clamp(10px, 6cqmin, 16px); opacity: 0.7; text-align: center; }
 
 /* ---- §M5: Ken Burns Photo slide & fit mode ---- */
 .fit-contain { background-size: contain !important; background-repeat: no-repeat !important; }

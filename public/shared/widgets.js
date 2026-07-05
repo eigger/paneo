@@ -26,11 +26,22 @@ function errorBox(el, text) {
 // computed for the current size and only shrinks further as needed.
 function fitTextToBox(el, minRatio = 0.4) {
   if (!el) return;
+  const parent = el.parentElement;
+  if (!parent) return;
   const startSize = parseFloat(getComputedStyle(el).fontSize) || 16;
   const minSize = Math.max(9, startSize * minRatio);
   let size = startSize;
   el.style.fontSize = size + 'px';
-  while (size > minSize && (el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight)) {
+
+  // Compute available space in the parent container by subtracting padding
+  const parentStyle = getComputedStyle(parent);
+  const padX = (parseFloat(parentStyle.paddingLeft) || 0) + (parseFloat(parentStyle.paddingRight) || 0);
+  const padY = (parseFloat(parentStyle.paddingTop) || 0) + (parseFloat(parentStyle.paddingBottom) || 0);
+  const maxW = parent.clientWidth - padX;
+  const maxH = parent.clientHeight - padY;
+
+  // Compare content bounds against parent available space
+  while (size > minSize && (el.scrollWidth > maxW || el.scrollHeight > maxH)) {
     size -= 1;
     el.style.fontSize = size + 'px';
   }
@@ -267,7 +278,7 @@ export const widgets = {
         // and the clamp()'s cqmin-based max doesn't know about that, so
         // without this the text can wrap/overflow its box at some sizes.
         hmEl.style.fontSize = '';
-        fitTextToBox(hmEl, 0.4);
+        fitTextToBox(hmEl, 0.3);
       }
 
       const update = () => {
