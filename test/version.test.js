@@ -40,3 +40,37 @@ test('checkForUpdate flags updateAvailable when the latest GitHub release is new
     globalThis.fetch = origFetch;
   }
 });
+
+test('checkForUpdate: force bypasses the TTL cache, but repeated force calls are throttled', async () => {
+  const origFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return new Response(JSON.stringify({ tag_name: `v${calls}.0.0` }), { status: 200 });
+  };
+  try {
+    // Warm-up call — not asserted on, since an earlier test in this file may
+    // have already left a warm (unexpired) cache behind (module-level state
+    // is shared across tests in the same process).
+    await checkForUpdate();
+    const baseline = calls;
+
+    // No force call has ever happened yet in this process, so this one is
+    // never throttled — it must always hit the (mocked) network, even
+    // though the plain-cache TTL above is still fresh.
+    const forced = await checkForUpdate({ force: true });
+    assert.equal(calls, baseline + 1);
+
+    const cachedAfterForce = await checkForUpdate(); // plain — reuses the fresh cache the force call just set
+    assert.equal(calls, baseline + 1);
+    assert.equal(cachedAfterForce.latest, forced.latest);
+
+    // A second force right on its heels is throttled — protects GitHub's
+    // rate limit from a mashed button, not from normal reuse.
+    const throttled = await checkForUpdate({ force: true });
+    assert.equal(calls, baseline + 1);
+    assert.equal(throttled.latest, forced.latest);
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});

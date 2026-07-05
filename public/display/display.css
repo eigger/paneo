@@ -182,7 +182,7 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 
 /* ---- §M5: Home Assistant (paneo.homeassistant) ---- */
 .w-ha { display: flex; flex-direction: column; height: 100%; padding: 12px; justify-content: space-between; box-sizing: border-box; }
-..ha-header { display: flex; align-items: center; gap: 8px; font-size: clamp(11px, 9cqmin, 24px); font-weight: 600; opacity: 0.85; min-width: 0; }
+.ha-header { display: flex; align-items: center; gap: 8px; font-size: clamp(11px, 9cqmin, 24px); font-weight: 600; opacity: 0.85; min-width: 0; }
 .ha-icon { font-size: clamp(14px, 10cqmin, 32px); flex-shrink: 0; }
 .ha-title { display: inline-block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ha-body { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; }
@@ -202,6 +202,12 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 .ha-fc-wd { font-size: clamp(7px, 3.5cqmin, 12px); opacity: 0.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .ha-fc-icon { font-size: clamp(10px, 7cqmin, 22px); }
 .ha-fc-temp { font-size: clamp(7px, 3.5cqmin, 12px); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+/* 3-day tier (fewer, wider columns) gets noticeably larger type than the
+   5-day tier above — the whole point of splitting the tier is legibility. */
+.ha-weather-forecast.fc-3 .ha-fc-day { max-width: 33.33%; gap: 3px; }
+.ha-weather-forecast.fc-3 .ha-fc-wd { font-size: clamp(9px, 5cqmin, 16px); }
+.ha-weather-forecast.fc-3 .ha-fc-icon { font-size: clamp(14px, 10cqmin, 30px); }
+.ha-weather-forecast.fc-3 .ha-fc-temp { font-size: clamp(9px, 5cqmin, 16px); }
 
 /* ---- World clock (paneo.worldclock) ---- */
 .w-worldclock { display: flex; flex-direction: column; justify-content: center; gap: 6px; width: 100%; height: 100%; padding: 10px 14px; box-sizing: border-box; overflow: hidden; }

@@ -233,15 +233,27 @@ function applyUpdateCheckUI() {
   }
 }
 
-async function loadUpdateCheck() {
+async function loadUpdateCheck(force = false) {
   try {
-    updateCheckResult = await api('/api/update-check');
+    updateCheckResult = await api(`/api/update-check${force ? '?force=1' : ''}`);
   } catch {
     updateCheckResult = { error: true };
   }
   applyUpdateCheckUI();
   syncDeviceMetaUI();
 }
+
+const updateCheckBtn = document.getElementById('update-check-btn');
+updateCheckBtn?.addEventListener('click', async () => {
+  updateCheckBtn.disabled = true;
+  updateCheckBtn.classList.add('checking');
+  try {
+    await loadUpdateCheck(true);
+  } finally {
+    updateCheckBtn.disabled = false;
+    updateCheckBtn.classList.remove('checking');
+  }
+});
 
 // Remote-update progress (docs/design.md D#) — polled while the settings
 // panel is open (and right after triggering an update) so "did it actually

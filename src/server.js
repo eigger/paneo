@@ -184,7 +184,7 @@ app.get('/api/version', async () => getVersionManifest());
 
 app.get('/api/update-check', async (req, reply) => {
   try {
-    return await checkForUpdate();
+    return await checkForUpdate({ force: req.query?.force === '1' || req.query?.force === 'true' });
   } catch (err) {
     return reply.code(502).send({ error: String(err.message || err) });
   }
