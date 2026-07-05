@@ -21,6 +21,14 @@ if systemctl list-units --full --all | grep -q "paneo-agent.service"; then
   systemctl stop paneo-agent || true
   systemctl disable paneo-agent || true
 fi
+# Belt-and-suspenders: `systemctl stop` should already have killed the agent
+# process by the time it returns, but if it's somehow still around (unit
+# already removed/masked in a weird state, a manually-started copy outside
+# systemd's tracking, etc.) don't leave it running just because the service
+# management step didn't catch it.
+pkill -f '/opt/paneo-agent/agent.js' 2>/dev/null || true
+sleep 1
+pkill -9 -f '/opt/paneo-agent/agent.js' 2>/dev/null || true
 
 # 2. Remove systemd service files and update configs
 log "Removing systemd service files and update configs..."
