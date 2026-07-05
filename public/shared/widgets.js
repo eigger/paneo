@@ -416,9 +416,6 @@ export const widgets = {
       let hasPainted = false;
       let paintGeneration = 0; // guards against a stale preload finishing after a newer paint() started
 
-      // Release Chromium's video decoder buffers — without this, shuffle mode that
-      // jumps between clips leaves decoders pinned until the <video> node is GC'd,
-      // which on a Pi kiosk can OOM-kill the whole system over a long run.
       const releaseVideoEl = (video) => {
         if (!video) return;
         video.pause();
@@ -435,26 +432,6 @@ export const widgets = {
         }
         releaseVideoEl(activeVideoEl);
         activeVideoEl = null;
-      };
-
-      // Fade/slide keeps old layers for TRANSITION_MS; rapid advances (shuffle +
-      // short videos) can stack layers if the pending removal timeout isn't
-      // cancelled — each layer may hold a full-resolution image in GPU memory.
-      const cancelTransitionCleanup = () => {
-        clearTimeout(transitionCleanupTimer);
-        transitionCleanupTimer = null;
-      };
-
-      // Keep the topmost layer (last appended = currently visible). Never use
-      // ms-active to pick a keeper — during a cross-fade both old and new carry it.
-      const syncStageToSingleLayer = (stage) => {
-        cancelTransitionCleanup();
-        if (!stage) return null;
-        const layers = [...stage.children];
-        if (layers.length <= 1) return layers[0] || null;
-        const keeper = layers[layers.length - 1];
-        removeTransitionLayers(layers.filter((l) => l !== keeper));
-        return keeper;
       };
 
       const removeTransitionLayers = (layers) => {
@@ -487,7 +464,6 @@ export const widgets = {
       const paint = () => {
         clearTimeout(timer);
         timer = null;
-        cancelTransitionCleanup();
         teardownActiveVideo();
         const myGeneration = ++paintGeneration;
 
@@ -532,7 +508,14 @@ export const widgets = {
             newLayer = el.querySelector('.ms-layer');
           } else {
             const stage = el.querySelector('.ms-stage');
-            syncStageToSingleLayer(stage);
+            // Rapid advance can outrun the 700ms cleanup — drop buried layers only,
+            // keep the topmost (current) slide. Do NOT touch layers at paint() start
+            // (v0.0.20/21 regressions: wrong keeper + cancelled cleanup → flicker).
+            if (stage.children.length > 1) {
+              removeTransitionLayers([...stage.children].slice(0, -1));
+            }
+            clearTimeout(transitionCleanupTimer);
+            transitionCleanupTimer = null;
             newLayer = document.createElement('div');
             newLayer.className = `ms-layer ms-${transition}-enter`;
             newLayer.innerHTML = innerHtml;
@@ -540,7 +523,6 @@ export const widgets = {
             void newLayer.offsetWidth; // force a reflow so the enter->active transition actually runs
             newLayer.classList.add('ms-active');
             const oldLayers = [...stage.children].filter((c) => c !== newLayer);
-            cancelTransitionCleanup();
             transitionCleanupTimer = setTimeout(() => {
               transitionCleanupTimer = null;
               removeTransitionLayers(oldLayers);
@@ -632,10 +614,11 @@ export const widgets = {
       }
 
       el._cleanup = () => {
-        paintGeneration += 1; // abandon any in-flight image preload callbacks
+        paintGeneration += 1;
         clearTimeout(timer);
-        cancelTransitionCleanup();
+        clearTimeout(transitionCleanupTimer);
         timer = null;
+        transitionCleanupTimer = null;
         teardownActiveVideo();
         const stage = el.querySelector('.ms-stage');
         if (stage) removeTransitionLayers([...stage.children]);
