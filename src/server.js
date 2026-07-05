@@ -42,8 +42,11 @@ await store.load();
 plugins.scan();
 
 // --- live display connections: Map<deviceId, Set<socket>> ---
-const WS_OPEN = 1; // ws.WebSocket.OPEN — kiosk SIGKILL leaves zombies until pruned
-const DISPLAY_PING_MS = 30_000;
+const WS_OPEN = 1; // ws.WebSocket.OPEN — prune dead entries when counting/broadcasting
+// Browser WebSockets can't answer server protocol pings reliably on Pi kiosk
+// Chromium, so liveness uses client→server JSON heartbeats instead (display.js).
+const DISPLAY_HEARTBEAT_STALE_MS = 90_000; // 3 missed 25s pings
+const DISPLAY_SWEEP_MS = 30_000;
 const displays = new Map();
 
 function pruneDisplays(id) {
@@ -60,9 +63,8 @@ function removeDisplay(id, s) {
   if (displays.get(id)?.size === 0) displays.delete(id);
 }
 
-// When Chromium is killed abruptly (update script, OOM, pkill -9) the old
-// socket often stays in OPEN state on the server until TCP times out — the
-// restarted kiosk then adds a second entry and the editor's count climbs.
+// When Chromium is killed abruptly the old socket can stay OPEN on the server
+// until TCP times out — terminate it when the same kiosk reconnects (same IP).
 function addDisplay(id, socket, remoteAddress) {
   pruneDisplays(id);
   const set = displays.get(id) ?? new Set();
@@ -75,10 +77,30 @@ function addDisplay(id, socket, remoteAddress) {
     }
   }
   socket._paneoRemote = remoteAddress || null;
-  socket._paneoAlive = true;
+  socket._paneoLastSeen = Date.now();
   set.add(socket);
   displays.set(id, set);
 }
+
+function touchDisplay(socket) {
+  socket._paneoLastSeen = Date.now();
+}
+
+function sweepStaleDisplays() {
+  const now = Date.now();
+  for (const [id, set] of displays) {
+    for (const s of [...set]) {
+      if (s.readyState !== WS_OPEN) { set.delete(s); continue; }
+      if (now - (s._paneoLastSeen ?? 0) > DISPLAY_HEARTBEAT_STALE_MS) {
+        try { s.terminate(); } catch { /* ignore */ }
+        set.delete(s);
+      }
+    }
+    if (set.size === 0) displays.delete(id);
+  }
+}
+
+setInterval(sweepStaleDisplays, DISPLAY_SWEEP_MS).unref();
 
 const displayCount = (id) => {
   pruneDisplays(id);
@@ -96,24 +118,6 @@ function broadcast(id, msg) {
   }
   if (set.size === 0) displays.delete(id);
 }
-
-function pingDisplays() {
-  for (const [id, set] of displays) {
-    for (const s of [...set]) {
-      if (s.readyState !== WS_OPEN) { set.delete(s); continue; }
-      if (s._paneoAlive === false) {
-        try { s.terminate(); } catch { /* ignore */ }
-        set.delete(s);
-        continue;
-      }
-      s._paneoAlive = false;
-      try { s.ping(); } catch { set.delete(s); }
-    }
-    if (set.size === 0) displays.delete(id);
-  }
-}
-
-setInterval(pingDisplays, DISPLAY_PING_MS).unref();
 
 const publicDevice = (d) => ({
   id: d.id,
@@ -142,8 +146,16 @@ app.get('/ws', { websocket: true }, (socket, req) => {
   if (!device) { socket.close(1008, 'unknown token'); return; }
   const remote = req.socket?.remoteAddress ?? null;
   addDisplay(device.id, socket, remote);
-  socket.on('pong', () => { socket._paneoAlive = true; });
   socket.send(JSON.stringify(layoutMessage(device)));
+  socket.on('message', (raw) => {
+    try {
+      const msg = JSON.parse(String(raw));
+      if (msg.type === 'display.ping') {
+        touchDisplay(socket);
+        try { socket.send(JSON.stringify({ type: 'display.pong' })); } catch { /* dropped */ }
+      }
+    } catch { /* ignore */ }
+  });
   socket.on('close', () => removeDisplay(device.id, socket));
   socket.on('error', () => removeDisplay(device.id, socket));
 });
