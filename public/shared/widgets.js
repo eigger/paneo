@@ -1058,79 +1058,157 @@ export const widgets = {
       // afford the extra line — same size-adaptive pattern used elsewhere
       // (calendar/HA weather/paneo.weather); title-only list below that.
       const RSS_DATE_MIN_HEIGHT = 200;
-      let latestItems = null;
+      let latestItems = null; // most recent full batch from the feed (also the "loop the same feed" fallback when nothing new has polled in)
+      let pendingItems = null; // a newer batch that arrived while the ticker was mid-cycle — applied at the next wrap, not immediately
 
-      // Continuous one-direction "ticker" scroll (not back-and-forth) — the
-      // list content is duplicated once directly below itself, and scrollTop
-      // is advanced at a steady px/sec; the moment it passes the height of a
-      // single copy, that height is subtracted back off. Since the duplicate
-      // is pixel-identical to the original, the wrap is invisible and the
-      // list appears to scroll upward forever (a ring buffer, not a bounce).
-      const SCROLL_SPEED_PX_PER_SEC = { off: 0, slow: 10, normal: 20, fast: 36 };
-      let rafId = null;
-      function stopAutoScroll() {
-        if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      // Step-and-hold ticker: scroll exactly one headline to the top (native
+      // `scroll-behavior:smooth`, not a hand-rolled per-frame animation —
+      // manually assigning fractional scrollTop every frame caused visible
+      // flicker), hold it for a dwell period, then advance to the next. After
+      // the last real item, the *next* batch's first item is appended right
+      // after it and scrolled to next — so a poll that lands mid-cycle only
+      // ever becomes visible right as it would naturally scroll up from
+      // below, never as a mid-cycle jump — then the old batch is pruned.
+      const DWELL_MS = { off: 0, slow: 6000, normal: 4000, fast: 2000 };
+      // Generous upper bound for the native smooth-scroll of one item to
+      // finish before pruning — must stay well below every active DWELL_MS
+      // value above, since the prune is expected to complete *within* the
+      // normal dwell window (see wrapToNextBatch), not add to it.
+      const WRAP_SETTLE_MS = 700;
+      let ticker = null; // { ulEl, current, pos, showDate, dwellMs, timer, pruneTimer }
+
+      function stopTicker() {
+        if (ticker?.timer) clearTimeout(ticker.timer);
+        if (ticker?.pruneTimer) clearTimeout(ticker.pruneTimer);
+        ticker = null;
       }
-      function startAutoScroll(ulEl, singleHeight, pxPerSec) {
-        let lastT = null;
-        // Track the true (fractional) scroll position ourselves — reading
-        // scrollTop back and adding to it would lose all sub-pixel progress
-        // every frame (browsers round scrollTop to an integer), so at
-        // low px/sec the position would never move at all.
-        let offset = ulEl.scrollTop;
-        const frame = (t) => {
-          if (lastT == null) lastT = t;
-          const dt = Math.min((t - lastT) / 1000, 0.1); // clamp so a throttled/backgrounded tab doesn't jump on resume
-          lastT = t;
-          offset += pxPerSec * dt;
-          if (offset >= singleHeight) offset -= singleHeight;
-          ulEl.scrollTop = offset;
-          rafId = requestAnimationFrame(frame);
-        };
-        rafId = requestAnimationFrame(frame);
+
+      function itemTop(ulEl, liEl) {
+        // offsetTop is relative to offsetParent, which may not be the scroll
+        // container itself (e.g. it can bubble up to a positioned ancestor) —
+        // this measures the item's position within ulEl's own scrollable
+        // content regardless of where offsetParent resolves to.
+        return liEl.getBoundingClientRect().top - ulEl.getBoundingClientRect().top + ulEl.scrollTop;
+      }
+
+      function itemHtml(it, showDate) {
+        const dateHtml = (showDate && it.isoDate) ? `<span class="rss-date">${dateFmt.format(new Date(it.isoDate))}</span>` : '';
+        const href = safeHttpUrl(it.link);
+        return `<li><a href="${escapeAttr(href)}" target="_blank" rel="noopener">${escapeHtml(it.title)}</a>${dateHtml}</li>`;
+      }
+
+      function scheduleStep() {
+        if (!ticker || ticker.dwellMs <= 0) return;
+        ticker.timer = setTimeout(step, ticker.dwellMs);
+      }
+
+      function wrapToNextBatch() {
+        const { ulEl, current } = ticker;
+        // Reached the last item of the current batch — bring in whatever the
+        // "next" batch is (a fresher poll if one is waiting, otherwise the
+        // same batch again so a feed with no update still loops forever).
+        const nextBatch = pendingItems || latestItems;
+        pendingItems = null;
+        const oldCount = current.length;
+        ulEl.insertAdjacentHTML('beforeend', nextBatch.map((it) => itemHtml(it, ticker.showDate)).join(''));
+        ticker.pos = oldCount;
+        ulEl.scrollTop = itemTop(ulEl, ulEl.children[ticker.pos]);
+        // Prune the old batch invisibly in the background, well inside the
+        // upcoming dwell window (scheduled below) rather than after it —
+        // otherwise this position would hold for WRAP_SETTLE_MS longer than
+        // every other item, making the loop (a1->a2->a3->a1->a2->a3->...)
+        // feel like it pauses/restarts instead of cycling continuously.
+        ticker.pruneTimer = setTimeout(() => {
+          // The old batch has fully scrolled out of view — drop it so the
+          // DOM/scroll position don't grow without bound over a long uptime.
+          for (let i = 0; i < oldCount; i++) ulEl.removeChild(ulEl.firstElementChild);
+          // Rebasing scrollTop must be instant — with CSS scroll-behavior:smooth
+          // in effect, a plain assignment here would visibly animate the
+          // "scroll back down" glitch instead of silently re-basing bookkeeping.
+          ulEl.style.scrollBehavior = 'auto';
+          ulEl.scrollTop = itemTop(ulEl, ulEl.children[0]);
+          ulEl.style.scrollBehavior = '';
+          ticker.current = nextBatch;
+          ticker.pos = 0;
+        }, WRAP_SETTLE_MS);
+        scheduleStep();
+      }
+
+      function step() {
+        if (!ticker) return;
+        const { ulEl, current } = ticker;
+        if (ticker.pos < current.length - 1) {
+          const maxScroll = ulEl.scrollHeight - ulEl.clientHeight;
+          const target = Math.min(itemTop(ulEl, ulEl.children[ticker.pos + 1]), maxScroll);
+          // A short list can run out of room to scroll before running out of
+          // items — bringing the very last item flush to the top would mean
+          // scrolling past the end of the content, which the browser clamps.
+          // Once advancing wouldn't move anything further, there's nothing
+          // left to reveal from this batch, so go straight to the next one
+          // instead of dwelling through several identical-looking steps.
+          if (target <= ulEl.scrollTop + 1) {
+            wrapToNextBatch();
+            return;
+          }
+          ticker.pos++;
+          ulEl.scrollTop = target;
+          scheduleStep();
+          return;
+        }
+        wrapToNextBatch();
       }
 
       function renderList(items, showDate) {
-        stopAutoScroll();
-        const html = items.map((it) => {
-          const dateHtml = (showDate && it.isoDate) ? `<span class="rss-date">${dateFmt.format(new Date(it.isoDate))}</span>` : '';
-          const href = safeHttpUrl(it.link);
-          return `<li><a href="${escapeAttr(href)}" target="_blank" rel="noopener">${escapeHtml(it.title)}</a>${dateHtml}</li>`;
-        }).join('');
+        stopTicker();
+        pendingItems = null;
+        const html = items.map((it) => itemHtml(it, showDate)).join('');
         el.innerHTML = `<ul class="w-rss">${html || '<li>-</li>'}</ul>`;
         if (!html) return;
         const ulEl = el.querySelector('.w-rss');
-        const pxPerSec = SCROLL_SPEED_PX_PER_SEC[config.scrollSpeed] ?? SCROLL_SPEED_PX_PER_SEC.normal;
-        if (pxPerSec <= 0) return;
-        const singleHeight = ulEl.scrollHeight;
-        if (singleHeight <= ulEl.clientHeight + 4) return; // fits — nothing to scroll
-        ulEl.insertAdjacentHTML('beforeend', html);
-        startAutoScroll(ulEl, singleHeight, pxPerSec);
+        const dwellMs = DWELL_MS[config.scrollSpeed] ?? DWELL_MS.normal;
+        if (dwellMs <= 0) return; // 'off' — static list, no ticking
+        if (ulEl.scrollHeight <= ulEl.clientHeight + 4) return; // fits — nothing to tick through
+        ticker = { ulEl, current: items, pos: 0, showDate, dwellMs, timer: null };
+        scheduleStep();
       }
 
+      // ResizeObserver is spec'd to always fire at least once when observation
+      // starts, and can legitimately fire its callback several more times in
+      // a row while a layout pass settles — even with no real size change.
+      // Every other size-adaptive widget in this file guards against that by
+      // only re-rendering when a boolean threshold flips; a resize here needs
+      // to rebuild at any size change (not just a threshold), so the guard
+      // has to compare the actual observed size instead of a derived flag —
+      // without it, each redundant callback tears down and restarts the
+      // ticker, which looks like the whole thing stalling/skipping items.
+      let lastSize = null;
       const ro = new ResizeObserver((entries) => {
         if (!latestItems) return;
-        // Re-render on every resize, not just when the date-label threshold
-        // is crossed — cqmin-based font sizes (and therefore each item's
-        // height, and whether the list overflows at all) change continuously
-        // with the widget's size, so the scroll duplication/height must be
-        // recomputed too.
-        const showDate = entries[0].contentRect.height >= RSS_DATE_MIN_HEIGHT;
-        renderList(latestItems, showDate);
+        const { width, height } = entries[0].contentRect;
+        if (lastSize && lastSize.width === width && lastSize.height === height) return;
+        lastSize = { width, height };
+        renderList(latestItems, height >= RSS_DATE_MIN_HEIGHT);
       });
       ro.observe(el);
 
       pollJson(
         el, `/api/proxy/rss?${multiUrlQuery(urls)}`, pollInterval(15 * 60_000, ctx),
         (data) => {
-          latestItems = data.items || [];
-          const rect = el.getBoundingClientRect();
-          renderList(latestItems, rect.height >= RSS_DATE_MIN_HEIGHT);
+          const items = data.items || [];
+          latestItems = items;
+          if (ticker) {
+            // Ticker is actively cycling — defer showing this until the
+            // natural wrap point instead of yanking the content mid-cycle.
+            pendingItems = items;
+          } else {
+            const rect = el.getBoundingClientRect();
+            renderList(items, rect.height >= RSS_DATE_MIN_HEIGHT);
+          }
         },
         (err) => errorBox(el, err.message),
       );
       const pollCleanup = el._cleanup;
-      el._cleanup = () => { pollCleanup?.(); ro.disconnect(); stopAutoScroll(); };
+      el._cleanup = () => { pollCleanup?.(); ro.disconnect(); stopTicker(); };
     },
   },
 
