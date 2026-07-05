@@ -9,6 +9,7 @@ const CACHE_KEY = `paneo:layout:${token}`;
 
 let lastLayout = null;
 let lastCtx = { locale: 'ko-KR', timezone: undefined, performanceProfile: 'high' };
+let lastPublishedAt = null;
 let lastAppliedKey = null;
 let displayVersion = '';
 
@@ -62,32 +63,36 @@ function renderPageIndicator(layout) {
   }
 }
 
-function layoutKey(layout, ctx) {
-  return JSON.stringify({
-    layout,
-    locale: ctx?.locale,
-    timezone: ctx?.timezone,
-    performanceProfile: ctx?.performanceProfile,
-    page: currentPageIndex,
-  });
+function layoutKey(ctx, publishedAt) {
+  return [
+    publishedAt ?? '',
+    ctx?.locale ?? '',
+    ctx?.timezone ?? '',
+    ctx?.performanceProfile ?? '',
+    currentPageIndex,
+  ].join('\0');
 }
 
-function applyLayout(layout, ctx, { force = false } = {}) {
+function applyLayout(layout, ctx, { force = false, publishedAt = null } = {}) {
   if (!layout) return;
   const nextCtx = ctx
     ? { ...ctx, performanceProfile: resolvePerformanceProfile(ctx.performanceProfile) }
     : lastCtx;
-  const key = layoutKey(layout, nextCtx);
+  const pa = publishedAt ?? lastPublishedAt;
+  const key = layoutKey(nextCtx, pa);
   // WS reconnect re-sends the same published layout — skip a full DOM wipe so
-  // slideshows/calendars don't restart and flicker every ~30s (v0.0.20 ping bug).
+  // slideshows/calendars don't restart. Use publishedAt (not layout JSON) so
+  // object key order differences never defeat the skip.
   if (!force && key === lastAppliedKey && stage.childElementCount > 0) {
     lastLayout = layout;
     lastCtx = nextCtx;
+    if (publishedAt) lastPublishedAt = publishedAt;
     return;
   }
   lastAppliedKey = key;
   lastLayout = layout;
   lastCtx = nextCtx;
+  if (publishedAt) lastPublishedAt = publishedAt;
   document.documentElement.lang = (lastCtx.locale || 'ko-KR').split('-')[0];
 
   const { widgets: pageWidgets, pageCount } = getPageWidgets(layout);
@@ -120,15 +125,24 @@ function applyLayout(layout, ctx, { force = false } = {}) {
   renderPageIndicator(layout);
 
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ layout, ctx: lastCtx }));
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ layout, ctx: lastCtx, publishedAt: lastPublishedAt }));
   } catch { /* quota */ }
 }
 
 // offline resilience: paint the last known layout immediately (docs/design.md §6)
 try {
   const cached = localStorage.getItem(CACHE_KEY);
-  if (cached) { const c = JSON.parse(cached); applyLayout(c.layout, c.ctx); }
+  if (cached) {
+    const c = JSON.parse(cached);
+    lastPublishedAt = c.publishedAt ?? null;
+    applyLayout(c.layout, c.ctx, { publishedAt: lastPublishedAt });
+  }
 } catch { /* ignore */ }
+
+function layoutNeedsPluginRepaint(layout) {
+  const { widgets: pageWidgets } = getPageWidgets(layout);
+  return pageWidgets.some((w) => !widgets[w.type]);
+}
 
 // §7/D17: fetch + register third-party plugins in the background — deliberately
 // NOT awaited before the cached-layout paint above, or an unreachable server
@@ -137,7 +151,10 @@ try {
 // repaint (once plugins are registered) fills it in.
 loadPlugins()
   .catch((err) => console.error('[plugins] load failed', err))
-  .finally(() => { if (lastLayout) applyLayout(lastLayout, lastCtx, { force: true }); });
+  .finally(() => {
+    if (!lastLayout || !layoutNeedsPluginRepaint(lastLayout)) return;
+    applyLayout(lastLayout, lastCtx, { publishedAt: lastPublishedAt, force: true });
+  });
 
 function setStatus(text, cls, fade) {
   statusEl.textContent = text;
@@ -252,33 +269,16 @@ function showUpdateStatus(status, mode, progress, step, step_msg, error) {
 
 let ws = null;
 let reconnectTimer = null;
-let heartbeatTimer = null;
 let hasConnectedOnce = false;
-const DISPLAY_HEARTBEAT_MS = 25_000;
-
-function startDisplayHeartbeat(sock) {
-  clearInterval(heartbeatTimer);
-  const tick = () => {
-    if (sock.readyState !== WebSocket.OPEN) return;
-    try { sock.send(JSON.stringify({ type: 'display.ping' })); } catch { /* ignore */ }
-  };
-  tick();
-  heartbeatTimer = setInterval(tick, DISPLAY_HEARTBEAT_MS);
-}
-
-function stopDisplayHeartbeat() {
-  clearInterval(heartbeatTimer);
-  heartbeatTimer = null;
-}
+let lastConnectAt = 0;
 
 function connect() {
   clearTimeout(reconnectTimer);
-  stopDisplayHeartbeat();
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const next = new WebSocket(`${proto}://${location.host}/ws?role=display&token=${encodeURIComponent(token)}`);
   ws = next;
   next.onopen = () => {
-    startDisplayHeartbeat(next);
+    lastConnectAt = Date.now();
     if (!hasConnectedOnce) {
       setStatus(dt('connected'), 'online', true);
       hasConnectedOnce = true;
@@ -289,9 +289,12 @@ function connect() {
   };
   next.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
-    if (msg.type === 'display.pong') return;
     if (msg.type === 'layout.set') {
-      applyLayout(msg.layout, { locale: msg.locale, timezone: msg.timezone, performanceProfile: msg.performanceProfile });
+      applyLayout(msg.layout, {
+        locale: msg.locale,
+        timezone: msg.timezone,
+        performanceProfile: msg.performanceProfile,
+      }, { publishedAt: msg.publishedAt ?? null });
     } else if (msg.type === 'command' && msg.action === 'reload') {
       location.reload();
     } else if (msg.type === 'command' && msg.action === 'identify') {
@@ -303,8 +306,10 @@ function connect() {
   next.onclose = () => {
     if (ws !== next) return;
     ws = null;
-    stopDisplayHeartbeat();
-    if (hasConnectedOnce) {
+    // Brief drops (server restart during update) recover in ~2s — don't flash
+    // "reconnecting" or the user reads it as a broken loop.
+    const livedMs = Date.now() - lastConnectAt;
+    if (hasConnectedOnce && livedMs > 10_000) {
       setStatus(dt('reconnecting'), 'offline', false);
     }
     reconnectTimer = setTimeout(connect, 2000);

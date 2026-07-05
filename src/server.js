@@ -42,11 +42,7 @@ await store.load();
 plugins.scan();
 
 // --- live display connections: Map<deviceId, Set<socket>> ---
-const WS_OPEN = 1; // ws.WebSocket.OPEN — prune dead entries when counting/broadcasting
-// Browser WebSockets can't answer server protocol pings reliably on Pi kiosk
-// Chromium, so liveness uses client→server JSON heartbeats instead (display.js).
-const DISPLAY_HEARTBEAT_STALE_MS = 90_000; // 3 missed 25s pings
-const DISPLAY_SWEEP_MS = 30_000;
+const WS_OPEN = 1; // prune dead entries when counting/broadcasting
 const displays = new Map();
 
 function pruneDisplays(id) {
@@ -63,40 +59,10 @@ function removeDisplay(id, s) {
   if (displays.get(id)?.size === 0) displays.delete(id);
 }
 
-// Abruptly-killed kiosks (SIGKILL/OOM) leave a socket OPEN until TCP times out.
-// We do NOT terminate by source IP on reconnect: behind a reverse proxy or Docker
-// NAT every client shares one remoteAddress, so a same-IP kill made two live
-// displays repeatedly terminate + reconnect each other (a 2s ping-pong loop).
-// The heartbeat sweep below reaps genuinely dead sockets instead, which is both
-// proxy-safe and can never cut a still-alive connection.
-function addDisplay(id, socket, remoteAddress) {
+function addDisplay(id, socket) {
   pruneDisplays(id);
-  const set = displays.get(id) ?? new Set();
-  socket._paneoRemote = remoteAddress || null;
-  socket._paneoLastSeen = Date.now();
-  set.add(socket);
-  displays.set(id, set);
+  (displays.get(id) ?? displays.set(id, new Set()).get(id)).add(socket);
 }
-
-function touchDisplay(socket) {
-  socket._paneoLastSeen = Date.now();
-}
-
-function sweepStaleDisplays() {
-  const now = Date.now();
-  for (const [id, set] of displays) {
-    for (const s of [...set]) {
-      if (s.readyState !== WS_OPEN) { set.delete(s); continue; }
-      if (now - (s._paneoLastSeen ?? 0) > DISPLAY_HEARTBEAT_STALE_MS) {
-        try { s.terminate(); } catch { /* ignore */ }
-        set.delete(s);
-      }
-    }
-    if (set.size === 0) displays.delete(id);
-  }
-}
-
-setInterval(sweepStaleDisplays, DISPLAY_SWEEP_MS).unref();
 
 const displayCount = (id) => {
   pruneDisplays(id);
@@ -133,25 +99,22 @@ const publicDevice = (d) => ({
   displays: displayCount(d.id),
 });
 const fullDevice = (d) => ({ ...publicDevice(d), draft: d.draft, published: d.published, publishedAt: d.publishedAt });
-const layoutMessage = (d) => ({ type: 'layout.set', layout: d.published, locale: d.locale, timezone: d.timezone, performanceProfile: d.performanceProfile });
+const layoutMessage = (d) => ({
+  type: 'layout.set',
+  layout: d.published,
+  publishedAt: d.publishedAt ?? null,
+  locale: d.locale,
+  timezone: d.timezone,
+  performanceProfile: d.performanceProfile,
+});
 
 // --- WebSocket: display clients connect here (docs/design.md §6) ---
 app.get('/ws', { websocket: true }, (socket, req) => {
   const token = req.query?.token;
   const device = token ? store.getDeviceByToken(token) : null;
   if (!device) { socket.close(1008, 'unknown token'); return; }
-  const remote = req.socket?.remoteAddress ?? null;
-  addDisplay(device.id, socket, remote);
+  addDisplay(device.id, socket);
   socket.send(JSON.stringify(layoutMessage(device)));
-  socket.on('message', (raw) => {
-    try {
-      const msg = JSON.parse(String(raw));
-      if (msg.type === 'display.ping') {
-        touchDisplay(socket);
-        try { socket.send(JSON.stringify({ type: 'display.pong' })); } catch { /* dropped */ }
-      }
-    } catch { /* ignore */ }
-  });
   socket.on('close', () => removeDisplay(device.id, socket));
   socket.on('error', () => removeDisplay(device.id, socket));
 });
