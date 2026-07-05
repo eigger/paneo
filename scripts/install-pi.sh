@@ -174,16 +174,21 @@ create_token_if_needed() {
   devices_json="$(curl -fsS "${CURL_OPTS[@]}" "$SERVER/api/devices" 2>/dev/null || echo '[]')"
 
   # Extract token for a device whose name matches DEVICE_NAME (case-insensitive)
+  # `|| true` on each of these: with a freshly wiped/empty device list (e.g.
+  # right after uninstall.sh's `docker volume rm`), grep finds no match and
+  # exits 1 — under `set -e` + `pipefail` that aborts the *entire script*
+  # right here, before ever reaching the "no devices at all" fallback below
+  # that's supposed to handle exactly this case.
   TOKEN="$(printf '%s' "$devices_json" \
     | grep -o "{[^}]*\"name\":\"$DEVICE_NAME\"[^}]*}" \
     | grep -o '"token":"[^"]*"' | head -1 \
-    | sed -E 's/.*:"([^"]*)"/\1/')"
+    | sed -E 's/.*:"([^"]*)"/\1/')" || true
 
   # If no name-match, fall back to the first device
   if [ -z "$TOKEN" ]; then
     TOKEN="$(printf '%s' "$devices_json" \
       | grep -o '"token":"[^"]*"' | head -1 \
-      | sed -E 's/.*:"([^"]*)"/\1/')"
+      | sed -E 's/.*:"([^"]*)"/\1/')" || true
   fi
 
   if [ -n "$TOKEN" ]; then
@@ -191,7 +196,7 @@ create_token_if_needed() {
     existing_name="$(printf '%s' "$devices_json" \
       | grep -o "{[^}]*\"token\":\"$TOKEN\"[^}]*}" \
       | grep -o '"name":"[^"]*"' | head -1 \
-      | sed -E 's/.*:"([^"]*)"/\1/')"
+      | sed -E 's/.*:"([^"]*)"/\1/')" || true
     log "Reusing existing display device: ${existing_name} (token: ${TOKEN})"
     return
   fi
@@ -204,7 +209,7 @@ create_token_if_needed() {
   TOKEN="$(curl -fsS "${CURL_OPTS[@]}" -X POST "$SERVER/api/devices" \
     -H 'content-type: application/json' \
     --data "{\"name\":\"$DEVICE_NAME\"}" \
-    | grep -o '"token":"[^"]*"' | head -1 | sed -E 's/.*:"([^"]*)"/\1/')"
+    | grep -o '"token":"[^"]*"' | head -1 | sed -E 's/.*:"([^"]*)"/\1/')" || true
 
   if [ -z "$TOKEN" ]; then
     fail "failed to create or read display token"
