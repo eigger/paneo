@@ -144,6 +144,13 @@ if [ -d "$AGENT_DIR" ] && [ -n "$TOKEN" ]; then
   curl -fsSL "$SERVER/agent/agent.js"      -o "$AGENT_DIR/agent.js"
   curl -fsSL "$SERVER/agent/version.json"  -o "$AGENT_DIR/version.json"
 
+  agent_svc="/etc/systemd/system/paneo-agent.service"
+  if [ -f "$agent_svc" ] && grep -q 'Environment=PANEO_WATCHDOG=1' "$agent_svc"; then
+    sed -i 's/Environment=PANEO_WATCHDOG=1/Environment=PANEO_WATCHDOG=0/' "$agent_svc"
+    systemctl daemon-reload
+    log "Set PANEO_WATCHDOG=0 in paneo-agent.service (duplicate-kiosk watchdog fix)"
+  fi
+
   # Refresh this script's own installed copy (what the agent re-invokes via
   # sudo next time) so it never drifts behind what's actually deployed.
   # download-to-temp + mv (atomic rename), NOT an in-place overwrite — this
