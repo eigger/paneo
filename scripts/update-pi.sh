@@ -151,16 +151,26 @@ if [ -d "$AGENT_DIR" ] && [ -n "$TOKEN" ]; then
   # and truncating that file out from under the still-executing interpreter
   # would corrupt this very run.
   update_trigger="/usr/local/bin/paneo-update-pi.sh"
-  if [ -f "$update_trigger" ]; then
-    write_status running 55 "refresh_trigger" "Refreshing update trigger script"
-    if curl -fsSL "$SERVER/update.sh" -o "${update_trigger}.new"; then
-      chmod +x "${update_trigger}.new"
-      mv "${update_trigger}.new" "$update_trigger"
-      log "Update trigger script refreshed"
-    else
-      rm -f "${update_trigger}.new"
-      log "Could not refresh update trigger script — leaving existing copy in place"
-    fi
+  write_status running 55 "refresh_trigger" "Refreshing update trigger script"
+  if curl -fsSL "$SERVER/update.sh" -o "${update_trigger}.new"; then
+    chmod +x "${update_trigger}.new"
+    mv "${update_trigger}.new" "$update_trigger"
+    log "Update trigger script refreshed"
+  else
+    rm -f "${update_trigger}.new"
+    log "Could not refresh update trigger script"
+  fi
+
+  # Ensure sudoers rule for the update trigger exists
+  sudoers_file="/etc/sudoers.d/paneo-agent-update"
+  if [ ! -f "$sudoers_file" ]; then
+    log "Sudoers rule missing. Recreating it..."
+    agent_user=$(grep -E "^User=" /etc/systemd/system/paneo-agent.service 2>/dev/null | cut -d= -f2 | xargs || echo "pi")
+    cat > "$sudoers_file" <<EOF
+$agent_user ALL=(root) NOPASSWD: $update_trigger *
+EOF
+    chmod 440 "$sudoers_file"
+    visudo -cf "$sudoers_file" >/dev/null || { rm -f "$sudoers_file"; log "Failed to validate generated sudoers rule"; }
   fi
 
   if systemctl is-active --quiet paneo-agent 2>/dev/null; then
