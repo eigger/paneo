@@ -138,24 +138,89 @@ function showIdentify(name) {
 // the kiosk browser itself gets killed and relaunched partway through an
 // "all"-mode update anyway (this banner just covers the window before that
 // happens: agent/codec update, before the kiosk restart step). Always
-// bilingual, same reasoning as the connection-status pill.
+// localized to the device's selected language (ko/en), defaulting to English.
+const displayTranslations = {
+  ko: {
+    updating: '업데이트 중…',
+    updateComplete: '업데이트 완료',
+    updateFailed: '업데이트 실패',
+    serverMode: '서버만',
+    allMode: '전체',
+    step_starting: '업데이트 시작 중',
+    step_pull_image: '최신 도커 이미지 다운로드 중',
+    step_restart_server: 'Paneo 서버 재시작 중',
+    step_wait_server: '서버가 준비될 때까지 대기 중',
+    step_update_agent: '컴패니언 에이전트 파일 업데이트 중',
+    step_refresh_trigger: '업데이트 실행 스크립트 갱신 중',
+    step_restart_agent: '컴패니언 에이전트 재시작 중',
+    step_install_codecs: '크로미움 비디오 코덱 설치 중',
+    step_install_fonts: '폰트(한국어 및 이모지) 설치 중',
+    step_update_kiosk: '키오스크 실행기 업데이트 중',
+    step_restart_kiosk: '키오스크 브라우저 재시작 중',
+    step_done: '업데이트 완료',
+    connected: '● 연결됨',
+    reconnecting: '○ 재연결 중…',
+  },
+  en: {
+    updating: 'Updating…',
+    updateComplete: 'Update complete',
+    updateFailed: 'Update failed',
+    serverMode: 'server only',
+    allMode: 'all',
+    step_starting: 'Starting update',
+    step_pull_image: 'Pulling latest Docker image',
+    step_restart_server: 'Restarting Paneo server',
+    step_wait_server: 'Waiting for server to become ready',
+    step_update_agent: 'Updating companion agent files',
+    step_refresh_trigger: 'Refreshing update trigger script',
+    step_restart_agent: 'Restarting companion agent',
+    step_install_codecs: 'Installing chromium video codecs',
+    step_install_fonts: 'Installing fonts (Korean & Emoji)',
+    step_update_kiosk: 'Updating kiosk launcher',
+    step_restart_kiosk: 'Restarting kiosk browser',
+    step_done: 'Update complete',
+    connected: '● Connected',
+    reconnecting: '○ Reconnecting…',
+  }
+};
+
+function dt(key) {
+  const lang = (lastCtx.locale || 'ko-KR').split('-')[0];
+  const dict = displayTranslations[lang] || displayTranslations['en'];
+  return dict[key] || displayTranslations['en'][key] || key;
+}
+
 let updateBannerTimer = null;
-function showUpdateStatus(status, mode) {
+function showUpdateStatus(status, mode, progress, step, step_msg, error) {
   const el = document.getElementById('update-status-banner');
   if (!el) return;
   clearTimeout(updateBannerTimer);
-  const modeLabel = mode === 'server' ? 'server · 서버' : 'all · 전체';
+  const lang = (lastCtx.locale || 'ko-KR').split('-')[0];
+  const dict = displayTranslations[lang] || displayTranslations['en'];
+  const modeText = mode === 'server' ? dt('serverMode') : dt('allMode');
   if (status === 'running') {
-    el.textContent = `⏳ Updating… · 업데이트 중… (${modeLabel})`;
+    let msg = `⏳ ${dt('updating')} (${modeText})`;
+    if (progress !== undefined && progress !== null) {
+      msg += ` [${progress}%]`;
+    }
+    if (step) {
+      const stepText = dict[`step_${step}`] || step_msg || step;
+      msg += ` - ${stepText}`;
+    }
+    el.textContent = msg;
     el.className = 'visible running';
   } else if (status === 'done') {
-    el.textContent = '✓ Update complete · 업데이트 완료';
+    el.textContent = `✓ ${dt('updateComplete')}`;
     el.className = 'visible done';
     updateBannerTimer = setTimeout(() => el.classList.remove('visible'), 6000);
   } else if (status === 'failed') {
-    el.textContent = '✗ Update failed · 업데이트 실패';
+    let msg = `✗ ${dt('updateFailed')}`;
+    if (error) {
+      msg += ` (${error})`;
+    }
+    el.textContent = msg;
     el.className = 'visible failed';
-    updateBannerTimer = setTimeout(() => el.classList.remove('visible'), 8000);
+    updateBannerTimer = setTimeout(() => el.classList.remove('visible'), 10000);
   } else {
     el.className = '';
   }
@@ -168,7 +233,7 @@ function connect() {
   // configured locale), this status pill is the one piece of UI an installer
   // sees before any layout/locale has ever loaded, so it can't rely on that
   // locale to be readable.
-  ws.onopen = () => setStatus('● Connected · 연결됨', 'online', true);
+  ws.onopen = () => setStatus(dt('connected'), 'online', true);
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
     if (msg.type === 'layout.set') {
@@ -178,10 +243,10 @@ function connect() {
     } else if (msg.type === 'command' && msg.action === 'identify') {
       showIdentify(msg.deviceName);
     } else if (msg.type === 'update.status') {
-      showUpdateStatus(msg.status, msg.mode);
+      showUpdateStatus(msg.status, msg.mode, msg.progress, msg.step, msg.step_msg, msg.error);
     }
   };
-  ws.onclose = () => { setStatus('○ Reconnecting… · 재연결 중…', 'offline', false); setTimeout(connect, 2000); };
+  ws.onclose = () => { setStatus(dt('reconnecting'), 'offline', false); setTimeout(connect, 2000); };
   ws.onerror = () => ws.close();
 }
 connect();
