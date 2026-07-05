@@ -27,6 +27,18 @@
 
 set -euo pipefail
 
+# This install runs for several minutes (git clone + apt + docker pull) and is
+# almost always invoked directly over an SSH session on a Pi's often-flaky
+# WiFi — if that connection so much as hiccups, the controlling terminal
+# disconnecting sends SIGHUP to this whole process tree, killing it instantly
+# and *silently* (it's not a script failure, so none of this script's own
+# error handling ever runs — the process is just gone, with no explanation).
+# Ignoring SIGHUP up front is the standard fix (same as running under nohup),
+# and — unlike a trap with an actual handler — an ignored signal disposition
+# is preserved across `exec`, so it still applies after this script re-execs
+# into scripts/install-pi.sh below.
+trap '' HUP
+
 REPO="${PANEO_REPO:-https://github.com/eigger/paneo.git}"
 REF="${PANEO_REF:-master}"
 INSTALL_DIR="${PANEO_INSTALL_DIR:-/opt/paneo}"
