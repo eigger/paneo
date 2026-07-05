@@ -440,18 +440,21 @@ export const widgets = {
       // Fade/slide keeps old layers for TRANSITION_MS; rapid advances (shuffle +
       // short videos) can stack layers if the pending removal timeout isn't
       // cancelled — each layer may hold a full-resolution image in GPU memory.
-      const collapseTransitionStage = () => {
+      const cancelTransitionCleanup = () => {
         clearTimeout(transitionCleanupTimer);
         transitionCleanupTimer = null;
-        const stage = el.querySelector('.ms-stage');
-        if (!stage || stage.children.length <= 1) return;
+      };
+
+      // Keep the topmost layer (last appended = currently visible). Never use
+      // ms-active to pick a keeper — during a cross-fade both old and new carry it.
+      const syncStageToSingleLayer = (stage) => {
+        cancelTransitionCleanup();
+        if (!stage) return null;
         const layers = [...stage.children];
-        const keeper = layers.find((l) => l.classList.contains('ms-active')) || layers[layers.length - 1];
-        for (const layer of layers) {
-          if (layer === keeper) continue;
-          layer.querySelectorAll('video').forEach(releaseVideoEl);
-          layer.remove();
-        }
+        if (layers.length <= 1) return layers[0] || null;
+        const keeper = layers[layers.length - 1];
+        removeTransitionLayers(layers.filter((l) => l !== keeper));
+        return keeper;
       };
 
       const removeTransitionLayers = (layers) => {
@@ -484,8 +487,8 @@ export const widgets = {
       const paint = () => {
         clearTimeout(timer);
         timer = null;
+        cancelTransitionCleanup();
         teardownActiveVideo();
-        collapseTransitionStage();
         const myGeneration = ++paintGeneration;
 
         if (!items.length) {
@@ -529,6 +532,7 @@ export const widgets = {
             newLayer = el.querySelector('.ms-layer');
           } else {
             const stage = el.querySelector('.ms-stage');
+            syncStageToSingleLayer(stage);
             newLayer = document.createElement('div');
             newLayer.className = `ms-layer ms-${transition}-enter`;
             newLayer.innerHTML = innerHtml;
@@ -536,7 +540,7 @@ export const widgets = {
             void newLayer.offsetWidth; // force a reflow so the enter->active transition actually runs
             newLayer.classList.add('ms-active');
             const oldLayers = [...stage.children].filter((c) => c !== newLayer);
-            clearTimeout(transitionCleanupTimer);
+            cancelTransitionCleanup();
             transitionCleanupTimer = setTimeout(() => {
               transitionCleanupTimer = null;
               removeTransitionLayers(oldLayers);
@@ -630,11 +634,11 @@ export const widgets = {
       el._cleanup = () => {
         paintGeneration += 1; // abandon any in-flight image preload callbacks
         clearTimeout(timer);
-        clearTimeout(transitionCleanupTimer);
+        cancelTransitionCleanup();
         timer = null;
-        transitionCleanupTimer = null;
         teardownActiveVideo();
-        collapseTransitionStage();
+        const stage = el.querySelector('.ms-stage');
+        if (stage) removeTransitionLayers([...stage.children]);
       };
     },
   },
