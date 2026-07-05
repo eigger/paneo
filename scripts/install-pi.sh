@@ -17,6 +17,12 @@
 
 set -euo pipefail
 
+# See install.sh's own `trap '' HUP` for why — this is normally already
+# inherited from install.sh (an ignored signal disposition survives `exec`,
+# unlike a handler-based trap), but this script can also be run directly
+# (e.g. from an already-cloned checkout), so it sets its own too.
+trap '' HUP
+
 MODE="${PANEO_MODE:-${1:-all}}"
 PORT="${PANEO_PORT:-4321}"
 SERVER="${PANEO_SERVER:-http://localhost:${PORT}}"
@@ -115,10 +121,15 @@ EOF
 
 wait_for_server() {
   log "Waiting for server: $SERVER"
-  for _ in $(seq 1 30); do
+  for i in $(seq 1 30); do
     if curl -fsS "$SERVER/api/brand" >/dev/null 2>&1; then
       return
     fi
+    # A few retries always happen (docker start isn't instant) — only worth
+    # printing once it's taking notably longer than that, so a genuine hang
+    # is visibly still-in-progress rather than indistinguishable from the
+    # process having silently died.
+    [ $((i % 5)) -eq 0 ] && log "...still waiting ($i/30)"
     sleep 1
   done
   systemctl status paneo --no-pager || true

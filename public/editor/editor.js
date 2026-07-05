@@ -1483,27 +1483,47 @@ settingsBtn.addEventListener('click', async () => {
 const haSaveBtn = document.getElementById('ha-save-btn');
 if (haSaveBtn) haSaveBtn.addEventListener('click', saveHASettings);
 
-// ---- backup / restore ----
-const exportLayoutBtn = document.getElementById('export-layout-btn');
-if (exportLayoutBtn) {
-  exportLayoutBtn.addEventListener('click', () => {
-    if (!layout) return;
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(layout, null, 2));
+// ---- backup / restore (layout + device settings; §D53) ----
+// HA credentials are deliberately excluded: the URL is global (not
+// per-device — see /api/settings/ha) and the token is never sent to the
+// client in the first place (server only ever returns a masked value), so
+// there's nothing meaningful — or safe — to put in a downloadable file.
+const exportBackupBtn = document.getElementById('export-backup-btn');
+if (exportBackupBtn) {
+  exportBackupBtn.addEventListener('click', () => {
+    if (!layout || !device) return;
+    const group = groups.find((g) => g.id === device.groupId);
+    const backup = {
+      kind: 'paneo-backup',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      settings: {
+        locale: device.locale,
+        timezone: device.timezone,
+        resolutionW: device.resolutionW,
+        resolutionH: device.resolutionH,
+        performanceProfile: device.performanceProfile,
+        powerSchedule: device.powerSchedule,
+        groupName: group?.name || null,
+      },
+      layout,
+    };
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backup, null, 2));
     const downloadAnchor = document.createElement('a');
-    const safeName = device ? device.name.replace(/[^a-z0-9]/gi, '_').toLowerCase() : 'layout';
+    const safeName = device.name.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'device';
     downloadAnchor.setAttribute("href",     dataStr);
-    downloadAnchor.setAttribute("download", `paneo-layout-${safeName}.json`);
+    downloadAnchor.setAttribute("download", `paneo-backup-${safeName}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
   });
 }
 
-const importLayoutBtn = document.getElementById('import-layout-btn');
-const importLayoutInput = document.getElementById('import-layout-input');
-if (importLayoutBtn && importLayoutInput) {
-  importLayoutBtn.addEventListener('click', () => importLayoutInput.click());
-  importLayoutInput.addEventListener('change', (e) => {
+const importBackupBtn = document.getElementById('import-backup-btn');
+const importBackupInput = document.getElementById('import-backup-input');
+if (importBackupBtn && importBackupInput) {
+  importBackupBtn.addEventListener('click', () => importBackupInput.click());
+  importBackupInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -1511,7 +1531,12 @@ if (importLayoutBtn && importLayoutInput) {
     reader.onload = async function(evt) {
       try {
         const parsed = JSON.parse(evt.target.result);
-        const isValid = parsed && typeof parsed === 'object' && (Array.isArray(parsed.pages) || Array.isArray(parsed.widgets));
+        // Backward compatible with older exports, which were a bare layout
+        // object ({pages: [...]}) with no settings wrapper.
+        const hasWrapper = parsed && typeof parsed === 'object' && parsed.layout && typeof parsed.layout === 'object';
+        const layoutData = hasWrapper ? parsed.layout : parsed;
+        const settingsData = hasWrapper ? parsed.settings : null;
+        const isValid = layoutData && typeof layoutData === 'object' && (Array.isArray(layoutData.pages) || Array.isArray(layoutData.widgets));
         if (!isValid) {
           toast(t('importInvalid'));
           return;
@@ -1522,11 +1547,31 @@ if (importLayoutBtn && importLayoutInput) {
           return;
         }
 
-        layout = migrateToPages(parsed);
+        layout = migrateToPages(layoutData);
         if (layout.pages && layout.pages.length) {
           if (layout.currentPageIndex === undefined || layout.currentPageIndex < 0 || layout.currentPageIndex >= layout.pages.length) {
             layout.currentPageIndex = 0;
           }
+        }
+
+        if (settingsData && device) {
+          const patch = {};
+          if (settingsData.locale) patch.locale = settingsData.locale;
+          if (settingsData.timezone !== undefined) patch.timezone = settingsData.timezone;
+          if (settingsData.resolutionW) patch.resolutionW = settingsData.resolutionW;
+          if (settingsData.resolutionH) patch.resolutionH = settingsData.resolutionH;
+          if (settingsData.performanceProfile) patch.performanceProfile = settingsData.performanceProfile;
+          if ('powerSchedule' in settingsData) patch.powerSchedule = settingsData.powerSchedule;
+          if (settingsData.groupName) {
+            const g = groups.find((g) => g.name === settingsData.groupName);
+            if (g) patch.groupId = g.id; // group not found on this server (renamed/deleted) — leave groupId as-is rather than guess
+          }
+          Object.assign(device, patch);
+          await api(`/api/devices/${device.id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+          localeSelect.value = device.locale || 'ko-KR';
+          syncResolutionUI();
+          syncDeviceMetaUI();
+          applyCanvasAspectRatio();
         }
 
         render();
