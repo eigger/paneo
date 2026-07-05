@@ -33,6 +33,11 @@ AGENT_DIR="${PANEO_AGENT_DIR:-/opt/paneo-agent}"
 SERVICE_USER="${PANEO_USER:-${SUDO_USER:-pi}}"
 ENABLE_AGENT="${PANEO_ENABLE_AGENT:-1}"
 ENABLE_KIOSK="${PANEO_ENABLE_KIOSK:-1}"
+# Every curl call against $SERVER below uses this — without an explicit
+# timeout, a curl that can't connect (vs. one that's cleanly refused) can
+# hang far longer than any retry loop expects, which looks identical to the
+# whole script having silently died (no error, no more log output, nothing).
+CURL_OPTS=(--connect-timeout 3 --max-time 8)
 
 log() { printf '[paneo-install] %s\n' "$*"; }
 fail() { printf '[paneo-install] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -122,7 +127,7 @@ EOF
 wait_for_server() {
   log "Waiting for server: $SERVER"
   for i in $(seq 1 30); do
-    if curl -fsS "$SERVER/api/brand" >/dev/null 2>&1; then
+    if curl -fsS "${CURL_OPTS[@]}" "$SERVER/api/brand" >/dev/null 2>&1; then
       return
     fi
     # A few retries always happen (docker start isn't instant) — only worth
@@ -149,7 +154,7 @@ create_token_if_needed() {
   #   2. If none matches, use the first device in the list.
   #   3. Only create a NEW device when the list is completely empty.
   local devices_json
-  devices_json="$(curl -fsS "$SERVER/api/devices" 2>/dev/null || echo '[]')"
+  devices_json="$(curl -fsS "${CURL_OPTS[@]}" "$SERVER/api/devices" 2>/dev/null || echo '[]')"
 
   # Extract token for a device whose name matches DEVICE_NAME (case-insensitive)
   TOKEN="$(printf '%s' "$devices_json" \
@@ -179,7 +184,7 @@ create_token_if_needed() {
   # grep/sed, not `node -e` — this runs before we know whether install_agent
   # will need Node at all (ENABLE_AGENT could be 0), and the server itself is
   # Docker-only now, so nothing else here guarantees Node is on the host.
-  TOKEN="$(curl -fsS -X POST "$SERVER/api/devices" \
+  TOKEN="$(curl -fsS "${CURL_OPTS[@]}" -X POST "$SERVER/api/devices" \
     -H 'content-type: application/json' \
     --data "{\"name\":\"$DEVICE_NAME\"}" \
     | grep -o '"token":"[^"]*"' | head -1 | sed -E 's/.*:"([^"]*)"/\1/')"
@@ -281,7 +286,7 @@ set -e
 SERVER_URL="$(grep -o 'http[^ "]*' "$0" | head -1 | sed 's|/d/.*||')"
 SERVER_URL="${SERVER_URL:-http://localhost:4321}"
 for _i in $(seq 1 60); do
-  if curl -fsS "${SERVER_URL}/api/brand" >/dev/null 2>&1; then
+  if curl -fsS --connect-timeout 3 --max-time 8 "${SERVER_URL}/api/brand" >/dev/null 2>&1; then
     break
   fi
   sleep 2
@@ -373,7 +378,7 @@ EOF
 # that one script path rather than granting the agent's user broader access.
 install_update_trigger() {
   local update_script="/usr/local/bin/paneo-update-pi.sh"
-  curl -fsSL "$SERVER/update.sh" -o "$update_script"
+  curl -fsSL "${CURL_OPTS[@]}" "$SERVER/update.sh" -o "$update_script"
   chmod +x "$update_script"
 
   cat > /etc/sudoers.d/paneo-agent-update <<EOF
@@ -392,8 +397,8 @@ install_agent() {
   install_node
   log "Installing companion agent"
   mkdir -p "$AGENT_DIR"
-  curl -fsSL "$SERVER/agent/agent.js" -o "$AGENT_DIR/agent.js"
-  curl -fsSL "$SERVER/agent/version.json" -o "$AGENT_DIR/version.json"
+  curl -fsSL "${CURL_OPTS[@]}" "$SERVER/agent/agent.js" -o "$AGENT_DIR/agent.js"
+  curl -fsSL "${CURL_OPTS[@]}" "$SERVER/agent/version.json" -o "$AGENT_DIR/version.json"
   install_update_trigger
 
   local node_bin
@@ -431,8 +436,8 @@ print_summary() {
   if [ -n "$TOKEN" ]; then
     log "Display: $SERVER/d/$TOKEN"
   fi
-  if curl -fsS "$SERVER/api/version" >/dev/null 2>&1; then
-    log "Versions: $(curl -fsS "$SERVER/api/version")"
+  if curl -fsS "${CURL_OPTS[@]}" "$SERVER/api/version" >/dev/null 2>&1; then
+    log "Versions: $(curl -fsS "${CURL_OPTS[@]}" "$SERVER/api/version")"
   fi
   log "Server logs: systemctl status paneo (or: docker logs -f paneo)"
   log "Agent logs:  systemctl status paneo-agent && journalctl -u paneo-agent -f"
