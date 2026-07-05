@@ -892,9 +892,10 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // ---- selection + inspector ----
 function selectWidget(id) {
+  const changed = selectedId !== id;
   selectedId = id;
   canvas.querySelectorAll('.ed-widget').forEach((n) => n.classList.toggle('selected', n.dataset.id === id));
-  renderInspector();
+  if (changed) renderInspector();
 }
 
 function renderInspector() {

@@ -1057,6 +1057,27 @@ export const widgets = {
       const RSS_DATE_MIN_HEIGHT = 200;
       let latestItems = null;
 
+      // When the list is taller than the widget, slowly auto-scroll down to
+      // reveal the lower items, then back to top, and repeat — otherwise a
+      // shrunk widget would only ever show the first few entries. maxScroll
+      // is recomputed every tick (not cached) so a live resize is picked up
+      // without needing to restart the timer.
+      let scrollTimer = null;
+      function stopAutoScroll() {
+        if (scrollTimer) { clearInterval(scrollTimer); scrollTimer = null; }
+      }
+      function startAutoScroll(ulEl) {
+        stopAutoScroll();
+        ulEl.style.scrollBehavior = 'smooth';
+        let atBottom = false;
+        scrollTimer = setInterval(() => {
+          const maxScroll = ulEl.scrollHeight - ulEl.clientHeight;
+          if (maxScroll <= 4) { atBottom = false; return; }
+          atBottom = !atBottom;
+          ulEl.scrollTop = atBottom ? maxScroll : 0;
+        }, 4000);
+      }
+
       function renderList(items, showDate) {
         const html = items.map((it) => {
           const dateHtml = (showDate && it.isoDate) ? `<span class="rss-date">${dateFmt.format(new Date(it.isoDate))}</span>` : '';
@@ -1064,6 +1085,7 @@ export const widgets = {
           return `<li><a href="${escapeAttr(href)}" target="_blank" rel="noopener">${escapeHtml(it.title)}</a>${dateHtml}</li>`;
         }).join('');
         el.innerHTML = `<ul class="w-rss">${html || '<li>-</li>'}</ul>`;
+        startAutoScroll(el.querySelector('.w-rss'));
       }
 
       const ro = new ResizeObserver((entries) => {
@@ -1085,7 +1107,7 @@ export const widgets = {
         (err) => errorBox(el, err.message),
       );
       const pollCleanup = el._cleanup;
-      el._cleanup = () => { pollCleanup?.(); ro.disconnect(); };
+      el._cleanup = () => { pollCleanup?.(); ro.disconnect(); stopAutoScroll(); };
     },
   },
 
