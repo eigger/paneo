@@ -39,8 +39,25 @@ ENABLE_KIOSK="${PANEO_ENABLE_KIOSK:-1}"
 # whole script having silently died (no error, no more log output, nothing).
 CURL_OPTS=(--connect-timeout 3 --max-time 8)
 
-log() { printf '[paneo-install] %s\n' "$*"; }
-fail() { printf '[paneo-install] ERROR: %s\n' "$*" >&2; exit 1; }
+log() { printf '[paneo-install] %s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*"; }
+fail() { printf '[paneo-install] %s ERROR: %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*" >&2; exit 1; }
+
+# Everything below is also written to a log file that survives even if the
+# terminal/SSH session itself has a problem (this install has died silently
+# mid-way twice already with no visible error at all — a durable log is the
+# only way to know what was actually happening at the moment it stopped).
+LOG_FILE="/var/log/paneo-install.log"
+mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
+exec > >(tee -a "$LOG_FILE") 2>&1
+log "install starting, pid=$$, ppid=$PPID, mode=${PANEO_MODE:-${1:-all}}"
+
+# On ANY exit (normal, `set -e` abort, or most signals — not SIGKILL, which
+# nothing can trap), report the exact exit code and the command that was
+# running at the time. This is the single most useful thing to have if the
+# script disappears again with no other explanation.
+trap 'ec=$?; log "EXITING code=$ec last_command=[$BASH_COMMAND] line=$LINENO"' EXIT
+trap 'log "received SIGTERM"; exit 143' TERM
+trap 'log "received SIGINT"; exit 130' INT
 
 need_root() {
   if [ "$(id -u)" -ne 0 ]; then
@@ -125,16 +142,14 @@ EOF
 }
 
 wait_for_server() {
-  log "Waiting for server: $SERVER"
+  log "Waiting for server: $SERVER (call from: ${FUNCNAME[1]:-main}, pid=$$)"
   for i in $(seq 1 30); do
+    log "...attempt $i/30 starting"
     if curl -fsS "${CURL_OPTS[@]}" "$SERVER/api/brand" >/dev/null 2>&1; then
+      log "...server responded on attempt $i/30"
       return
     fi
-    # A few retries always happen (docker start isn't instant) — only worth
-    # printing once it's taking notably longer than that, so a genuine hang
-    # is visibly still-in-progress rather than indistinguishable from the
-    # process having silently died.
-    [ $((i % 5)) -eq 0 ] && log "...still waiting ($i/30)"
+    log "...attempt $i/30 failed (curl exit=$?)"
     sleep 1
   done
   systemctl status paneo --no-pager || true
@@ -142,11 +157,13 @@ wait_for_server() {
 }
 
 create_token_if_needed() {
+  log "create_token_if_needed: start (TOKEN=${TOKEN:-<empty>})"
   if [ -n "$TOKEN" ]; then
     return
   fi
 
   wait_for_server
+  log "create_token_if_needed: server ready, querying existing devices"
 
   # If the database already has devices (e.g. paneo-data volume reused from a
   # previous install), reuse an existing token instead of creating a duplicate.
