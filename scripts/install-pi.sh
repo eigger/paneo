@@ -302,19 +302,9 @@ install_kiosk() {
   cat > /usr/local/bin/paneo-kiosk <<'KIOSK_EOF'
 #!/usr/bin/env bash
 set -e
-# Wait for the Paneo server before launching Chromium. Poll quickly (1 s)
-# instead of blocking up to ~2 min — the display shell caches offline (SW +
-# localStorage), so after a short wait we open the browser anyway; WS
-# reconnects within a few seconds once Docker is ready.
-SERVER_URL="$(grep -o 'http[^ "]*' "$0" | head -1 | sed 's|/d/.*||')"
-SERVER_URL="${SERVER_URL:-http://localhost:4321}"
-for _i in $(seq 1 30); do
-  if curl -fsS --connect-timeout 1 --max-time 2 "${SERVER_URL}/api/brand" >/dev/null 2>&1; then
-    break
-  fi
-  sleep 1
-done
-
+# Launch immediately — callers that need a live server (update-pi.sh) already
+# waited; on desktop autostart the display shell caches offline (SW +
+# localStorage) and reconnects WS once Docker is ready.
 if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then
   # Wayland (Wayfire / Labwc — Raspberry Pi OS Bookworm default)
   OZONE="--ozone-platform=wayland --enable-features=UseOzonePlatform"
