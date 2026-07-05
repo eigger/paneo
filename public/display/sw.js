@@ -5,7 +5,10 @@
 // Cache naming: bump CACHE_VER when any cached file changes shape —
 // the activate handler deletes all older caches automatically.
 
-const CACHE_VER = 'paneo-display-v1';
+// Bump when any cached shell file changes shape. v2: display.js now sends a
+// client heartbeat; a stale cached copy without it gets swept by the server
+// every ~90s, causing a reconnect loop until the fresh shell is loaded.
+const CACHE_VER = 'paneo-display-v2';
 
 const SHELL_FILES = [
   '/display/index.html',
