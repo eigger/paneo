@@ -1070,11 +1070,16 @@ export const widgets = {
       // ever becomes visible right as it would naturally scroll up from
       // below, never as a mid-cycle jump — then the old batch is pruned.
       const DWELL_MS = { off: 0, slow: 6000, normal: 4000, fast: 2000 };
-      const WRAP_SETTLE_MS = 700; // generous upper bound for the native smooth-scroll of one item to finish before pruning
-      let ticker = null; // { ulEl, current, pos, showDate, dwellMs, timer }
+      // Generous upper bound for the native smooth-scroll of one item to
+      // finish before pruning — must stay well below every active DWELL_MS
+      // value above, since the prune is expected to complete *within* the
+      // normal dwell window (see wrapToNextBatch), not add to it.
+      const WRAP_SETTLE_MS = 700;
+      let ticker = null; // { ulEl, current, pos, showDate, dwellMs, timer, pruneTimer }
 
       function stopTicker() {
         if (ticker?.timer) clearTimeout(ticker.timer);
+        if (ticker?.pruneTimer) clearTimeout(ticker.pruneTimer);
         ticker = null;
       }
 
@@ -1108,7 +1113,12 @@ export const widgets = {
         ulEl.insertAdjacentHTML('beforeend', nextBatch.map((it) => itemHtml(it, ticker.showDate)).join(''));
         ticker.pos = oldCount;
         ulEl.scrollTop = itemTop(ulEl, ulEl.children[ticker.pos]);
-        ticker.timer = setTimeout(() => {
+        // Prune the old batch invisibly in the background, well inside the
+        // upcoming dwell window (scheduled below) rather than after it —
+        // otherwise this position would hold for WRAP_SETTLE_MS longer than
+        // every other item, making the loop (a1->a2->a3->a1->a2->a3->...)
+        // feel like it pauses/restarts instead of cycling continuously.
+        ticker.pruneTimer = setTimeout(() => {
           // The old batch has fully scrolled out of view — drop it so the
           // DOM/scroll position don't grow without bound over a long uptime.
           for (let i = 0; i < oldCount; i++) ulEl.removeChild(ulEl.firstElementChild);
@@ -1120,8 +1130,8 @@ export const widgets = {
           ulEl.style.scrollBehavior = '';
           ticker.current = nextBatch;
           ticker.pos = 0;
-          scheduleStep();
         }, WRAP_SETTLE_MS);
+        scheduleStep();
       }
 
       function step() {
