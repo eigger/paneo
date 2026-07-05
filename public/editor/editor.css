@@ -127,9 +127,9 @@ main { flex: 1; display: flex; min-height: 0; }
    it was inheriting the ancestor's base 16px font-size instead, rendering
    at an illegibly tiny ~6px regardless of the clock's actual size. */
 .clock-sec { font-size: 0.5em; opacity: 0.6; }
-.w-date { text-align: center; }
-.w-date .date-main { font-size: clamp(16px, 24cqmin, 80px); font-weight: 500; }
-.w-date .date-weekday { font-size: clamp(13px, 15cqmin, 48px); opacity: 0.6; margin-top: 4px; }
+.w-date { text-align: center; line-height: 1; }
+.w-date .date-main { font-size: clamp(16px, 36cqmin, 90px); font-weight: 500; }
+.w-date .date-weekday { font-size: clamp(13px, 18cqmin, 44px); opacity: 0.6; margin-top: 2px; }
 .w-text { font-size: clamp(16px, 20cqmin, 64px); padding: 10px; text-align: center; }
 .w-image { width: 100%; height: 100%; background-size: cover; background-position: center; }
 .w-placeholder { display: flex; align-items: center; justify-content: center; opacity: 0.5; font-size: 13px; }
@@ -143,10 +143,10 @@ main { flex: 1; display: flex; min-height: 0; }
 .weather-text { font-size: clamp(13px, 10cqmin, 32px); opacity: 0.75; margin-top: 2px; }
 .weather-loc { font-size: clamp(11px, 8cqmin, 24px); opacity: 0.5; margin-top: 3px; }
 .weather-forecast { display: flex; justify-content: space-between; gap: 3px; width: 100%; padding-top: 4px; margin-top: 3px; border-top: 1px solid rgba(255,255,255,0.08); }
-.weather-fc-day { display: flex; flex-direction: column; align-items: center; gap: 1px; flex: 1 1 0; min-width: 0; }
-.weather-fc-wd { font-size: clamp(8px, 6cqmin, 16px); opacity: 0.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.weather-fc-icon { font-size: clamp(12px, 10cqmin, 32px); }
-.weather-fc-temp { font-size: clamp(8px, 6cqmin, 16px); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.weather-fc-day { display: flex; flex-direction: column; align-items: center; gap: 1px; flex: 1 1 0; min-width: 0; max-width: 20%; }
+.weather-fc-wd { font-size: clamp(6px, 3.5cqmin, 10px); opacity: 0.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.weather-fc-icon { font-size: clamp(9px, 7cqmin, 18px); }
+.weather-fc-temp { font-size: clamp(6px, 3.5cqmin, 10px); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 
 .w-airquality { display: flex; flex-direction: column; justify-content: center; gap: 4px;
   width: 100%; height: 100%; padding: 6px 10px; box-sizing: border-box; }
@@ -161,7 +161,10 @@ main { flex: 1; display: flex; min-height: 0; }
 .aq-extra { display: flex; flex-direction: column; gap: 4px; margin-top: 3px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.08); }
 
 .w-calendar, .w-rss { list-style: none; width: 100%; height: 100%; padding: 8px;
-  overflow: hidden; font-size: clamp(12px, 9cqmin, 28px); }
+  font-size: clamp(12px, 9cqmin, 28px); }
+.w-calendar { overflow: hidden; }
+.w-rss { overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+.w-rss::-webkit-scrollbar { display: none; }
 .w-calendar li, .w-rss li { padding: 4px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
 .w-calendar li:last-child, .w-rss li:last-child { border-bottom: none; }
 .cal-date { opacity: 0.6; margin-right: 8px; font-variant-numeric: tabular-nums; }
@@ -398,10 +401,10 @@ main { flex: 1; display: flex; min-height: 0; }
 .ha-weather-cond { font-size: clamp(11px, 8cqmin, 24px); opacity: 0.8; }
 .ha-weather-meta { display: flex; gap: 10px; font-size: clamp(10px, 6cqmin, 18px); opacity: 0.7; margin-top: 2px; }
 .ha-weather-forecast { display: flex; justify-content: space-between; gap: 3px; width: 100%; padding-top: 4px; margin-top: 3px; border-top: 1px solid rgba(255,255,255,0.08); }
-.ha-fc-day { display: flex; flex-direction: column; align-items: center; gap: 1px; flex: 1 1 0; min-width: 0; }
-.ha-fc-wd { font-size: clamp(8px, 6cqmin, 16px); opacity: 0.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ha-fc-icon { font-size: clamp(12px, 10cqmin, 32px); }
-.ha-fc-temp { font-size: clamp(8px, 6cqmin, 16px); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ha-fc-day { display: flex; flex-direction: column; align-items: center; gap: 1px; flex: 1 1 0; min-width: 0; max-width: 20%; }
+.ha-fc-wd { font-size: clamp(6px, 3.5cqmin, 10px); opacity: 0.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.ha-fc-icon { font-size: clamp(9px, 7cqmin, 18px); }
+.ha-fc-temp { font-size: clamp(6px, 3.5cqmin, 10px); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 
 .w-worldclock { display: flex; flex-direction: column; justify-content: center; gap: 4px; width: 100%; height: 100%; padding: 6px 10px; box-sizing: border-box; overflow: hidden; }
 .wc-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
