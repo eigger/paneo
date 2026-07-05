@@ -407,12 +407,59 @@ export const widgets = {
       const TRANSITION_MS = 700;
 
       let timer = null;
+      let transitionCleanupTimer = null;
       let items = [];
       let currentIndex = 0;
       let pendingNextIndex = 0;
       let activeVideoEl = null;
+      let activeVideoHandlers = null;
       let hasPainted = false;
       let paintGeneration = 0; // guards against a stale preload finishing after a newer paint() started
+
+      // Release Chromium's video decoder buffers — without this, shuffle mode that
+      // jumps between clips leaves decoders pinned until the <video> node is GC'd,
+      // which on a Pi kiosk can OOM-kill the whole system over a long run.
+      const releaseVideoEl = (video) => {
+        if (!video) return;
+        video.pause();
+        video.removeAttribute('src');
+        try { video.load(); } catch { /* ignore */ }
+      };
+
+      const teardownActiveVideo = () => {
+        if (!activeVideoEl) return;
+        if (activeVideoHandlers) {
+          activeVideoEl.removeEventListener('ended', activeVideoHandlers.ended);
+          activeVideoEl.removeEventListener('error', activeVideoHandlers.error);
+          activeVideoHandlers = null;
+        }
+        releaseVideoEl(activeVideoEl);
+        activeVideoEl = null;
+      };
+
+      // Fade/slide keeps old layers for TRANSITION_MS; rapid advances (shuffle +
+      // short videos) can stack layers if the pending removal timeout isn't
+      // cancelled — each layer may hold a full-resolution image in GPU memory.
+      const collapseTransitionStage = () => {
+        clearTimeout(transitionCleanupTimer);
+        transitionCleanupTimer = null;
+        const stage = el.querySelector('.ms-stage');
+        if (!stage || stage.children.length <= 1) return;
+        const layers = [...stage.children];
+        const keeper = layers.find((l) => l.classList.contains('ms-active')) || layers[layers.length - 1];
+        for (const layer of layers) {
+          if (layer === keeper) continue;
+          layer.querySelectorAll('video').forEach(releaseVideoEl);
+          layer.remove();
+        }
+      };
+
+      const removeTransitionLayers = (layers) => {
+        for (const layer of layers) {
+          layer.querySelectorAll('video').forEach(releaseVideoEl);
+          layer.remove();
+        }
+      };
 
       // Random-without-immediate-repeat when shuffle is on, otherwise plain sequential.
       const pickNextIndex = () => {
@@ -436,7 +483,9 @@ export const widgets = {
 
       const paint = () => {
         clearTimeout(timer);
-        if (activeVideoEl) { activeVideoEl.pause(); activeVideoEl = null; }
+        timer = null;
+        teardownActiveVideo();
+        collapseTransitionStage();
         const myGeneration = ++paintGeneration;
 
         if (!items.length) {
@@ -487,7 +536,11 @@ export const widgets = {
             void newLayer.offsetWidth; // force a reflow so the enter->active transition actually runs
             newLayer.classList.add('ms-active');
             const oldLayers = [...stage.children].filter((c) => c !== newLayer);
-            setTimeout(() => oldLayers.forEach((l) => l.remove()), TRANSITION_MS);
+            clearTimeout(transitionCleanupTimer);
+            transitionCleanupTimer = setTimeout(() => {
+              transitionCleanupTimer = null;
+              removeTransitionLayers(oldLayers);
+            }, TRANSITION_MS);
           }
           hasPainted = true;
 
@@ -499,8 +552,11 @@ export const widgets = {
           if (isVideo) {
             activeVideoEl = newLayer.querySelector('video');
             if (!loopSingle) {
-              activeVideoEl.addEventListener('ended', advance);
-              activeVideoEl.addEventListener('error', advance);
+              const onEnded = () => advance();
+              const onError = () => advance();
+              activeVideoHandlers = { ended: onEnded, error: onError };
+              activeVideoEl.addEventListener('ended', onEnded);
+              activeVideoEl.addEventListener('error', onError);
             }
             return;
           }
@@ -572,8 +628,13 @@ export const widgets = {
       }
 
       el._cleanup = () => {
+        paintGeneration += 1; // abandon any in-flight image preload callbacks
         clearTimeout(timer);
-        if (activeVideoEl) activeVideoEl.pause();
+        clearTimeout(transitionCleanupTimer);
+        timer = null;
+        transitionCleanupTimer = null;
+        teardownActiveVideo();
+        collapseTransitionStage();
       };
     },
   },

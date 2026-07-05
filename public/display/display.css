@@ -288,3 +288,24 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
    (built-in or plugin) can opt into the same behavior. */
 .widget[data-background-layer="true"] { z-index: 1; }
 .widget-content.transparent-bg { background: transparent !important; border-color: transparent !important; box-shadow: none !important; }
+
+/* Per-widget text halo (docs/design.md D16) — color tracks the widget surface:
+   opaque card ≈ page tone + subtle lift; transparent uses the page background. */
+.widget-content.text-outline {
+  --paneo-text-halo: color-mix(in srgb, var(--paneo-page-bg, #0b0f19) 94%, white 6%);
+}
+.widget-content.text-outline.transparent-bg {
+  --paneo-text-halo: var(--paneo-page-bg, #0b0f19);
+}
+.widget-content.text-outline,
+.widget-content.text-outline * {
+  text-shadow:
+    -1px 0 0 var(--paneo-text-halo),
+    1px 0 0 var(--paneo-text-halo),
+    0 -1px 0 var(--paneo-text-halo),
+    0 1px 0 var(--paneo-text-halo),
+    -1px -1px 0 var(--paneo-text-halo),
+    1px -1px 0 var(--paneo-text-halo),
+    -1px 1px 0 var(--paneo-text-halo),
+    1px 1px 0 var(--paneo-text-halo);
+}

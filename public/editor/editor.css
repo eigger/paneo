@@ -110,6 +110,25 @@ main { flex: 1; display: flex; min-height: 0; }
    of source order. */
 .ed-widget.selected .widget-content.transparent-bg { box-shadow: 0 0 0 2px #3b82f6, 0 0 22px rgba(59,130,246,0.35) !important; }
 
+.ed-widget .widget-content.text-outline {
+  --paneo-text-halo: color-mix(in srgb, var(--paneo-page-bg, #0b0f19) 94%, white 6%);
+}
+.ed-widget .widget-content.text-outline.transparent-bg {
+  --paneo-text-halo: var(--paneo-page-bg, #0b0f19);
+}
+.ed-widget .widget-content.text-outline,
+.ed-widget .widget-content.text-outline * {
+  text-shadow:
+    -1px 0 0 var(--paneo-text-halo),
+    1px 0 0 var(--paneo-text-halo),
+    0 -1px 0 var(--paneo-text-halo),
+    0 1px 0 var(--paneo-text-halo),
+    -1px -1px 0 var(--paneo-text-halo),
+    1px -1px 0 var(--paneo-text-halo),
+    -1px 1px 0 var(--paneo-text-halo),
+    1px 1px 0 var(--paneo-text-halo);
+}
+
 /* widget visuals mirror the display (kept minimal for editor) */
 .w-clock {
   display: flex;

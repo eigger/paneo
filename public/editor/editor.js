@@ -1,6 +1,6 @@
 import { widgets, renderWidget, widgetLabel, fieldLabel, fieldPlaceholder, CATEGORY_ORDER, loadPlugins } from '/shared/widgets.js';
 import { t, getLang, setLang, LANGS, LOCALES, RESOLUTIONS } from '/editor/i18n.js';
-import { effectiveRows, applyGridContainer, applyGridItem, applyCustomCss } from '/shared/gridlayout.js';
+import { effectiveRows, applyGridContainer, applyGridItem, applyCustomCss, buildWidgetContentClass, pageSurfaceColor } from '/shared/gridlayout.js';
 import { attachSwipeNavigation } from '/shared/swipe.js';
 
 let device = null;
@@ -124,6 +124,7 @@ const groupNewName = document.getElementById('group-new-name');
 const groupNewBtn = document.getElementById('group-new-btn');
 const groupApplyBtn = document.getElementById('group-apply-btn');
 const deviceConnected = document.getElementById('device-connected');
+const deviceConnectedHint = document.getElementById('device-connected-hint');
 const cmdReloadBtn = document.getElementById('cmd-reload-btn');
 const cmdIdentifyBtn = document.getElementById('cmd-identify-btn');
 // §M4: companion-agent & power schedule
@@ -323,6 +324,32 @@ function startUpdateProgressPolling() {
 function stopUpdateProgressPolling() {
   clearTimeout(updateProgressTimer);
   updateProgressTimer = null;
+}
+
+// Live display/agent counts are in-memory on the server — refresh while the
+// settings panel is open so "0 displays" doesn't stick after the kiosk connects.
+let deviceMetaTimer = null;
+
+async function refreshDeviceMeta() {
+  if (!device) return;
+  try {
+    const d = await api(`/api/devices/${device.id}`);
+    device.displays = d.displays;
+    device.agentPresent = d.agentPresent;
+    device.agentVersion = d.agentVersion;
+    syncDeviceMetaUI();
+  } catch { /* transient — try again next cycle */ }
+}
+
+function startDeviceMetaPolling() {
+  clearInterval(deviceMetaTimer);
+  refreshDeviceMeta();
+  deviceMetaTimer = setInterval(refreshDeviceMeta, 4000);
+}
+
+function stopDeviceMetaPolling() {
+  clearInterval(deviceMetaTimer);
+  deviceMetaTimer = null;
 }
 
 const CATEGORY_KEY = { basic: 'categoryBasic', data: 'categoryData', media: 'categoryMedia', plugin: 'categoryPlugin' };
@@ -533,9 +560,19 @@ function initSelectors() {
   });
 }
 
+// Keep the settings-panel "connected displays" line in sync with live API
+// responses (apply / remote commands return fresh counts; the in-memory
+// `device` object was only updated on selectDevice + settings polling).
+function syncDisplaysFromResponse(res) {
+  if (!device || res?.displays === undefined) return;
+  device.displays = res.displays;
+  syncDeviceMetaUI();
+}
+
 async function sendCommand(action) {
   if (!device) return;
   const res = await api(`/api/devices/${device.id}/command`, { method: 'POST', body: JSON.stringify({ action }) });
+  syncDisplaysFromResponse(res);
   toast(res.displays > 0 ? t('cmdSent') : t('cmdNoDisplay'));
 }
 
@@ -580,7 +617,17 @@ async function loadGroups() {
 function syncDeviceMetaUI() {
   perfSelect.value = device.performanceProfile || 'high';
   groupSelect.value = device.groupId || '';
-  deviceConnected.textContent = t('connectedCount', device.displays ?? 0);
+  const displayN = device.displays ?? 0;
+  deviceConnected.textContent = t('connectedCount', displayN);
+  if (deviceConnectedHint) {
+    if (device.agentPresent && displayN === 0) {
+      deviceConnectedHint.textContent = t('displayWsMissing');
+      deviceConnectedHint.classList.remove('hidden');
+    } else {
+      deviceConnectedHint.textContent = '';
+      deviceConnectedHint.classList.add('hidden');
+    }
+  }
   // §M4: agent badge
   if (agentStatus) {
     agentStatus.textContent = device.agentPresent
@@ -767,6 +814,7 @@ function render() {
   // Clean up previous widget content
   canvas.querySelectorAll('.widget-content').forEach((c) => c._cleanup?.());
   canvas.style.backgroundColor = pg.background || '#0b0f19';
+  canvas.style.setProperty('--paneo-page-bg', pageSurfaceColor(pg, layout));
   canvas.innerHTML = '';
   applyGridContainer(canvas, pg);
   const { cols, rows, gap, cellW, cellH } = cellSize();
@@ -781,7 +829,7 @@ function render() {
     if (widgets[w.type]?.backgroundLayer) node.dataset.backgroundLayer = 'true';
     applyGridItem(node, w);
     const content = document.createElement('div');
-    content.className = 'widget-content' + (w.transparentBg ? ' transparent-bg' : '');
+    content.className = buildWidgetContentClass(w);
     node.appendChild(content);
     // Attach to the document *before* renderWidget() — some widgets (e.g.
     // paneo.calendar.month) synchronously measure their own box on first
@@ -1093,6 +1141,7 @@ function renderInspector() {
   // widget's own config schema, so it lives outside the `def.config` loop above,
   // next to the x/y/w/h fields that are likewise generic to every widget type.
   html += `<div class="field check"><label><input type="checkbox" id="widget-transparent-bg" ${w.transparentBg ? 'checked' : ''}> ${t('transparentBgLabel')}</label></div>`;
+  html += `<div class="field check"><label><input type="checkbox" id="widget-text-outline" ${w.textOutline ? 'checked' : ''}> ${t('textOutlineLabel')}</label></div>`;
   html += `<div class="field"><label>${t('customCssLabel')}</label>
     <textarea id="custom-css-input" rows="4" placeholder="border-radius:12px; opacity:.9;">${escHtml(w.customCss || '')}</textarea>
     <p class="field-hint">${t('customCssHint')}</p>
@@ -1111,6 +1160,21 @@ function renderInspector() {
           node.classList.add('transparent-bg');
         } else {
           node.classList.remove('transparent-bg');
+        }
+      }
+      scheduleSave();
+    });
+  }
+  const textOutlineCheckbox = inspectorBody.querySelector('#widget-text-outline');
+  if (textOutlineCheckbox) {
+    textOutlineCheckbox.addEventListener('change', (e) => {
+      w.textOutline = e.target.checked;
+      const node = canvas.querySelector(`.ed-widget[data-id="${w.id}"] .widget-content`);
+      if (node) {
+        if (w.textOutline) {
+          node.classList.add('text-outline');
+        } else {
+          node.classList.remove('text-outline');
         }
       }
       scheduleSave();
@@ -1422,6 +1486,7 @@ async function saveDraft() {
 async function apply() {
   await saveDraft();
   const res = await api(`/api/devices/${device.id}/publish`, { method: 'POST' });
+  syncDisplaysFromResponse(res);
   toast(t('applied', res.displays));
 }
 
@@ -1469,6 +1534,7 @@ async function saveHASettings() {
 function closeSettings() {
   settingsOverlay.classList.add('hidden');
   stopUpdateProgressPolling();
+  stopDeviceMetaPolling();
 }
 
 settingsBtn.addEventListener('click', async () => {
@@ -1478,6 +1544,7 @@ settingsBtn.addEventListener('click', async () => {
   // device's update was triggered from a different tab/session — and keeps
   // polling on its own while the panel is open and a run is still active.
   startUpdateProgressPolling();
+  startDeviceMetaPolling();
 });
 
 const haSaveBtn = document.getElementById('ha-save-btn');
