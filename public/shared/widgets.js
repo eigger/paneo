@@ -1042,7 +1042,10 @@ export const widgets = {
     minSize: { w: 2, h: 2 },
     requires: [],
     permissions: [],
-    config: [{ key: 'feedUrls', label: { ko: 'RSS 피드 URL', en: 'RSS feed URLs' }, type: 'list', default: [] }],
+    config: [
+      { key: 'feedUrls', label: { ko: 'RSS 피드 URL', en: 'RSS feed URLs' }, type: 'list', default: [] },
+      { key: 'scrollSpeed', label: { ko: '스크롤 속도', en: 'Scroll speed' }, type: 'enum', options: ['off', 'slow', 'normal', 'fast'], default: 'normal' },
+    ],
     render(el, config, ctx = {}) {
       const urls = cleanUrlList(config.feedUrls);
       if (!urls.length) { errorBox(el, ctx.locale?.startsWith('ko') !== false ? 'RSS URL을 입력하세요' : 'Set an RSS URL'); return; }
@@ -1057,42 +1060,62 @@ export const widgets = {
       const RSS_DATE_MIN_HEIGHT = 200;
       let latestItems = null;
 
-      // When the list is taller than the widget, slowly auto-scroll down to
-      // reveal the lower items, then back to top, and repeat — otherwise a
-      // shrunk widget would only ever show the first few entries. maxScroll
-      // is recomputed every tick (not cached) so a live resize is picked up
-      // without needing to restart the timer.
-      let scrollTimer = null;
+      // Continuous one-direction "ticker" scroll (not back-and-forth) — the
+      // list content is duplicated once directly below itself, and scrollTop
+      // is advanced at a steady px/sec; the moment it passes the height of a
+      // single copy, that height is subtracted back off. Since the duplicate
+      // is pixel-identical to the original, the wrap is invisible and the
+      // list appears to scroll upward forever (a ring buffer, not a bounce).
+      const SCROLL_SPEED_PX_PER_SEC = { off: 0, slow: 10, normal: 20, fast: 36 };
+      let rafId = null;
       function stopAutoScroll() {
-        if (scrollTimer) { clearInterval(scrollTimer); scrollTimer = null; }
+        if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
       }
-      function startAutoScroll(ulEl) {
-        stopAutoScroll();
-        ulEl.style.scrollBehavior = 'smooth';
-        let atBottom = false;
-        scrollTimer = setInterval(() => {
-          const maxScroll = ulEl.scrollHeight - ulEl.clientHeight;
-          if (maxScroll <= 4) { atBottom = false; return; }
-          atBottom = !atBottom;
-          ulEl.scrollTop = atBottom ? maxScroll : 0;
-        }, 4000);
+      function startAutoScroll(ulEl, singleHeight, pxPerSec) {
+        let lastT = null;
+        // Track the true (fractional) scroll position ourselves — reading
+        // scrollTop back and adding to it would lose all sub-pixel progress
+        // every frame (browsers round scrollTop to an integer), so at
+        // low px/sec the position would never move at all.
+        let offset = ulEl.scrollTop;
+        const frame = (t) => {
+          if (lastT == null) lastT = t;
+          const dt = Math.min((t - lastT) / 1000, 0.1); // clamp so a throttled/backgrounded tab doesn't jump on resume
+          lastT = t;
+          offset += pxPerSec * dt;
+          if (offset >= singleHeight) offset -= singleHeight;
+          ulEl.scrollTop = offset;
+          rafId = requestAnimationFrame(frame);
+        };
+        rafId = requestAnimationFrame(frame);
       }
 
       function renderList(items, showDate) {
+        stopAutoScroll();
         const html = items.map((it) => {
           const dateHtml = (showDate && it.isoDate) ? `<span class="rss-date">${dateFmt.format(new Date(it.isoDate))}</span>` : '';
           const href = safeHttpUrl(it.link);
           return `<li><a href="${escapeAttr(href)}" target="_blank" rel="noopener">${escapeHtml(it.title)}</a>${dateHtml}</li>`;
         }).join('');
         el.innerHTML = `<ul class="w-rss">${html || '<li>-</li>'}</ul>`;
-        startAutoScroll(el.querySelector('.w-rss'));
+        if (!html) return;
+        const ulEl = el.querySelector('.w-rss');
+        const pxPerSec = SCROLL_SPEED_PX_PER_SEC[config.scrollSpeed] ?? SCROLL_SPEED_PX_PER_SEC.normal;
+        if (pxPerSec <= 0) return;
+        const singleHeight = ulEl.scrollHeight;
+        if (singleHeight <= ulEl.clientHeight + 4) return; // fits — nothing to scroll
+        ulEl.insertAdjacentHTML('beforeend', html);
+        startAutoScroll(ulEl, singleHeight, pxPerSec);
       }
 
       const ro = new ResizeObserver((entries) => {
         if (!latestItems) return;
+        // Re-render on every resize, not just when the date-label threshold
+        // is crossed — cqmin-based font sizes (and therefore each item's
+        // height, and whether the list overflows at all) change continuously
+        // with the widget's size, so the scroll duplication/height must be
+        // recomputed too.
         const showDate = entries[0].contentRect.height >= RSS_DATE_MIN_HEIGHT;
-        const alreadyShown = !!el.querySelector('.rss-date');
-        if (showDate === alreadyShown) return;
         renderList(latestItems, showDate);
       });
       ro.observe(el);
