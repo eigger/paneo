@@ -39,8 +39,8 @@ ENABLE_KIOSK="${PANEO_ENABLE_KIOSK:-1}"
 # whole script having silently died (no error, no more log output, nothing).
 CURL_OPTS=(--connect-timeout 3 --max-time 8)
 
-log() { printf '[paneo-install] %s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*"; }
-fail() { printf '[paneo-install] %s ERROR: %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*" >&2; exit 1; }
+log() { printf '[paneo-install] %s\n' "$*"; }
+fail() { printf '[paneo-install] ERROR: %s\n' "$*" >&2; exit 1; }
 
 # Everything below is also written to a log file that survives even if the
 # terminal/SSH session itself has a problem (this install has died silently
