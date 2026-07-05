@@ -166,6 +166,14 @@ curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/scripts/update-
 실행할 수 있습니다 — 새 릴리즈가 있는지도 먼저 보여줍니다. 자세한 내용(서버 전용 모드, Docker
 Compose 수동 업데이트, 에이전트만 업데이트): [`docs/install-device.ko.md`](docs/install-device.ko.md#12-업데이트)
 
+## 제거
+
+Paneo와 컴패니언 에이전트, 키오스크 설정을 기기에서 완전히 삭제하고 이전 상태로 복구하려면 아래 명령어를 실행하세요:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/uninstall.sh | sudo bash
+```
+
 ## 구조
 
 - `src/server.js` — Fastify + `@fastify/websocket` REST + WS 허브

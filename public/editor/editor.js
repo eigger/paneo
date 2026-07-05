@@ -1,10 +1,11 @@
-import { widgets, renderWidget, widgetLabel, fieldLabel, CATEGORY_ORDER, loadPlugins } from '/shared/widgets.js';
+import { widgets, renderWidget, widgetLabel, fieldLabel, fieldPlaceholder, CATEGORY_ORDER, loadPlugins } from '/shared/widgets.js';
 import { t, getLang, setLang, LANGS, LOCALES, RESOLUTIONS } from '/editor/i18n.js';
 import { effectiveRows, applyGridContainer, applyGridItem, applyCustomCss } from '/shared/gridlayout.js';
 import { attachSwipeNavigation } from '/shared/swipe.js';
 
 let device = null;
 let layout = null;
+let cachedPhotos = null;
 // Multi-page layout structure
 // layout = { pages: [{ id: string, widgets: [], grid?, background? }], currentPageIndex: number }
 
@@ -977,7 +978,7 @@ function renderInspector() {
     } else if (c.type === 'list') {
       const configArr = w.config?.[c.key];
       const arr = (Array.isArray(configArr) && configArr.length > 0) ? configArr : [''];
-      const ph = c.placeholder ? (c.placeholder[lang] || c.placeholder.ko || c.placeholder) : '';
+      const ph = fieldPlaceholder(c, lang);
       let rows;
       if (c.key === 'icsUrls') {
         const colorOptions = [
@@ -1054,7 +1055,7 @@ function renderInspector() {
         const e = entry && typeof entry === 'object' ? entry : {};
         const fieldsHtml = (c.fields || []).map((f) => {
           const val = e[f.key];
-          const ph = f.placeholder ? (f.placeholder[lang] || f.placeholder.ko || f.placeholder) : '';
+          const ph = fieldPlaceholder(f, lang);
           if (f.type === 'checkbox') {
             return `<label class="struct-check"><input type="checkbox" data-struct-field="${f.key}" ${val ? 'checked' : ''}> ${fieldLabel(f, lang)}</label>`;
           }
@@ -1283,57 +1284,76 @@ function setupFileManager(box, w) {
   const uploadBtn = box.querySelector('.file-manager-upload-btn');
   const selectionKey = box.dataset.selectionKey || '';
 
-  async function refresh() {
-    listEl.textContent = t('loading');
-    try {
-      const files = await api('/api/proxy/photos/local');
-      if (!files.length) {
-        listEl.innerHTML = `<p class="muted">${t('fileManagerEmpty')}</p>`;
-        return;
-      }
-      const selected = selectionKey && Array.isArray(w.config?.[selectionKey]) ? w.config[selectionKey] : [];
-      listEl.innerHTML = files.map((url) => {
-        const name = decodeURIComponent(url.split('/').pop());
-        const thumb = /\.(mp4|webm|mov|m4v|ogv)$/i.test(name)
-          ? `<video src="${url}" muted></video>`
-          : `<img src="${url}" alt="">`;
-        const checkbox = selectionKey
-          ? `<label class="file-manager-select"><input type="checkbox" data-filename="${escHtmlStandalone(name)}" ${selected.includes(name) ? 'checked' : ''}></label>`
-          : '';
-        return `<div class="file-manager-item">
-          ${thumb}
-          ${checkbox}
-          <span class="file-manager-name">${escHtmlStandalone(name)}</span>
-          <button type="button" class="file-manager-delete" data-filename="${encodeURIComponent(name)}">×</button>
-        </div>`;
-      }).join('');
-      listEl.querySelectorAll('.file-manager-delete').forEach((btn) =>
-        btn.addEventListener('click', async () => {
-          btn.disabled = true;
-          try {
-            await api(`/api/proxy/photos/local/file/${btn.dataset.filename}`, { method: 'DELETE' });
-          } catch { /* file already gone or request failed — refresh() below shows current state either way */ }
-          refresh();
+  function renderList(files) {
+    if (!files.length) {
+      listEl.innerHTML = `<p class="muted">${t('fileManagerEmpty')}</p>`;
+      return;
+    }
+    const selected = selectionKey && Array.isArray(w.config?.[selectionKey]) ? w.config[selectionKey] : [];
+    listEl.innerHTML = files.map((url) => {
+      const name = decodeURIComponent(url.split('/').pop());
+      const thumb = /\.(mp4|webm|mov|m4v|ogv)$/i.test(name)
+        ? `<video src="${url}" muted></video>`
+        : `<img src="${url}" alt="">`;
+      const checkbox = selectionKey
+        ? `<label class="file-manager-select"><input type="checkbox" data-filename="${escHtmlStandalone(name)}" ${selected.includes(name) ? 'checked' : ''}></label>`
+        : '';
+      return `<div class="file-manager-item">
+        ${thumb}
+        ${checkbox}
+        <span class="file-manager-name">${escHtmlStandalone(name)}</span>
+        <button type="button" class="file-manager-delete" data-filename="${encodeURIComponent(name)}">×</button>
+      </div>`;
+    }).join('');
+
+    listEl.querySelectorAll('.file-manager-delete').forEach((btn) =>
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+          await api(`/api/proxy/photos/local/file/${btn.dataset.filename}`, { method: 'DELETE' });
+        } catch { /* file already gone or request failed — refresh() below shows current state either way */ }
+        cachedPhotos = null;
+        refresh(true);
+      })
+    );
+
+    if (selectionKey) {
+      listEl.querySelectorAll('.file-manager-select input').forEach((cb) =>
+        cb.addEventListener('change', () => {
+          w.config = w.config || {};
+          if (!Array.isArray(w.config[selectionKey])) w.config[selectionKey] = [];
+          const arr = w.config[selectionKey];
+          const name = cb.dataset.filename;
+          const i = arr.indexOf(name);
+          if (cb.checked && i === -1) arr.push(name);
+          else if (!cb.checked && i !== -1) arr.splice(i, 1);
+          const node = canvas.querySelector(`.ed-widget[data-id="${w.id}"] .widget-content`);
+          if (node) renderWidget(node, w.type, w.config, ctx(w));
+          scheduleSave();
         })
       );
-      if (selectionKey) {
-        listEl.querySelectorAll('.file-manager-select input').forEach((cb) =>
-          cb.addEventListener('change', () => {
-            w.config = w.config || {};
-            if (!Array.isArray(w.config[selectionKey])) w.config[selectionKey] = [];
-            const arr = w.config[selectionKey];
-            const name = cb.dataset.filename;
-            const i = arr.indexOf(name);
-            if (cb.checked && i === -1) arr.push(name);
-            else if (!cb.checked && i !== -1) arr.splice(i, 1);
-            const node = canvas.querySelector(`.ed-widget[data-id="${w.id}"] .widget-content`);
-            if (node) renderWidget(node, w.type, w.config, ctx(w));
-            scheduleSave();
-          })
-        );
+    }
+  }
+
+  async function refresh(forceLoading = false) {
+    if (forceLoading || !cachedPhotos) {
+      listEl.textContent = t('loading');
+    } else {
+      renderList(cachedPhotos);
+    }
+    try {
+      const files = await api('/api/proxy/photos/local');
+      const changed = !cachedPhotos || cachedPhotos.length !== files.length || !files.every((f, i) => f === cachedPhotos[i]);
+      if (changed) {
+        cachedPhotos = files;
+        renderList(files);
+      } else if (!forceLoading) {
+        renderList(files);
       }
     } catch {
-      listEl.innerHTML = `<p class="muted">${t('loadFail', '')}</p>`;
+      if (!cachedPhotos) {
+        listEl.innerHTML = `<p class="muted">${t('loadFail', '')}</p>`;
+      }
     }
   }
 
@@ -1356,7 +1376,8 @@ function setupFileManager(box, w) {
       uploadBtn.disabled = false;
       uploadBtn.textContent = t('fileUploadBtn');
       input.value = '';
-      refresh();
+      cachedPhotos = null;
+      refresh(true);
     }
   });
 

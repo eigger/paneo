@@ -134,13 +134,15 @@ function pollJson(el, url, intervalMs, onData, onError) {
 
 // ---- calendar.month helpers ----
 // Build a grid of Date objects for the month containing `date`, padded so
-// each row starts on Monday (ISO week). Returns an array of 6 rows × 7 cols.
-function buildMonthGrid(date) {
+// each row starts on Monday (ISO week) or Sunday depending on startOnSunday option.
+// Returns an array of 5 or 6 rows × 7 cols.
+export function buildMonthGrid(date, startOnSunday = false) {
   const year = date.getFullYear();
   const month = date.getMonth();
   const first = new Date(year, month, 1);
-  // Monday = 0 offset (ISO). JS getDay(): 0=Sun,1=Mon..6=Sat → remap
-  const startOffset = (first.getDay() + 6) % 7;
+  // Monday = 0 offset (ISO) or Sunday = 0 offset.
+  // JS getDay(): 0=Sun,1=Mon..6=Sat
+  const startOffset = startOnSunday ? first.getDay() : (first.getDay() + 6) % 7;
   const cells = [];
   for (let i = -startOffset; i < 42 - startOffset; i++) {
     cells.push(new Date(year, month, 1 + i));
@@ -158,14 +160,14 @@ function isoDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// N full Monday-start weeks centered on `date`'s own week — weeksBefore=0,
+// N full Monday/Sunday-start weeks centered on `date`'s own week — weeksBefore=0,
 // weeksAfter=0 gives exactly this week (7 cells); 1/1 gives prev+this+next
 // (21 cells). Used by paneo.calendar.month's week/3-week auto views; the
 // month view keeps using buildMonthGrid() since a month doesn't align to
 // week boundaries the same way (it pads to the *calendar* month, not N weeks).
-function buildWeekRows(date, weeksBefore, weeksAfter) {
-  const mondayOffset = (date.getDay() + 6) % 7; // days since this week's Monday
-  const firstDay = new Date(date.getFullYear(), date.getMonth(), date.getDate() - mondayOffset - weeksBefore * 7);
+export function buildWeekRows(date, weeksBefore, weeksAfter, startOnSunday = false) {
+  const offset = startOnSunday ? date.getDay() : (date.getDay() + 6) % 7; // days since this week's start (Sunday or Monday)
+  const firstDay = new Date(date.getFullYear(), date.getMonth(), date.getDate() - offset - weeksBefore * 7);
   const totalDays = (weeksBefore + 1 + weeksAfter) * 7;
   const cells = [];
   for (let i = 0; i < totalDays; i++) {
@@ -249,7 +251,7 @@ function weatherCodeIcon(code) {
 export const widgets = {
   'paneo.clock': {
     version: '1.1.0',
-    label: { ko: '시계', en: 'Clock' },
+    label: 'paneo.clock.label',
     icon: '🕐',
     category: 'basic',
     defaultSize: { w: 3, h: 2 },
@@ -257,8 +259,8 @@ export const widgets = {
     requires: [],
     permissions: [],
     config: [
-      { key: 'hour12', label: { ko: '12시간제', en: '12-hour' }, type: 'checkbox', default: false },
-      { key: 'showSeconds', label: { ko: '초 표시', en: 'Show seconds' }, type: 'checkbox', default: true },
+      { key: 'hour12', label: 'paneo.clock.hour12', type: 'checkbox', default: false },
+      { key: 'showSeconds', label: 'paneo.clock.showSeconds', type: 'checkbox', default: true },
     ],
     render(el, config, ctx = {}) {
       const locale = ctx.locale || 'ko-KR';
@@ -319,7 +321,7 @@ export const widgets = {
 
   'paneo.date': {
     version: '1.0.0',
-    label: { ko: '날짜', en: 'Date' },
+    label: 'paneo.date.label',
     icon: '📅',
     category: 'basic',
     defaultSize: { w: 3, h: 2 },
@@ -344,14 +346,14 @@ export const widgets = {
 
   'paneo.text': {
     version: '1.0.0',
-    label: { ko: '텍스트', en: 'Text' },
+    label: 'paneo.text.label',
     icon: '📝',
     category: 'basic',
     defaultSize: { w: 3, h: 2 },
     minSize: { w: 1, h: 1 },
     requires: [],
     permissions: [],
-    config: [{ key: 'text', label: { ko: '내용', en: 'Content' }, type: 'text', default: '' }],
+    config: [{ key: 'text', label: 'paneo.text.text', type: 'text', default: '' }],
     render(el, config) {
       el.innerHTML = `<div class="w-text"></div>`;
       el.querySelector('.w-text').textContent = config.text ?? '';
@@ -360,7 +362,7 @@ export const widgets = {
 
   'paneo.photo': {
     version: '1.2.0',
-    label: { ko: '미디어 슬라이드쇼', en: 'Media slideshow' },
+    label: 'paneo.photo.label',
     icon: '🖼️',
     category: 'media',
     defaultSize: { w: 4, h: 3 },
@@ -374,23 +376,23 @@ export const widgets = {
     // third-party plugin) can opt into the same behavior later.
     backgroundLayer: true,
     config: [
-      { key: 'source', label: { ko: '미디어 소스', en: 'Media Source' }, type: 'enum', options: ['urls', 'local', 'unsplash', 'immich'], default: 'urls' },
-      { key: 'urls', label: { ko: '이미지/동영상 URL 목록', en: 'Image/video URLs' }, type: 'list', default: [], showIf: { key: 'source', equals: 'urls' } },
+      { key: 'source', label: 'paneo.photo.source', type: 'enum', options: ['urls', 'local', 'unsplash', 'immich'], default: 'urls' },
+      { key: 'urls', label: 'paneo.photo.urls', type: 'list', default: [], showIf: { key: 'source', equals: 'urls' } },
       // selectionKey: the shared upload pool (data/photos/) is server-global — every
       // "local" source widget browses/uploads/deletes the same files — but which of
       // those files THIS widget instance actually slideshows is per-widget, stored
       // under config[selectionKey]. Empty/unset means "show everything" (the original,
       // still-backward-compatible behavior) so existing configs don't change.
-      { key: 'localManage', label: { ko: '로컬 사진/동영상 관리', en: 'Manage local photos/videos' }, type: 'fileManager', default: '', showIf: { key: 'source', equals: 'local' }, selectionKey: 'localSelectedFiles' },
-      { key: 'unsplashKeyword', label: { ko: 'Unsplash 검색어', en: 'Unsplash Keyword' }, type: 'text', default: 'nature', showIf: { key: 'source', equals: 'unsplash' } },
-      { key: 'immichUrl', label: { ko: 'Immich 서버 URL', en: 'Immich URL' }, type: 'text', default: '', showIf: { key: 'source', equals: 'immich' } },
-      { key: 'immichApiKey', label: { ko: 'Immich API Key', en: 'Immich API Key' }, type: 'text', default: '', showIf: { key: 'source', equals: 'immich' } },
-      { key: 'immichAlbumId', label: { ko: 'Immich 앨범 ID (선택)', en: 'Immich Album ID (optional)' }, type: 'text', default: '', showIf: { key: 'source', equals: 'immich' } },
-      { key: 'fit', label: { ko: '맞춤 방식', en: 'Fit Mode' }, type: 'enum', options: ['cover', 'contain'], default: 'cover' },
-      { key: 'effects', label: { ko: 'Ken Burns 애니메이션 (사진 전용)', en: 'Ken Burns Effect (photos only)' }, type: 'checkbox', default: false },
-      { key: 'transition', label: { ko: '전환 효과', en: 'Transition' }, type: 'enum', options: ['none', 'fade', 'slide'], default: 'none' },
-      { key: 'shuffleOrder', label: { ko: '랜덤 순서로 재생', en: 'Shuffle order' }, type: 'checkbox', default: false },
-      { key: 'intervalSec', label: { ko: '사진 전환 간격(초) — 동영상은 재생이 끝나면 자동 전환', en: 'Photo interval (sec) — videos advance when playback ends' }, type: 'number', default: 8 },
+      { key: 'localManage', label: 'paneo.photo.localManage', type: 'fileManager', default: '', showIf: { key: 'source', equals: 'local' }, selectionKey: 'localSelectedFiles' },
+      { key: 'unsplashKeyword', label: 'paneo.photo.unsplashKeyword', type: 'text', default: 'nature', showIf: { key: 'source', equals: 'unsplash' } },
+      { key: 'immichUrl', label: 'paneo.photo.immichUrl', type: 'text', default: '', showIf: { key: 'source', equals: 'immich' } },
+      { key: 'immichApiKey', label: 'paneo.photo.immichApiKey', type: 'text', default: '', showIf: { key: 'source', equals: 'immich' } },
+      { key: 'immichAlbumId', label: 'paneo.photo.immichAlbumId', type: 'text', default: '', showIf: { key: 'source', equals: 'immich' } },
+      { key: 'fit', label: 'paneo.photo.fit', type: 'enum', options: ['cover', 'contain'], default: 'cover' },
+      { key: 'effects', label: 'paneo.photo.effects', type: 'checkbox', default: false },
+      { key: 'transition', label: 'paneo.photo.transition', type: 'enum', options: ['none', 'fade', 'slide'], default: 'none' },
+      { key: 'shuffleOrder', label: 'paneo.photo.shuffleOrder', type: 'checkbox', default: false },
+      { key: 'intervalSec', label: 'paneo.photo.intervalSec', type: 'number', default: 8 },
     ],
     render(el, config, ctx = {}) {
       const source = config.source || 'urls';
@@ -578,7 +580,7 @@ export const widgets = {
 
   'paneo.weather': {
     version: '1.1.0',
-    label: { ko: '날씨', en: 'Weather' },
+    label: { ko: '날씨', en: 'Weather', ja: '天気', de: 'Wetter', fr: 'Météo', es: 'Tiempo' },
     icon: '☀️',
     category: 'data',
     defaultSize: { w: 3, h: 2 },
@@ -586,8 +588,8 @@ export const widgets = {
     requires: [],
     permissions: ['open-meteo.com', 'nominatim.openstreetmap.org'],
     config: [
-      { key: 'location', label: { ko: '지역(도시명)', en: 'Location (city)' }, type: 'text', default: 'Seoul' },
-      { key: 'units', label: { ko: '단위', en: 'Units' }, type: 'enum', options: ['metric', 'imperial'], default: 'metric' },
+      { key: 'location', label: { ko: '지역(도시명)', en: 'Location (city)', ja: '地域 (都市名)', de: 'Standort (Stadt)', fr: 'Lieu (ville)', es: 'Ubicación (ciudad)' }, type: 'text', default: 'Seoul' },
+      { key: 'units', label: { ko: '단위', en: 'Units', ja: '単位', de: 'Einheit', fr: 'Unité', es: 'Unidad' }, type: 'enum', options: ['metric', 'imperial'], default: 'metric' },
     ],
     render(el, config, ctx = {}) {
       const loc = String(config.location || '').trim();
@@ -657,7 +659,7 @@ export const widgets = {
 
   'paneo.airquality': {
     version: '1.1.0',
-    label: { ko: '대기질', en: 'Air Quality' },
+    label: { ko: '대기질', en: 'Air Quality', ja: '空気質', de: 'Luftqualität', fr: 'Qualité de l’air', es: 'Calidad del aire' },
     icon: '🌫️',
     category: 'data',
     defaultSize: { w: 3, h: 2 },
@@ -665,7 +667,7 @@ export const widgets = {
     requires: [],
     permissions: ['air-quality-api.open-meteo.com', 'nominatim.openstreetmap.org'],
     config: [
-      { key: 'location', label: { ko: '지역(도시명)', en: 'Location (city)' }, type: 'text', default: 'Seoul' },
+      { key: 'location', label: { ko: '지역(도시명)', en: 'Location (city)', ja: '地域 (都市名)', de: 'Standort (Stadt)', fr: 'Lieu (ville)', es: 'Ubicación (ciudad)' }, type: 'text', default: 'Seoul' },
     ],
     render(el, config, ctx = {}) {
       const loc = String(config.location || '').trim();
@@ -694,8 +696,8 @@ export const widgets = {
           : '';
         el.innerHTML = `<div class="w-airquality">
           <div class="aq-loc">${data.location}</div>
-          ${row(isKo ? '미세먼지' : 'PM10', data.pm10, data.pm10Grade, data.pm10GradeIndex)}
-          ${row(isKo ? '초미세먼지' : 'PM2.5', data.pm25, data.pm25Grade, data.pm25GradeIndex)}
+          ${row(translate('paneo.airquality.pm10', locale), data.pm10, data.pm10Grade, data.pm10GradeIndex)}
+          ${row(translate('paneo.airquality.pm25', locale), data.pm25, data.pm25Grade, data.pm25GradeIndex)}
           ${extraHtml}
         </div>`;
       }
@@ -725,14 +727,14 @@ export const widgets = {
 
   'paneo.calendar': {
     version: '1.1.0',
-    label: { ko: '일정 목록', en: 'Event list' },
+    label: { ko: '일정 목록', en: 'Event list', ja: '予定リスト', de: 'Terminliste', fr: 'Liste d’événements', es: 'Lista de eventos' },
     icon: '🗓️',
     category: 'data',
     defaultSize: { w: 4, h: 4 },
     minSize: { w: 2, h: 2 },
     requires: [],
     permissions: [],
-    config: [{ key: 'icsUrls', label: { ko: 'iCal(.ics) URL', en: 'iCal (.ics) URLs' }, type: 'list', default: [], placeholder: { ko: 'https://example.com/calendar.ics', en: 'https://example.com/calendar.ics' } }],
+    config: [{ key: 'icsUrls', label: { ko: 'iCal(.ics) URL', en: 'iCal (.ics) URLs', ja: 'iCal (.ics) URL', de: 'iCal (.ics) URL', fr: 'URL iCal (.ics)', es: 'URL de iCal (.ics)' }, type: 'list', default: [], placeholder: { ko: 'https://example.com/calendar.ics', en: 'https://example.com/calendar.ics' } }],
     render(el, config, ctx = {}) {
       const parsedUrls = [];
       const urlColors = {};
@@ -809,7 +811,7 @@ export const widgets = {
   // naturally as "today's agenda" while a 6×5 one reads as a full month.
   'paneo.calendar.month': {
     version: '2.0.0',
-    label: { ko: '캘린더', en: 'Calendar' },
+    label: { ko: '캘린더', en: 'Calendar', ja: 'カレンダー', de: 'Kalender', fr: 'Calendrier', es: 'Calendario' },
     icon: '📆',
     category: 'data',
     defaultSize: { w: 6, h: 5 },
@@ -817,17 +819,24 @@ export const widgets = {
     requires: [],
     permissions: [],
     config: [
-      { key: 'icsUrls', label: { ko: 'iCal(.ics) URL', en: 'iCal (.ics) URLs' }, type: 'list', default: [], placeholder: { ko: 'https://example.com/calendar.ics', en: 'https://example.com/calendar.ics' } },
-      { key: 'showWeekNumber', label: { ko: '주 번호 표시', en: 'Show week numbers' }, type: 'checkbox', default: false },
+      { key: 'icsUrls', label: { ko: 'iCal(.ics) URL', en: 'iCal (.ics) URLs', ja: 'iCal (.ics) URL', de: 'iCal (.ics) URL', fr: 'URL iCal (.ics)', es: 'URL de iCal (.ics)' }, type: 'list', default: [], placeholder: { ko: 'https://example.com/calendar.ics', en: 'https://example.com/calendar.ics' } },
+      { key: 'showWeekNumber', label: { ko: '주 번호 표시', en: 'Show week numbers', ja: '週番号を表示', de: 'Wochennummern anzeigen', fr: 'Afficher les numéros de semaine', es: 'Mostrar números de semana' }, type: 'checkbox', default: false },
+      { key: 'startOnSunday', label: { ko: '일요일부터 시작', en: 'Start week on Sunday', ja: '日曜から開始', de: 'Woche am Sonntag beginnen', fr: 'Commencer la semaine le dimanche', es: 'Comenzar la semana el domingo' }, type: 'checkbox', default: false },
     ],
     render(el, config, ctx = {}) {
       const locale = ctx.locale || 'ko-KR';
       const tz = ctx.timezone || undefined;
       const isKo = locale.startsWith('ko');
 
-      const DAY_NAMES_KO = ['월', '화', '수', '목', '금', '토', '일'];
-      const DAY_NAMES_EN = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      const dayNames = isKo ? DAY_NAMES_KO : DAY_NAMES_EN;
+      // Generate day names dynamically for the given locale
+      const dayNames = [];
+      const baseDate = new Date(2026, 6, config.startOnSunday ? 5 : 6); // 2026-07-05 is Sunday, 2026-07-06 is Monday
+      const weekdayFmt = new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: tz });
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(baseDate);
+        d.setDate(baseDate.getDate() + i);
+        dayNames.push(weekdayFmt.format(d));
+      }
 
       const parsedUrls = [];
       const urlColors = {};
@@ -858,9 +867,9 @@ export const widgets = {
 
       function cellsForView(view, now) {
         if (view === 'day') return [now];
-        if (view === 'week') return buildWeekRows(now, 0, 0);
-        if (view === '3week') return buildWeekRows(now, 1, 1);
-        return buildMonthGrid(now);
+        if (view === 'week') return buildWeekRows(now, 0, 0, !!config.startOnSunday);
+        if (view === '3week') return buildWeekRows(now, 1, 1, !!config.startOnSunday);
+        return buildMonthGrid(now, !!config.startOnSunday);
       }
 
       const rangeFmt = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', timeZone: tz });
@@ -886,7 +895,7 @@ export const widgets = {
                 <span class="cal-d-summary">${escapeHtml(e.summary)}</span>
               </div>`;
             }).join('')
-          : `<div class="cal-d-empty">${isKo ? '일정 없음' : 'No events'}</div>`;
+          : `<div class="cal-d-empty">${translate('paneo.calendar.noEvents', locale)}</div>`;
         el.innerHTML = `<div class="w-cal-day">
           <div class="cal-d-header">${headerFor('day', null, now)}</div>
           <div class="cal-d-list">${rows}</div>
@@ -904,18 +913,21 @@ export const widgets = {
         let headerRow = '';
         if (showWN) headerRow += `<div class="cal-m-cell cal-m-wn-hdr"></div>`;
         headerRow += dayNames.map((d, i) => {
-          const cls = i === 5 ? ' cal-m-sat' : i === 6 ? ' cal-m-sun' : '';
+          const isSun = config.startOnSunday ? i === 0 : i === 6;
+          const isSat = config.startOnSunday ? i === 6 : i === 5;
+          const cls = isSat ? ' cal-m-sat' : isSun ? ' cal-m-sun' : '';
           return `<div class="cal-m-cell cal-m-day-hdr${cls}">${d}</div>`;
         }).join('');
 
         let bodyRows = '';
         for (let row = 0; row * 7 < cells.length; row++) {
           if (showWN) {
-            // ISO week number of the first day of this row
+            // ISO week number of the first day of this row (adapted to Sunday start if set)
             const d = cells[row * 7];
             const jan4 = new Date(d.getFullYear(), 0, 4);
             const startOfWeek1 = new Date(jan4);
-            startOfWeek1.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
+            const offsetToStart = config.startOnSunday ? jan4.getDay() : ((jan4.getDay() + 6) % 7);
+            startOfWeek1.setDate(jan4.getDate() - offsetToStart);
             const wn = Math.round((d - startOfWeek1) / (7 * 86400000)) + 1;
             bodyRows += `<div class="cal-m-cell cal-m-wn">${wn}</div>`;
           }
@@ -925,8 +937,8 @@ export const widgets = {
             const ds = isoDate(d);
             const isToday = ds === todayStr;
             const isOtherMonth = dimOtherMonth && d.getMonth() !== curMonth;
-            const isSat = col === 5;
-            const isSun = col === 6;
+            const isSat = config.startOnSunday ? col === 6 : col === 5;
+            const isSun = config.startOnSunday ? col === 0 : col === 6;
             let cls = 'cal-m-cell cal-m-day';
             if (isToday) cls += ' cal-m-today';
             if (isOtherMonth) cls += ' cal-m-other';
@@ -1035,7 +1047,7 @@ export const widgets = {
 
   'paneo.rss': {
     version: '1.1.0',
-    label: { ko: 'RSS/뉴스', en: 'RSS / News' },
+    label: { ko: 'RSS/뉴스', en: 'RSS / News', ja: 'RSS / ニュース', de: 'RSS / News', fr: 'Flux RSS / Infos', es: 'RSS / Noticias' },
     icon: '📰',
     category: 'data',
     defaultSize: { w: 4, h: 4 },
@@ -1043,8 +1055,8 @@ export const widgets = {
     requires: [],
     permissions: [],
     config: [
-      { key: 'feedUrls', label: { ko: 'RSS 피드 URL', en: 'RSS feed URLs' }, type: 'list', default: [] },
-      { key: 'scrollSpeed', label: { ko: '스크롤 속도', en: 'Scroll speed' }, type: 'enum', options: ['off', 'slow', 'normal', 'fast'], default: 'normal' },
+      { key: 'feedUrls', label: { ko: 'RSS 피드 URL', en: 'RSS feed URLs', ja: 'RSSフィードURL', de: 'RSS-Feed-URLs', fr: 'URL du flux RSS', es: 'URLs del canal RSS' }, type: 'list', default: [] },
+      { key: 'scrollSpeed', label: { ko: '스크롤 속도', en: 'Scroll speed', ja: 'スクロール速度', de: 'Scrollgeschwindigkeit', fr: 'Vitesse de défilement', es: 'Velocidad de desplazamiento' }, type: 'enum', options: ['off', 'slow', 'normal', 'fast'], default: 'normal' },
     ],
     render(el, config, ctx = {}) {
       const urls = cleanUrlList(config.feedUrls);
@@ -1214,7 +1226,7 @@ export const widgets = {
 
   'paneo.iframe': {
     version: '1.1.0',
-    label: { ko: '외부 페이지', en: 'External page' },
+    label: { ko: '외부 페이지', en: 'External page', ja: '外部ページ', de: 'Externe Seite', fr: 'Page externe', es: 'Página externa' },
     icon: '🌐',
     category: 'media',
     defaultSize: { w: 5, h: 4 },
@@ -1223,8 +1235,8 @@ export const widgets = {
     permissions: ['embed:external-page'],
     sandbox: 'iframe',
     config: [
-      { key: 'url', label: { ko: '웹페이지 URL', en: 'Page URL' }, type: 'text', default: '' },
-      { key: 'sandboxMode', label: { ko: '샌드박스 모드', en: 'Sandbox mode' }, type: 'enum', options: ['scripts', 'strict', 'trusted'], default: 'scripts' },
+      { key: 'url', label: { ko: '웹페이지 URL', en: 'Page URL', ja: 'ウェブページURL', de: 'Webseiten-URL', fr: 'URL de la page', es: 'URL de la página' }, type: 'text', default: '' },
+      { key: 'sandboxMode', label: { ko: '샌드박스 모드', en: 'Sandbox mode', ja: 'サンドボックスモード', de: 'Sandbox-Modus', fr: 'Mode bac à sable', es: 'Modo sandbox' }, type: 'enum', options: ['scripts', 'strict', 'trusted'], default: 'scripts' },
     ],
     render(el, config, ctx = {}) {
       const url = safeHttpUrl(config.url);
@@ -1248,7 +1260,7 @@ export const widgets = {
   // Pure client-side, no server calls. design decision B (multiple timers per widget).
   'paneo.timer': {
     version: '1.0.0',
-    label: { ko: '알람 타이머', en: 'Alarm timer' },
+    label: { ko: '알람 타이머', en: 'Alarm timer', ja: 'アラームタイマー', de: 'Alarm-Timer', fr: 'Minuteur d’alarme', es: 'Temporizador de alarma' },
     icon: '⏱️',
     category: 'basic',
     defaultSize: { w: 3, h: 2 },
@@ -1262,7 +1274,7 @@ export const widgets = {
         // hand-typed "label|HH:MM|mode|showAt|hideAt" string. render() below still
         // accepts the old pipe-string shape too, for any layout saved before this.
         key: 'timers',
-        label: { ko: '타이머 목록', en: 'Timers' },
+        label: { ko: '타이머 목록', en: 'Timers', ja: 'タイマー一覧', de: 'Timer-Liste', fr: 'Liste des minuteurs', es: 'Lista de temporizadores' },
         type: 'timerList',
         default: [],
       },
@@ -1340,7 +1352,7 @@ export const widgets = {
 
   'paneo.homeassistant': {
     version: '1.0.0',
-    label: { ko: '홈어시스턴트', en: 'Home Assistant' },
+    label: { ko: '홈어시스턴트', en: 'Home Assistant', ja: 'Home Assistant', de: 'Home Assistant', fr: 'Home Assistant', es: 'Home Assistant' },
     icon: '🏠',
     category: 'data',
     defaultSize: { w: 3, h: 2 },
@@ -1348,10 +1360,10 @@ export const widgets = {
     requires: [],
     permissions: [],
     config: [
-      { key: 'entityId', label: { ko: '엔티티 ID', en: 'Entity ID' }, type: 'text', default: '' },
-      { key: 'title', label: { ko: '제목 (선택)', en: 'Title (optional)' }, type: 'text', default: '' },
-      { key: 'icon', label: { ko: '아이콘 (단일 이모지)', en: 'Icon (emoji)' }, type: 'text', default: '' },
-      { key: 'showToggle', label: { ko: '스위치 토글 허용', en: 'Allow toggle switch' }, type: 'checkbox', default: false }
+      { key: 'entityId', label: { ko: '엔티티 ID', en: 'Entity ID', ja: 'エンティティID', de: 'Entitäts-ID', fr: 'ID de l’entité', es: 'ID de la entidad' }, type: 'text', default: '' },
+      { key: 'title', label: { ko: '제목 (선택)', en: 'Title (optional)', ja: 'タイトル (オプション)', de: 'Titel (optional)', fr: 'Titre (optionnel)', es: 'Título (opcional)' }, type: 'text', default: '' },
+      { key: 'icon', label: { ko: '아이콘 (단일 이모지)', en: 'Icon (emoji)', ja: 'アイコン (絵文字1文字)', de: 'Symbol (Emoji)', fr: 'Icône (émoji)', es: 'Icono (emoji)' }, type: 'text', default: '' },
+      { key: 'showToggle', label: { ko: '스위치 토글 허용', en: 'Allow toggle switch', ja: 'スイッチのトグルを許可', de: 'Umschalten erlauben', fr: 'Autoriser le commutateur', es: 'Permitir interruptor' }, type: 'checkbox', default: false }
     ],
     render(el, config, ctx = {}) {
       const entityId = String(config.entityId || '').trim();
@@ -1423,7 +1435,7 @@ export const widgets = {
         const attrs = data.attributes || {};
         const friendlyName = config.title || attrs.friendly_name || entityId;
         const conditionIcon = HA_WEATHER_ICONS[state] || '🌡️';
-        const conditionText = (isKo ? HA_WEATHER_TEXT_KO : HA_WEATHER_TEXT_EN)[state] || state;
+        const conditionText = translate('paneo.ha.weather.' + state, locale, state);
         const temp = attrs.temperature;
         const tempUnit = attrs.temperature_unit || '°C';
         const humidity = attrs.humidity;
@@ -1487,9 +1499,9 @@ export const widgets = {
         const unit = attrs.unit_of_measurement || '';
 
         let displayState = state;
-        if (state === 'on') displayState = isKo ? '켜짐' : 'ON';
-        else if (state === 'off') displayState = isKo ? '꺼짐' : 'OFF';
-        else if (state === 'unavailable') displayState = isKo ? '사용불가' : 'Unavailable';
+        if (state === 'on') displayState = translate('paneo.homeassistant.on', locale, 'ON');
+        else if (state === 'off') displayState = translate('paneo.homeassistant.off', locale, 'OFF');
+        else if (state === 'unavailable') displayState = translate('paneo.homeassistant.unavailable', locale, 'Unavailable');
 
         const isControl = config.showToggle && (entityId.startsWith('switch') || entityId.startsWith('light') || entityId.startsWith('input_boolean'));
         const controlBtnHtml = isControl
@@ -1576,7 +1588,7 @@ export const widgets = {
 
   'paneo.worldclock': {
     version: '1.0.0',
-    label: { ko: '세계시계', en: 'World clock' },
+    label: { ko: '세계시계', en: 'World clock', ja: '世界時計', de: 'Weltzeituhr', fr: 'Horloge mondiale', es: 'Reloj mundial' },
     icon: '🌐',
     category: 'basic',
     defaultSize: { w: 3, h: 3 },
@@ -1585,13 +1597,13 @@ export const widgets = {
     permissions: [],
     config: [
       {
-        key: 'cities', label: { ko: '도시 목록', en: 'Cities' }, type: 'structList', default: [],
+        key: 'cities', label: { ko: '도시 목록', en: 'Cities', ja: '都市一覧', de: 'Städteliste', fr: 'Liste des villes', es: 'Lista de ciudades' }, type: 'structList', default: [],
         fields: [
-          { key: 'label', label: { ko: '라벨', en: 'Label' }, type: 'text', placeholder: { ko: '도쿄', en: 'Tokyo' } },
-          { key: 'tz', label: { ko: '타임존(IANA)', en: 'Timezone (IANA)' }, type: 'text', placeholder: { ko: 'Asia/Tokyo', en: 'Asia/Tokyo' } },
+          { key: 'label', label: { ko: '라벨', en: 'Label', ja: 'ラベル', de: 'Label', fr: 'Libellé', es: 'Etiqueta' }, type: 'text', placeholder: { ko: '도쿄', en: 'Tokyo', ja: '東京', de: 'Tokio', fr: 'Tokyo', es: 'Tokio' } },
+          { key: 'tz', label: { ko: '타임존(IANA)', en: 'Timezone (IANA)', ja: 'タイムゾーン (IANA)', de: 'Zeitzone (IANA)', fr: 'Fuseau horaire (IANA)', es: 'Zona horaria (IANA)' }, type: 'text', placeholder: { ko: 'Asia/Tokyo', en: 'Asia/Tokyo', ja: 'Asia/Tokyo', de: 'Asia/Tokyo', fr: 'Asia/Tokyo', es: 'Asia/Tokyo' } },
         ],
       },
-      { key: 'hour12', label: { ko: '12시간제', en: '12-hour' }, type: 'checkbox', default: false },
+      { key: 'hour12', label: { ko: '12시간제', en: '12-hour', ja: '12時間制', de: '12-Stunden-Format', fr: 'Format 12 heures', es: 'Formato de 12 horas' }, type: 'checkbox', default: false },
     ],
     render(el, config, ctx = {}) {
       const locale = ctx.locale || 'ko-KR';
@@ -1623,7 +1635,7 @@ export const widgets = {
 
   'paneo.dday': {
     version: '1.0.0',
-    label: { ko: 'D-Day 카운트다운', en: 'D-Day countdown' },
+    label: { ko: 'D-Day 카운트다운', en: 'D-Day countdown', ja: 'D-Dayカウントダウン', de: 'D-Day-Countdown', fr: 'Compte à rebours D-Day', es: 'Cuenta regresiva D-Day' },
     icon: '📆',
     category: 'basic',
     defaultSize: { w: 3, h: 3 },
@@ -1632,10 +1644,10 @@ export const widgets = {
     permissions: [],
     config: [
       {
-        key: 'events', label: { ko: '이벤트 목록', en: 'Events' }, type: 'structList', default: [],
+        key: 'events', label: { ko: '이벤트 목록', en: 'Events', ja: 'イベント一覧', de: 'Ereignisliste', fr: 'Liste des événements', es: 'Lista de eventos' }, type: 'structList', default: [],
         fields: [
-          { key: 'label', label: { ko: '라벨', en: 'Label' }, type: 'text', placeholder: { ko: '생일', en: 'Birthday' } },
-          { key: 'date', label: { ko: '날짜', en: 'Date' }, type: 'date' },
+          { key: 'label', label: { ko: '라벨', en: 'Label', ja: 'ラベル', de: 'Label', fr: 'Libellé', es: 'Etiqueta' }, type: 'text', placeholder: { ko: '생일', en: 'Birthday', ja: '誕生日', de: 'Geburtstag', fr: 'Anniversaire', es: 'Cumpleaños' } },
+          { key: 'date', label: { ko: '날짜', en: 'Date', ja: '日付', de: 'Datum', fr: 'Date', es: 'Fecha' }, type: 'date' },
         ],
       },
     ],
@@ -1672,7 +1684,7 @@ export const widgets = {
 
   'paneo.todo': {
     version: '1.0.0',
-    label: { ko: '할 일 목록', en: 'To-do list' },
+    label: { ko: '할 일 목록', en: 'To-do list', ja: 'ToDoリスト', de: 'Aufgabenliste', fr: 'Liste des tâches', es: 'Lista de tareas' },
     icon: '✅',
     category: 'basic',
     defaultSize: { w: 3, h: 4 },
@@ -1681,10 +1693,10 @@ export const widgets = {
     permissions: [],
     config: [
       {
-        key: 'todoItems', label: { ko: '할 일', en: 'Items' }, type: 'structList', default: [],
+        key: 'todoItems', label: { ko: '할 일', en: 'Items', ja: '項目', de: 'Elemente', fr: 'Éléments', es: 'Elementos' }, type: 'structList', default: [],
         fields: [
-          { key: 'done', label: { ko: '완료', en: 'Done' }, type: 'checkbox' },
-          { key: 'text', label: { ko: '내용', en: 'Text' }, type: 'text', placeholder: { ko: '할 일 내용', en: 'Item text' } },
+          { key: 'done', label: { ko: '완료', en: 'Done', ja: '完了', de: 'Erledigt', fr: 'Fait', es: 'Hecho' }, type: 'checkbox' },
+          { key: 'text', label: { ko: '내용', en: 'Text', ja: '内容', de: 'Text', fr: 'Texte', es: 'Texto' }, type: 'text', placeholder: { ko: '할 일 내용', en: 'Item text', ja: 'ToDoの内容', de: 'Aufgabentext', fr: 'Texte de la tâche', es: 'Texto de la tarea' } },
         ],
       },
     ],
@@ -1707,7 +1719,7 @@ export const widgets = {
       const interactive = !ctx.preview && ctx.deviceToken && ctx.widgetId;
 
       if (!entries.length && !interactive) {
-        errorBox(el, isKo ? '할 일을 추가하세요' : 'Add a to-do item');
+        errorBox(el, translate('paneo.todo.errorAdd', locale));
         return;
       }
 
@@ -1719,11 +1731,11 @@ export const widgets = {
         </div>`
       ).join('');
       const emptyHint = (interactive && !entries.length)
-        ? `<div class="todo-empty-hint">${isKo ? '할 일이 없습니다. 아래에서 추가하세요.' : 'No items yet — add one below.'}</div>`
+        ? `<div class="todo-empty-hint">${translate('paneo.todo.emptyHint', locale)}</div>`
         : '';
       const addRow = interactive
         ? `<div class="todo-add-row">
-            <input type="text" class="todo-add-input" placeholder="${isKo ? '새 할 일 추가...' : 'Add an item...'}">
+            <input type="text" class="todo-add-input" placeholder="${translate('paneo.todo.addPlaceholder', locale)}">
             <button type="button" class="todo-add-btn" aria-label="add">+</button>
           </div>`
         : '';
@@ -1777,7 +1789,7 @@ export const widgets = {
 
   'paneo.exchangerate': {
     version: '1.0.0',
-    label: { ko: '환율', en: 'Exchange rate' },
+    label: { ko: '환율', en: 'Exchange rate', ja: '為替レート', de: 'Wechselkurs', fr: 'Taux de change', es: 'Tipo de cambio' },
     icon: '💱',
     category: 'data',
     defaultSize: { w: 3, h: 3 },
@@ -1785,8 +1797,8 @@ export const widgets = {
     requires: [],
     permissions: ['api.frankfurter.dev'],
     config: [
-      { key: 'base', label: { ko: '기준 통화', en: 'Base currency' }, type: 'text', default: 'USD' },
-      { key: 'target', label: { ko: '대상 통화', en: 'Target currency' }, type: 'text', default: 'KRW' },
+      { key: 'base', label: { ko: '기준 통화', en: 'Base currency', ja: '基準通貨', de: 'Basiswährung', fr: 'Devise de référence', es: 'Moneda de referencia' }, type: 'text', default: 'USD' },
+      { key: 'target', label: { ko: '대상 통화', en: 'Target currency', ja: '対象通貨', de: 'Zielwährung', fr: 'Devise cible', es: 'Moneda de destino' }, type: 'text', default: 'KRW' },
     ],
     render(el, config, ctx = {}) {
       const base = String(config.base || 'USD').trim().toUpperCase();
@@ -1808,7 +1820,7 @@ export const widgets = {
 
   'paneo.qrcode': {
     version: '1.0.0',
-    label: { ko: 'QR 코드', en: 'QR code' },
+    label: { ko: 'QR 코드', en: 'QR code', ja: 'QRコード', de: 'QR-Code', fr: 'Code QR', es: 'Código QR' },
     icon: '🔳',
     category: 'data',
     defaultSize: { w: 2, h: 2 },
@@ -1816,8 +1828,8 @@ export const widgets = {
     requires: [],
     permissions: [],
     config: [
-      { key: 'data', label: { ko: '내용(URL/텍스트)', en: 'Content (URL/text)' }, type: 'text', default: '' },
-      { key: 'label', label: { ko: '캡션(선택)', en: 'Caption (optional)' }, type: 'text', default: '' },
+      { key: 'data', label: { ko: '내용(URL/텍스트)', en: 'Content (URL/text)', ja: '内容 (URL/テキスト)', de: 'Inhalt (URL/Text)', fr: 'Contenu (URL/texte)', es: 'Contenido (URL/texto)' }, type: 'text', default: '' },
+      { key: 'label', label: { ko: '캡션(선택)', en: 'Caption (optional)', ja: 'キャプション (オプション)', de: 'Beschriftung (optional)', fr: 'Légende (optionnel)', es: 'Leyenda (opcional)' }, type: 'text', default: '' },
     ],
     render(el, config, ctx = {}) {
       const data = String(config.data || '').trim();
@@ -1908,16 +1920,45 @@ function iframePluginRender(m) {
 // Display order for the add-widget popover's category groups (editor.js).
 export const CATEGORY_ORDER = ['basic', 'data', 'media', 'plugin'];
 
+import { WIDGET_TRANSLATIONS } from './i18n.js';
+export { WIDGET_TRANSLATIONS };
+
+// Resolve a general translation key for the given UI language.
+export function translate(key, lang = 'ko', fallback = undefined) {
+  const code = String(lang || 'ko').split('-')[0].toLowerCase();
+  const val = WIDGET_TRANSLATIONS[code]?.[key] || WIDGET_TRANSLATIONS.ko?.[key];
+  if (val !== undefined) return val;
+  return fallback !== undefined ? fallback : key;
+}
+
 // Resolve a localized widget label for the given UI language.
 export function widgetLabel(type, lang = 'ko') {
   const l = widgets[type]?.label;
-  return (l && (l[lang] || l.ko)) || type;
+  if (!l) return type;
+  if (typeof l === 'string') {
+    return WIDGET_TRANSLATIONS[lang]?.[l] || WIDGET_TRANSLATIONS.ko?.[l] || l;
+  }
+  return l[lang] || l.ko || type;
 }
 
-// Resolve a config field label ({ ko, en } or plain string).
+// Resolve a config field label ({ ko, en } or plain string / translation key).
 export function fieldLabel(field, lang = 'ko') {
-  if (!field?.label) return field?.key || '';
-  return typeof field.label === 'string' ? field.label : field.label[lang] || field.label.ko || field.key;
+  const l = field?.label;
+  if (!l) return field?.key || '';
+  if (typeof l === 'string') {
+    return WIDGET_TRANSLATIONS[lang]?.[l] || WIDGET_TRANSLATIONS.ko?.[l] || l;
+  }
+  return l[lang] || l.ko || field.key;
+}
+
+// Resolve a config field placeholder ({ ko, en } or plain string / translation key).
+export function fieldPlaceholder(field, lang = 'ko') {
+  const p = field?.placeholder;
+  if (!p) return '';
+  if (typeof p === 'string') {
+    return WIDGET_TRANSLATIONS[lang]?.[p] || WIDGET_TRANSLATIONS.ko?.[p] || p;
+  }
+  return p[lang] || p.ko || '';
 }
 
 // Render a widget into `el`, cleaning up any previous interval/timer first.

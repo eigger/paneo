@@ -544,6 +544,16 @@ docker compose up -d
 sudo systemctl restart paneo-agent
 ```
 
-## 13. 현재 보류된 기능
+## 13. 제거
+
+Paneo와 컴패니언 에이전트, 키오스크 설정을 기기에서 완전히 삭제하고 이전 상태로 복구하려면 아래 명령어를 실행하세요:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/uninstall.sh | sudo bash
+```
+
+이 스크립트는 등록된 systemd 서비스(`paneo`, `paneo-agent`)를 중지 및 제거하고, 생성된 설정 파일들과 Docker 볼륨(`paneo-data`), 키오스크 자동실행 항목들을 모두 삭제합니다.
+
+## 14. 현재 보류된 기능
 
 RTSP/카메라 스트리밍은 아직 실제 장치 설치 범위에 포함하지 않습니다. 카메라 게이트웨이(`go2rtc`, `MediaMTX`)와 저성능 장치용 스냅샷 폴백은 후속 단계에서 다룹니다.
