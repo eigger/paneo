@@ -302,16 +302,17 @@ install_kiosk() {
   cat > /usr/local/bin/paneo-kiosk <<'KIOSK_EOF'
 #!/usr/bin/env bash
 set -e
-# Wait for the Paneo server to be ready before launching Chromium.
-# On reboot, Docker may take 10-30 s to start — without this wait the
-# browser opens before the server is up and shows a blank white page.
+# Wait for the Paneo server before launching Chromium. Poll quickly (1 s)
+# instead of blocking up to ~2 min — the display shell caches offline (SW +
+# localStorage), so after a short wait we open the browser anyway; WS
+# reconnects within a few seconds once Docker is ready.
 SERVER_URL="$(grep -o 'http[^ "]*' "$0" | head -1 | sed 's|/d/.*||')"
 SERVER_URL="${SERVER_URL:-http://localhost:4321}"
-for _i in $(seq 1 60); do
-  if curl -fsS --connect-timeout 3 --max-time 8 "${SERVER_URL}/api/brand" >/dev/null 2>&1; then
+for _i in $(seq 1 30); do
+  if curl -fsS --connect-timeout 1 --max-time 2 "${SERVER_URL}/api/brand" >/dev/null 2>&1; then
     break
   fi
-  sleep 2
+  sleep 1
 done
 
 if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then

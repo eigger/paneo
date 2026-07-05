@@ -246,12 +246,13 @@ if [ -f "$KIOSK_BIN" ]; then
     printf '%s\n' \
       '#!/usr/bin/env bash' \
       'set -e' \
-      '# Wait for the Paneo server before launching Chromium (reboot race condition fix)' \
+      '# Wait for server (fast poll). Display caches offline — open after ~30s' \
+      '# even if Docker is still starting; WS reconnects once server is up.' \
       'SERVER_URL="$(grep -o '"'"'http[^ "]*'"'"' "$0" | head -1 | sed '"'"'s|/d/.*||'"'"')"' \
       'SERVER_URL="${SERVER_URL:-http://localhost:4321}"' \
-      'for _i in $(seq 1 60); do' \
-      '  if curl -fsS "${SERVER_URL}/api/brand" >/dev/null 2>&1; then break; fi' \
-      '  sleep 2' \
+      'for _i in $(seq 1 30); do' \
+      '  if curl -fsS --connect-timeout 1 --max-time 2 "${SERVER_URL}/api/brand" >/dev/null 2>&1; then break; fi' \
+      '  sleep 1' \
       'done' \
       '' \
       'if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then' \
