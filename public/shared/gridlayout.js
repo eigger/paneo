@@ -46,3 +46,14 @@ export function applyGridItem(el, w) {
 export function applyCustomCss(el, css) {
   el.style.cssText = css || '';
 }
+
+export function buildWidgetContentClass(w) {
+  let cls = 'widget-content';
+  if (w.transparentBg) cls += ' transparent-bg';
+  if (w.textOutline) cls += ' text-outline';
+  return cls;
+}
+
+export function pageSurfaceColor(page, layout) {
+  return page?.background || layout?.background || '#0b0f19';
+}

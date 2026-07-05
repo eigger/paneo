@@ -1,5 +1,5 @@
 import { widgets, renderWidget, loadPlugins } from '/shared/widgets.js';
-import { applyGridContainer, applyGridItem, applyCustomCss } from '/shared/gridlayout.js';
+import { applyGridContainer, applyGridItem, applyCustomCss, buildWidgetContentClass, pageSurfaceColor } from '/shared/gridlayout.js';
 import { attachSwipeNavigation } from '/shared/swipe.js';
 
 const stage = document.getElementById('stage');
@@ -70,6 +70,7 @@ function applyLayout(layout, ctx) {
   const { widgets: pageWidgets, pageCount } = getPageWidgets(layout);
   const page = (layout.pages && layout.pages[Math.min(currentPageIndex, layout.pages.length - 1)]) || layout;
   document.body.style.background = page.background || layout.background || '#0b0f19';
+  stage.style.setProperty('--paneo-page-bg', pageSurfaceColor(page, layout));
   applyGridContainer(stage, page);
 
   // clean up any running widget timers before wiping the DOM
@@ -83,7 +84,7 @@ function applyLayout(layout, ctx) {
     if (widgets[w.type]?.backgroundLayer) node.dataset.backgroundLayer = 'true';
     applyGridItem(node, w);
     const content = document.createElement('div');
-    content.className = 'widget-content' + (w.transparentBg ? ' transparent-bg' : '');
+    content.className = buildWidgetContentClass(w);
     node.appendChild(content);
     stage.appendChild(node);
     // widgetId + deviceToken let a widget address itself in a runtime write-back
@@ -227,14 +228,16 @@ function showUpdateStatus(status, mode, progress, step, step_msg, error) {
 }
 
 function connect() {
+  clearTimeout(reconnectTimer);
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${proto}://${location.host}/ws?role=display&token=${encodeURIComponent(token)}`);
+  const next = new WebSocket(`${proto}://${location.host}/ws?role=display&token=${encodeURIComponent(token)}`);
+  ws = next;
   // Always bilingual — unlike widget content (which follows the device's
   // configured locale), this status pill is the one piece of UI an installer
   // sees before any layout/locale has ever loaded, so it can't rely on that
   // locale to be readable.
-  ws.onopen = () => setStatus(dt('connected'), 'online', true);
-  ws.onmessage = (ev) => {
+  next.onopen = () => setStatus(dt('connected'), 'online', true);
+  next.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
     if (msg.type === 'layout.set') {
       applyLayout(msg.layout, { locale: msg.locale, timezone: msg.timezone, performanceProfile: msg.performanceProfile });
@@ -246,9 +249,17 @@ function connect() {
       showUpdateStatus(msg.status, msg.mode, msg.progress, msg.step, msg.step_msg, msg.error);
     }
   };
-  ws.onclose = () => { setStatus(dt('reconnecting'), 'offline', false); setTimeout(connect, 2000); };
-  ws.onerror = () => ws.close();
+  next.onclose = () => {
+    if (ws !== next) return;
+    ws = null;
+    setStatus(dt('reconnecting'), 'offline', false);
+    reconnectTimer = setTimeout(connect, 2000);
+  };
+  next.onerror = () => { if (ws === next) next.close(); };
 }
+
+let ws = null;
+let reconnectTimer = null;
 connect();
 
 window.addEventListener('resize', () => applyLayout(lastLayout));

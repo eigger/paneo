@@ -42,16 +42,78 @@ await store.load();
 plugins.scan();
 
 // --- live display connections: Map<deviceId, Set<socket>> ---
+const WS_OPEN = 1; // ws.WebSocket.OPEN — kiosk SIGKILL leaves zombies until pruned
+const DISPLAY_PING_MS = 30_000;
 const displays = new Map();
-const addDisplay = (id, s) => (displays.get(id) ?? displays.set(id, new Set()).get(id)).add(s);
-const removeDisplay = (id, s) => displays.get(id)?.delete(s);
-const displayCount = (id) => displays.get(id)?.size ?? 0;
+
+function pruneDisplays(id) {
+  const set = displays.get(id);
+  if (!set) return;
+  for (const s of [...set]) {
+    if (s.readyState !== WS_OPEN) set.delete(s);
+  }
+  if (set.size === 0) displays.delete(id);
+}
+
+function removeDisplay(id, s) {
+  displays.get(id)?.delete(s);
+  if (displays.get(id)?.size === 0) displays.delete(id);
+}
+
+// When Chromium is killed abruptly (update script, OOM, pkill -9) the old
+// socket often stays in OPEN state on the server until TCP times out — the
+// restarted kiosk then adds a second entry and the editor's count climbs.
+function addDisplay(id, socket, remoteAddress) {
+  pruneDisplays(id);
+  const set = displays.get(id) ?? new Set();
+  if (remoteAddress) {
+    for (const s of [...set]) {
+      if (s._paneoRemote === remoteAddress && s !== socket) {
+        try { s.terminate(); } catch { /* ignore */ }
+        set.delete(s);
+      }
+    }
+  }
+  socket._paneoRemote = remoteAddress || null;
+  socket._paneoAlive = true;
+  set.add(socket);
+  displays.set(id, set);
+}
+
+const displayCount = (id) => {
+  pruneDisplays(id);
+  return displays.get(id)?.size ?? 0;
+};
+
 function broadcast(id, msg) {
+  pruneDisplays(id);
+  const set = displays.get(id);
+  if (!set) return;
   const data = JSON.stringify(msg);
-  for (const s of displays.get(id) ?? []) {
-    try { s.send(data); } catch { /* dropped */ }
+  for (const s of [...set]) {
+    if (s.readyState !== WS_OPEN) { set.delete(s); continue; }
+    try { s.send(data); } catch { set.delete(s); }
+  }
+  if (set.size === 0) displays.delete(id);
+}
+
+function pingDisplays() {
+  for (const [id, set] of displays) {
+    for (const s of [...set]) {
+      if (s.readyState !== WS_OPEN) { set.delete(s); continue; }
+      if (s._paneoAlive === false) {
+        try { s.terminate(); } catch { /* ignore */ }
+        set.delete(s);
+        continue;
+      }
+      s._paneoAlive = false;
+      try { s.ping(); } catch { set.delete(s); }
+    }
+    if (set.size === 0) displays.delete(id);
   }
 }
+
+setInterval(pingDisplays, DISPLAY_PING_MS).unref();
 
 const publicDevice = (d) => ({
   id: d.id,
@@ -64,7 +126,9 @@ const publicDevice = (d) => ({
   resolutionH: d.resolutionH,
   groupId: d.groupId,
   powerSchedule: d.powerSchedule ?? null,
-  agentPresent: d.agentPresent ?? false,
+  // Runtime-only: live WS maps are the source of truth (DB agentPresent is
+  // reset on server start and can lag; displays were always in-memory only).
+  agentPresent: agents.has(d.id),
   agentVersion: agentVersions.get(d.id) ?? null,
   displays: displayCount(d.id),
 });
@@ -76,7 +140,9 @@ app.get('/ws', { websocket: true }, (socket, req) => {
   const token = req.query?.token;
   const device = token ? store.getDeviceByToken(token) : null;
   if (!device) { socket.close(1008, 'unknown token'); return; }
-  addDisplay(device.id, socket);
+  const remote = req.socket?.remoteAddress ?? null;
+  addDisplay(device.id, socket, remote);
+  socket.on('pong', () => { socket._paneoAlive = true; });
   socket.send(JSON.stringify(layoutMessage(device)));
   socket.on('close', () => removeDisplay(device.id, socket));
   socket.on('error', () => removeDisplay(device.id, socket));
