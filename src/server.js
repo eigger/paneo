@@ -42,43 +42,14 @@ await store.load();
 plugins.scan();
 
 // --- live display connections: Map<deviceId, Set<socket>> ---
-const WS_OPEN = 1; // prune dead entries when counting/broadcasting
 const displays = new Map();
-
-function pruneDisplays(id) {
-  const set = displays.get(id);
-  if (!set) return;
-  for (const s of [...set]) {
-    if (s.readyState !== WS_OPEN) set.delete(s);
-  }
-  if (set.size === 0) displays.delete(id);
-}
-
-function removeDisplay(id, s) {
-  displays.get(id)?.delete(s);
-  if (displays.get(id)?.size === 0) displays.delete(id);
-}
-
-function addDisplay(id, socket) {
-  pruneDisplays(id);
-  (displays.get(id) ?? displays.set(id, new Set()).get(id)).add(socket);
-}
-
-const displayCount = (id) => {
-  pruneDisplays(id);
-  return displays.get(id)?.size ?? 0;
-};
-
+const addDisplay = (id, s) => (displays.get(id) ?? displays.set(id, new Set()).get(id)).add(s);
+const removeDisplay = (id, s) => displays.get(id)?.delete(s);
 function broadcast(id, msg) {
-  pruneDisplays(id);
-  const set = displays.get(id);
-  if (!set) return;
   const data = JSON.stringify(msg);
-  for (const s of [...set]) {
-    if (s.readyState !== WS_OPEN) { set.delete(s); continue; }
-    try { s.send(data); } catch { set.delete(s); }
+  for (const s of displays.get(id) ?? []) {
+    try { s.send(data); } catch { /* dropped */ }
   }
-  if (set.size === 0) displays.delete(id);
 }
 
 const publicDevice = (d) => ({
@@ -92,21 +63,13 @@ const publicDevice = (d) => ({
   resolutionH: d.resolutionH,
   groupId: d.groupId,
   powerSchedule: d.powerSchedule ?? null,
-  // Runtime-only: live WS maps are the source of truth (DB agentPresent is
-  // reset on server start and can lag; displays were always in-memory only).
+  // Runtime-only: live agent WS map is the source of truth (DB agentPresent is
+  // reset on server start and can lag).
   agentPresent: agents.has(d.id),
   agentVersion: agentVersions.get(d.id) ?? null,
-  displays: displayCount(d.id),
 });
 const fullDevice = (d) => ({ ...publicDevice(d), draft: d.draft, published: d.published, publishedAt: d.publishedAt });
-const layoutMessage = (d) => ({
-  type: 'layout.set',
-  layout: d.published,
-  publishedAt: d.publishedAt ?? null,
-  locale: d.locale,
-  timezone: d.timezone,
-  performanceProfile: d.performanceProfile,
-});
+const layoutMessage = (d) => ({ type: 'layout.set', layout: d.published, locale: d.locale, timezone: d.timezone, performanceProfile: d.performanceProfile });
 
 // --- WebSocket: display clients connect here (docs/design.md §6) ---
 app.get('/ws', { websocket: true }, (socket, req) => {
@@ -252,7 +215,7 @@ app.post('/api/devices/:id/publish', async (req, reply) => {
   const d = await store.publish(req.params.id);
   if (!d) return reply.code(404).send({ error: 'not found' });
   broadcast(d.id, layoutMessage(d));
-  return { ok: true, publishedAt: d.publishedAt, displays: displayCount(d.id) };
+  return { ok: true, publishedAt: d.publishedAt };
 });
 
 app.get('/api/devices/:id/backup', async (req, reply) => {
@@ -564,7 +527,7 @@ app.post('/api/devices/:id/command', async (req, reply) => {
     return { ok: true, agentPresent: hasAgent };
   }
   broadcast(d.id, { type: 'command', action, deviceName: d.name });
-  return { ok: true, displays: displayCount(d.id) };
+  return { ok: true };
 });
 
 app.get('/api/devices/:id/update-status', async (req, reply) => {

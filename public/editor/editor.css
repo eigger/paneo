@@ -340,7 +340,6 @@ main { flex: 1; display: flex; min-height: 0; }
 .group-new-row button { flex: 0 0 auto; background: #1c2330; color: #cfe0ff; border: 1px solid #2a3040;
   border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
 .group-new-row button:hover { background: #232c3d; }
-#device-connected { margin-bottom: 8px; }
 .button-row { display: flex; gap: 8px; align-items: stretch; }
 .button-row + .button-row { margin-top: 8px; } /* e.g. reload/identify row stacked above the power on/off row */
 .button-row button { flex: 1 1 0; background: #1c2330; color: #cfe0ff; border: 1px solid #2a3040;

@@ -5,9 +5,8 @@
 // Cache naming: bump CACHE_VER when any cached file changes shape —
 // the activate handler deletes all older caches automatically.
 
-// Bump when any cached shell file changes shape. v3: publishedAt layout skip,
-// no server-side heartbeat sweep, versioned display.js load in index.html.
-const CACHE_VER = 'paneo-display-v3';
+// Bump when any cached shell file changes shape.
+const CACHE_VER = 'paneo-display-v4';
 
 const SHELL_FILES = [
   '/display/index.html',
