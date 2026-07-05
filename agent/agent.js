@@ -354,14 +354,30 @@ function reportPendingUpdateStatus(socket) {
 
 const KIOSK_LAUNCHER = '/usr/local/bin/paneo-kiosk';
 
+function isKioskSessionRunning() {
+  // paneo-kiosk waits up to ~2 min for the server before exec'ing chromium.
+  // pgrep -x chromium alone false-positives during that window and the
+  // watchdog used to spawn duplicate launchers every 30 s (reconnect/flicker).
+  try {
+    execSync(
+      "pgrep -x paneo-kiosk >/dev/null 2>&1 || pgrep -f 'chromium.*--kiosk' >/dev/null 2>&1",
+      { shell: '/bin/sh', stdio: 'ignore' },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 if (process.env.PANEO_WATCHDOG === '1') {
   const DISPLAY_URL = process.env.PANEO_DISPLAY_URL || `${SERVER}/d/${TOKEN}`;
+  const graceMs = Number(process.env.PANEO_WATCHDOG_GRACE_MS) || 180_000;
+  const startedAt = Date.now();
   console.log(`[agent] watchdog enabled for: ${DISPLAY_URL}`);
   setInterval(() => {
-    try {
-      execSync('pgrep -x chromium-browser || pgrep -x chromium', { stdio: 'ignore' });
-    } catch {
-      console.log('[agent] watchdog: chromium not found, relaunching...');
+    if (isKioskSessionRunning()) return;
+    if (Date.now() - startedAt < graceMs) return;
+    console.log('[agent] watchdog: kiosk not running, relaunching...');
       // A systemd service doesn't inherit the desktop session's env — a raw
       // `chromium-browser` spawn here has no WAYLAND_DISPLAY/XDG_RUNTIME_DIR
       // to connect to the compositor (same problem setPower() above already

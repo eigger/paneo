@@ -33,7 +33,7 @@ User=$SERVICE_USER
 WorkingDirectory=$AGENT_DIR
 Environment=PANEO_SERVER=$PANEO_SERVER
 Environment=PANEO_TOKEN=$PANEO_TOKEN
-Environment=PANEO_WATCHDOG=1
+Environment=PANEO_WATCHDOG=0
 ExecStart=$NODE $AGENT_DIR/agent.js
 Restart=always
 RestartSec=5
