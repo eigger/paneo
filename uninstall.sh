@@ -22,10 +22,11 @@ if systemctl list-units --full --all | grep -q "paneo-agent.service"; then
   systemctl disable paneo-agent || true
 fi
 
-# 2. Remove systemd service files
-log "Removing systemd service files..."
+# 2. Remove systemd service files and update configs
+log "Removing systemd service files and update configs..."
 rm -f /etc/systemd/system/paneo.service
 rm -f /etc/systemd/system/paneo-agent.service
+rm -f /etc/sudoers.d/paneo-agent-update
 systemctl daemon-reload
 
 # 3. Clean up Docker container and volume
@@ -35,9 +36,13 @@ if command -v docker >/dev/null 2>&1; then
   docker volume rm paneo-data 2>/dev/null || true
 fi
 
-# 4. Remove kiosk launcher script
-log "Removing kiosk launcher..."
+# 4. Remove kiosk launcher script and stop running kiosk processes
+log "Stopping running kiosk processes and removing launcher..."
+pkill -f 'chromium.*--kiosk' 2>/dev/null || true
+pkill -f 'paneo-kiosk'       2>/dev/null || true
+pkill -f 'paneo-kiosk-restart.sh' 2>/dev/null || true
 rm -f /usr/local/bin/paneo-kiosk
+rm -f /usr/local/bin/paneo-kiosk-restart.sh
 
 # 5. Clean up autostart entries for all users
 log "Cleaning up user autostart configurations..."
