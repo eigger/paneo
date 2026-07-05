@@ -174,6 +174,14 @@ Or, once a display's companion agent is connected, trigger the same update from 
 **Settings** panel — it also shows whether a newer release is available first. Details (server-only
 mode, manual Docker Compose update, agent-only update): [`docs/install-device.md`](docs/install-device.md#12-updates).
 
+## Uninstallation
+
+To completely remove Paneo, the companion agent, and the kiosk configuration from the device, run the following command:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/uninstall.sh | sudo bash
+```
+
 ## Layout / stack
 
 - `src/server.js` — Fastify + `@fastify/websocket` REST + WS hub

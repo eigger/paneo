@@ -548,6 +548,16 @@ If the agent changed, reinstall or update `/opt/paneo-agent/agent.js` and `versi
 sudo systemctl restart paneo-agent
 ```
 
-## 13. Deferred features
+## 13. Uninstallation
+
+To completely remove Paneo, the companion agent, and the kiosk configuration from the device, run the following command:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/uninstall.sh | sudo bash
+```
+
+This script stops and disables the systemd units (`paneo`, `paneo-agent`), removes all configurations, deletes the named Docker volume (`paneo-data`), and cleans up the Chromium kiosk autostart entries.
+
+## 14. Deferred features
 
 RTSP/camera streaming is not part of the current device install scope. Camera gateway integration (`go2rtc`, `MediaMTX`) and low-tier snapshot fallback are planned for a later milestone.
