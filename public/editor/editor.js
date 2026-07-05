@@ -861,9 +861,16 @@ function attachDrag(node, w, handle) {
     const up = () => {
       node.removeEventListener('pointermove', move);
       node.removeEventListener('pointerup', up);
-      render();
-      renderInspector();
-      scheduleSave();
+      // A plain click (press+release with no drag in between) still reaches
+      // here — only rebuild/save if the widget's position actually changed,
+      // otherwise every click on an already-selected widget re-renders the
+      // whole canvas (every widget, including things like paneo.photo's
+      // slideshow) for nothing, which is what the visible "flicker" was.
+      if (w.x !== ox || w.y !== oy) {
+        render();
+        renderInspector();
+        scheduleSave();
+      }
     };
     node.addEventListener('pointermove', move);
     node.addEventListener('pointerup', up);
@@ -891,9 +898,14 @@ function attachDrag(node, w, handle) {
     const up = () => {
       handle.removeEventListener('pointermove', move);
       handle.removeEventListener('pointerup', up);
-      render();
-      renderInspector();
-      scheduleSave();
+      // Same reasoning as the move handler's up() above — a plain click on
+      // the resize handle without actually dragging shouldn't rebuild the
+      // whole canvas or schedule a save.
+      if (w.w !== ow || w.h !== oh) {
+        render();
+        renderInspector();
+        scheduleSave();
+      }
     };
     handle.addEventListener('pointermove', move);
     handle.addEventListener('pointerup', up);
