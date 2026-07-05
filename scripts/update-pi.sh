@@ -173,11 +173,6 @@ EOF
     visudo -cf "$sudoers_file" >/dev/null || { rm -f "$sudoers_file"; log "Failed to validate generated sudoers rule"; }
   fi
 
-  if systemctl is-active --quiet paneo-agent 2>/dev/null; then
-    write_status running 60 "restart_agent" "Restarting companion agent"
-    systemctl restart paneo-agent
-  fi
-
   log "Agent updated"
 else
   log "Skipping agent update (AGENT_DIR or TOKEN not found)"
@@ -363,4 +358,23 @@ log "Server logs : docker logs -f paneo"
 log "Agent logs  : journalctl -u paneo-agent -f"
 
 write_status done 100 "done" "Update complete"
+
+# ---------------------------------------------------------------------------
+# 9. Asynchronous Restart of the Companion Agent
+# ---------------------------------------------------------------------------
+# We restart the agent at the very end of the update flow, scheduling it to
+# happen 2 seconds in the future using `systemd-run`. This ensures that this
+# update-pi.sh process (which is running inside the paneo-agent service cgroup)
+# can finish executing, write its final "done" status, and exit cleanly before
+# systemd restarts the agent service (which terminates all running processes in the cgroup).
+if [ -d "$AGENT_DIR" ] && [ -n "$TOKEN" ]; then
+  if systemctl is-active --quiet paneo-agent 2>/dev/null; then
+    if command -v systemd-run >/dev/null 2>&1; then
+      systemd-run --on-active=2s systemctl restart paneo-agent
+      log "Scheduled companion agent restart in 2 seconds via systemd-run"
+    else
+      systemctl restart paneo-agent
+    fi
+  fi
+fi
 
