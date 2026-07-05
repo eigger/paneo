@@ -334,19 +334,31 @@ HELPER_EOF
   chown "$KIOSK_USER" "$HELPER_TMP"
   mv "$HELPER_TMP" "$HELPER"
 
+  # Log under the desktop user's home — /tmp/paneo-kiosk.log is often root-owned
+  # after a prior update (sudo redirect), which breaks later manual restarts.
+  KIOSK_LOG="/home/$KIOSK_USER/paneo-kiosk.log"
+  touch "$KIOSK_LOG"
+  chown "$KIOSK_USER:$KIOSK_USER" "$KIOSK_LOG"
+
   # Run the helper as the desktop user, fully detached.
-  # Redirect to a log file so errors are visible: /tmp/paneo-kiosk.log
+  # Prefer `at` when it works, but always fall back — on many Pi images `at`
+  # is installed yet `at now` fails silently (no atd / permission), which left
+  # the kiosk dead after update once WATCHDOG=0 stopped auto-relaunching it.
+  kiosk_launched=0
   if command -v at >/dev/null 2>&1; then
-    # `at now` runs in a clean environment, fully detached from this session
-    echo "sudo -u $KIOSK_USER $HELPER" | at now 2>/dev/null
-    log "Kiosk scheduled via 'at' — check /tmp/paneo-kiosk.log if it doesn't appear"
-  else
-    # Fallback: nohup + double-fork via a subshell
+    if echo "sudo -u $KIOSK_USER $HELPER >> $KIOSK_LOG 2>&1" | at now 2>/dev/null; then
+      log "Kiosk scheduled via 'at' (log: $KIOSK_LOG)"
+      kiosk_launched=1
+    else
+      log "'at now' failed — falling back to nohup launch"
+    fi
+  fi
+  if [ "$kiosk_launched" -eq 0 ]; then
     (
       sleep 1
-      sudo -u "$KIOSK_USER" nohup "$HELPER" > /tmp/paneo-kiosk.log 2>&1 &
+      sudo -u "$KIOSK_USER" bash -c "nohup \"$HELPER\" >> \"$KIOSK_LOG\" 2>&1 &"
     ) &
-    log "Kiosk launched (log: /tmp/paneo-kiosk.log)"
+    log "Kiosk launched via nohup (log: $KIOSK_LOG)"
   fi
 else
   log "Kiosk binary not found — skipping restart"
