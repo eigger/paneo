@@ -63,19 +63,15 @@ function removeDisplay(id, s) {
   if (displays.get(id)?.size === 0) displays.delete(id);
 }
 
-// When Chromium is killed abruptly the old socket can stay OPEN on the server
-// until TCP times out — terminate it when the same kiosk reconnects (same IP).
+// Abruptly-killed kiosks (SIGKILL/OOM) leave a socket OPEN until TCP times out.
+// We do NOT terminate by source IP on reconnect: behind a reverse proxy or Docker
+// NAT every client shares one remoteAddress, so a same-IP kill made two live
+// displays repeatedly terminate + reconnect each other (a 2s ping-pong loop).
+// The heartbeat sweep below reaps genuinely dead sockets instead, which is both
+// proxy-safe and can never cut a still-alive connection.
 function addDisplay(id, socket, remoteAddress) {
   pruneDisplays(id);
   const set = displays.get(id) ?? new Set();
-  if (remoteAddress) {
-    for (const s of [...set]) {
-      if (s._paneoRemote === remoteAddress && s !== socket) {
-        try { s.terminate(); } catch { /* ignore */ }
-        set.delete(s);
-      }
-    }
-  }
   socket._paneoRemote = remoteAddress || null;
   socket._paneoLastSeen = Date.now();
   set.add(socket);

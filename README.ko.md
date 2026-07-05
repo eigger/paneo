@@ -125,6 +125,9 @@ curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | su
 끝나면 재부팅하세요 (`sudo reboot`) — 디스플레이가 바로 키오스크로 부팅됩니다. 서버와 디스플레이를
 여러 대의 Pi로 나누는 경우가 아니라면 아래는 건너뛰어도 됩니다.
 
+> **참고:** 설치 및 재부팅 후 디스플레이(키오스크)가 완전히 뜨기까지 **처음에는 약 5분** 정도
+> 걸릴 수 있습니다. Docker 이미지 다운로드, 폰트 설치, Chromium 기동 등 Pi 첫 부팅 시 시간이 더 걸립니다.
+
 <details>
 <summary><strong>여러 대 설치, 수동 설치, 기타 옵션</strong> (클릭해서 펼치기)</summary>
 

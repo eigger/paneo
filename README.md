@@ -133,6 +133,9 @@ curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | su
 Reboot when it's done (`sudo reboot`) and the display boots straight into the kiosk. That's it —
 skip everything below unless you're splitting server and display across multiple Pis.
 
+> **Note:** After install and reboot, allow **up to ~5 minutes** on first boot before the display
+> (kiosk) is fully up — Docker image pull, font install, and Chromium startup can take a while on a Pi.
+
 <details>
 <summary><strong>Multi-device setup, manual install, and other options</strong> (click to expand)</summary>
 
