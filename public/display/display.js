@@ -9,6 +9,7 @@ const CACHE_KEY = `paneo:layout:${token}`;
 
 let lastLayout = null;
 let lastCtx = { locale: 'ko-KR', timezone: undefined, performanceProfile: 'high' };
+let lastAppliedKey = null;
 let displayVersion = '';
 
 fetch('/api/version')
@@ -61,10 +62,32 @@ function renderPageIndicator(layout) {
   }
 }
 
-function applyLayout(layout, ctx) {
+function layoutKey(layout, ctx) {
+  return JSON.stringify({
+    layout,
+    locale: ctx?.locale,
+    timezone: ctx?.timezone,
+    performanceProfile: ctx?.performanceProfile,
+    page: currentPageIndex,
+  });
+}
+
+function applyLayout(layout, ctx, { force = false } = {}) {
   if (!layout) return;
+  const nextCtx = ctx
+    ? { ...ctx, performanceProfile: resolvePerformanceProfile(ctx.performanceProfile) }
+    : lastCtx;
+  const key = layoutKey(layout, nextCtx);
+  // WS reconnect re-sends the same published layout — skip a full DOM wipe so
+  // slideshows/calendars don't restart and flicker every ~30s (v0.0.20 ping bug).
+  if (!force && key === lastAppliedKey && stage.childElementCount > 0) {
+    lastLayout = layout;
+    lastCtx = nextCtx;
+    return;
+  }
+  lastAppliedKey = key;
   lastLayout = layout;
-  if (ctx) lastCtx = { ...ctx, performanceProfile: resolvePerformanceProfile(ctx.performanceProfile) };
+  lastCtx = nextCtx;
   document.documentElement.lang = (lastCtx.locale || 'ko-KR').split('-')[0];
 
   const { widgets: pageWidgets, pageCount } = getPageWidgets(layout);
@@ -114,7 +137,7 @@ try {
 // repaint (once plugins are registered) fills it in.
 loadPlugins()
   .catch((err) => console.error('[plugins] load failed', err))
-  .finally(() => { if (lastLayout) applyLayout(lastLayout, lastCtx); });
+  .finally(() => { if (lastLayout) applyLayout(lastLayout, lastCtx, { force: true }); });
 
 function setStatus(text, cls, fade) {
   statusEl.textContent = text;
@@ -227,18 +250,46 @@ function showUpdateStatus(status, mode, progress, step, step_msg, error) {
   }
 }
 
+let ws = null;
+let reconnectTimer = null;
+let heartbeatTimer = null;
+let hasConnectedOnce = false;
+const DISPLAY_HEARTBEAT_MS = 25_000;
+
+function startDisplayHeartbeat(sock) {
+  clearInterval(heartbeatTimer);
+  const tick = () => {
+    if (sock.readyState !== WebSocket.OPEN) return;
+    try { sock.send(JSON.stringify({ type: 'display.ping' })); } catch { /* ignore */ }
+  };
+  tick();
+  heartbeatTimer = setInterval(tick, DISPLAY_HEARTBEAT_MS);
+}
+
+function stopDisplayHeartbeat() {
+  clearInterval(heartbeatTimer);
+  heartbeatTimer = null;
+}
+
 function connect() {
   clearTimeout(reconnectTimer);
+  stopDisplayHeartbeat();
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const next = new WebSocket(`${proto}://${location.host}/ws?role=display&token=${encodeURIComponent(token)}`);
   ws = next;
-  // Always bilingual — unlike widget content (which follows the device's
-  // configured locale), this status pill is the one piece of UI an installer
-  // sees before any layout/locale has ever loaded, so it can't rely on that
-  // locale to be readable.
-  next.onopen = () => setStatus(dt('connected'), 'online', true);
+  next.onopen = () => {
+    startDisplayHeartbeat(next);
+    if (!hasConnectedOnce) {
+      setStatus(dt('connected'), 'online', true);
+      hasConnectedOnce = true;
+    } else {
+      statusEl.className = 'online';
+      statusEl.style.opacity = '0';
+    }
+  };
   next.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
+    if (msg.type === 'display.pong') return;
     if (msg.type === 'layout.set') {
       applyLayout(msg.layout, { locale: msg.locale, timezone: msg.timezone, performanceProfile: msg.performanceProfile });
     } else if (msg.type === 'command' && msg.action === 'reload') {
@@ -252,17 +303,17 @@ function connect() {
   next.onclose = () => {
     if (ws !== next) return;
     ws = null;
-    setStatus(dt('reconnecting'), 'offline', false);
+    stopDisplayHeartbeat();
+    if (hasConnectedOnce) {
+      setStatus(dt('reconnecting'), 'offline', false);
+    }
     reconnectTimer = setTimeout(connect, 2000);
   };
   next.onerror = () => { if (ws === next) next.close(); };
 }
-
-let ws = null;
-let reconnectTimer = null;
 connect();
 
-window.addEventListener('resize', () => applyLayout(lastLayout));
+window.addEventListener('resize', () => applyLayout(lastLayout, lastCtx, { force: true }));
 
 // ---- Page navigation (swipe/drag + keyboard) ----
 function switchDisplayPage(delta) {
