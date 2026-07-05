@@ -164,18 +164,13 @@ export async function load() {
   if (stmt.count.get().c === 0) {
     migrateLegacyJson();
   }
-  if (stmt.count.get().c === 0) {
-    // Matches scripts/install-pi.sh's own DEVICE_NAME default exactly — a
-    // Korean placeholder ("거실") used to be hardcoded here, which not only
-    // read oddly on a fresh install of an internationalized project, but
-    // actively fought create_token_if_needed()'s "match by name, else reuse
-    // the first device" logic: with a mismatched seed name, a fresh install
-    // would silently reuse this placeholder device (correct-by-accident, via
-    // the "no match -> first device" fallback) instead of the name actually
-    // matching. Keeping the two in sync means a fresh install's name-match
-    // branch succeeds directly, and the name shown is what was expected.
-    stmt.insert.run(newDeviceRow('Raspberry Pi'));
-  }
+  // No longer auto-seeds a placeholder device on an empty DB (previously a
+  // hardcoded "거실"/"Raspberry Pi" row) — a device row is meant to represent
+  // an actual registered display, created either by the editor's own "+"
+  // button or by scripts/install-pi.sh's create_token_if_needed() when a
+  // real Pi installs itself, not invented by the server ahead of either of
+  // those. A brand-new server with zero devices is the correct, unsurprising
+  // starting state.
   // agentPresent reflects a live WS connection (§M4) — a prior process's agents
   // aren't connected to *this* process yet, so a value left over from before a
   // crash/restart would lie until the agent's own reconnect loop catches up.

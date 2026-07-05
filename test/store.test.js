@@ -9,12 +9,9 @@ process.env.PANEO_DATA_DIR = mkdtempSync(path.join(tmpdir(), 'paneo-test-'));
 const store = await import('../src/store.js');
 await store.load();
 
-test('load seeds at least one device in an empty database', () => {
+test('load leaves an empty database empty (no auto-seeded placeholder device)', () => {
   const devices = store.listDevices();
-  assert.ok(devices.length >= 1);
-  assert.ok(devices[0].token);
-  assert.ok(devices[0].draft);
-  assert.ok(devices[0].published);
+  assert.equal(devices.length, 0);
 });
 
 test('createDevice persists a new display', async () => {
