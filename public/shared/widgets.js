@@ -1373,9 +1373,21 @@ export const widgets = {
       // doesn't change on the state poll's 30s cadence the way current
       // conditions do, and re-requesting it every tick would be pointless load
       // on the HA server for data that's still the same.
-      const HA_WEATHER_FORECAST_MIN_HEIGHT = 200;
+      // Three tiers instead of one on/off threshold — a 5-day forecast row
+      // squeezed into a barely-tall-enough widget renders every column too
+      // small to read comfortably, so a shorter widget gets a 3-day forecast
+      // instead (fewer, wider columns — see the `.fc-3` CSS variant) and only
+      // a genuinely tall widget gets the full 5 days.
+      const HA_FC_3DAY_MIN_HEIGHT = 200;
+      const HA_FC_5DAY_MIN_HEIGHT = 320;
+      function pickForecastDays(height) {
+        if (height >= HA_FC_5DAY_MIN_HEIGHT) return 5;
+        if (height >= HA_FC_3DAY_MIN_HEIGHT) return 3;
+        return 0;
+      }
       let forecastPromise = null;
       let latestState = null;
+      let lastFcDays = -1;
       let ro = null;
 
       // Best-effort: forecast moved from a state attribute (older HA) to the
@@ -1405,7 +1417,8 @@ export const widgets = {
         return forecastPromise;
       }
 
-      function renderWeatherCard(data, forecast, showForecast) {
+      function renderWeatherCard(data, forecast, fcDays) {
+        lastFcDays = fcDays;
         const state = data.state;
         const attrs = data.attributes || {};
         const friendlyName = config.title || attrs.friendly_name || entityId;
@@ -1417,8 +1430,8 @@ export const widgets = {
         const windSpeed = attrs.wind_speed;
         const windUnit = attrs.wind_speed_unit || '';
 
-        const forecastHtml = (showForecast && forecast?.length)
-          ? `<div class="ha-weather-forecast">${forecast.slice(0, 5).map((f) => {
+        const forecastHtml = (fcDays > 0 && forecast?.length)
+          ? `<div class="ha-weather-forecast${fcDays === 3 ? ' fc-3' : ''}">${forecast.slice(0, fcDays).map((f) => {
               const wd = new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: tz }).format(new Date(f.datetime));
               const icon = HA_WEATHER_ICONS[f.condition] || '🌡️';
               const hi = f.temperature != null ? `${Math.round(f.temperature)}°` : '-';
@@ -1463,9 +1476,9 @@ export const widgets = {
         if (isWeather) {
           latestState = data;
           const rect = el.getBoundingClientRect();
-          const showForecast = rect.height >= HA_WEATHER_FORECAST_MIN_HEIGHT;
-          const forecast = showForecast ? (attrs.forecast || await getForecast()) : null;
-          renderWeatherCard(data, forecast, showForecast);
+          const fcDays = pickForecastDays(rect.height);
+          const forecast = fcDays > 0 ? (attrs.forecast || await getForecast()) : null;
+          renderWeatherCard(data, forecast, fcDays);
           return;
         }
 
@@ -1527,19 +1540,21 @@ export const widgets = {
       };
 
       // Re-render (no re-fetch — the poll above already keeps latestState/the
-      // forecast promise current) whenever crossing the forecast-row height
-      // threshold, so resizing the widget in the editor toggles the forecast
-      // row live, the same way paneo.calendar.month's view switches.
+      // forecast promise current) whenever crossing a forecast-tier height
+      // threshold, so resizing the widget in the editor toggles between
+      // none/3-day/5-day live, the same way paneo.calendar.month's view
+      // switches. Compares against the last *applied* tier (not the current
+      // DOM's day count) — a feed that returns fewer days than requested
+      // would otherwise never match the requested tier and re-render forever.
       if (isWeather) {
         ro = new ResizeObserver((entries) => {
-          const showForecast = entries[0].contentRect.height >= HA_WEATHER_FORECAST_MIN_HEIGHT;
           if (!latestState) return;
-          const alreadyShown = !!el.querySelector('.ha-weather-forecast');
-          if (showForecast === alreadyShown) return;
-          if (showForecast) {
-            getForecast().then((forecast) => renderWeatherCard(latestState, forecast, true));
+          const fcDays = pickForecastDays(entries[0].contentRect.height);
+          if (fcDays === lastFcDays) return;
+          if (fcDays > 0) {
+            getForecast().then((forecast) => renderWeatherCard(latestState, forecast, fcDays));
           } else {
-            renderWeatherCard(latestState, null, false);
+            renderWeatherCard(latestState, null, 0);
           }
         });
         ro.observe(el);

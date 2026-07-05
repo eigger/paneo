@@ -59,10 +59,24 @@ export function compareVersions(a, b) {
 // rate limit (60/hr per IP) safe even with the editor open on several
 // devices/tabs, since they all share this one server-side cache.
 let updateCheckCache = null; // { value, expires }
+let lastForceFetchAt = 0;
 const UPDATE_CHECK_TTL_MS = 60 * 60_000;
+// A manual "check now" click bypasses the hour-long TTL above (the whole
+// point is to see a release that just went out), but still can't re-hit
+// GitHub more than once a minute — protects the rate limit from someone
+// mashing the button rather than from normal use. Tracked separately from
+// the TTL cache's own age: a routine (non-forced) refresh must never count
+// as a "recent force," or a manual click shortly after one would silently
+// do nothing instead of actually checking.
+const UPDATE_CHECK_MIN_FORCE_INTERVAL_MS = 60_000;
 
-export async function checkForUpdate() {
-  if (updateCheckCache && updateCheckCache.expires > Date.now()) return updateCheckCache.value;
+export async function checkForUpdate({ force = false } = {}) {
+  const now = Date.now();
+  const cacheUsable = updateCheckCache && (
+    (!force && updateCheckCache.expires > now) ||
+    (force && now - lastForceFetchAt < UPDATE_CHECK_MIN_FORCE_INTERVAL_MS)
+  );
+  if (cacheUsable) return updateCheckCache.value;
 
   const res = await fetch('https://api.github.com/repos/eigger/paneo/releases/latest', {
     headers: { Accept: 'application/vnd.github+json' },
@@ -75,6 +89,7 @@ export async function checkForUpdate() {
     latest: latest || null,
     updateAvailable: latest ? compareVersions(latest, release) > 0 : false,
   };
-  updateCheckCache = { value, expires: Date.now() + UPDATE_CHECK_TTL_MS };
+  if (force) lastForceFetchAt = now;
+  updateCheckCache = { value, expires: now + UPDATE_CHECK_TTL_MS };
   return value;
 }
