@@ -352,6 +352,8 @@ function reportPendingUpdateStatus(socket) {
 // Disabled by default; enable with PANEO_WATCHDOG=1
 // ---------------------------------------------------------------------------
 
+const KIOSK_LAUNCHER = '/usr/local/bin/paneo-kiosk';
+
 if (process.env.PANEO_WATCHDOG === '1') {
   const DISPLAY_URL = process.env.PANEO_DISPLAY_URL || `${SERVER}/d/${TOKEN}`;
   console.log(`[agent] watchdog enabled for: ${DISPLAY_URL}`);
@@ -360,7 +362,23 @@ if (process.env.PANEO_WATCHDOG === '1') {
       execSync('pgrep -x chromium-browser || pgrep -x chromium', { stdio: 'ignore' });
     } catch {
       console.log('[agent] watchdog: chromium not found, relaunching...');
-      execFile('chromium-browser', ['--kiosk', DISPLAY_URL], { detached: true });
+      // A systemd service doesn't inherit the desktop session's env — a raw
+      // `chromium-browser` spawn here has no WAYLAND_DISPLAY/XDG_RUNTIME_DIR
+      // to connect to the compositor (same problem setPower() above already
+      // works around via resolveWaylandEnv()), so it would fail to actually
+      // show anything even though the process technically starts. Launch
+      // the real kiosk launcher script instead of raw chromium — it already
+      // has the right flags/URL baked in and does its own Wayland/X11
+      // detection at runtime, same as scripts/update-pi.sh's kiosk-restart.
+      const waylandEnv = resolveWaylandEnv();
+      const env = waylandEnv ? { ...process.env, ...waylandEnv, XDG_SESSION_TYPE: 'wayland' } : process.env;
+      if (existsSync(KIOSK_LAUNCHER)) {
+        execFile(KIOSK_LAUNCHER, [], { detached: true, env });
+      } else {
+        // Standalone/older install without the launcher script — fall back
+        // to a raw launch, at least with the right display env if we found one.
+        execFile('chromium-browser', ['--kiosk', DISPLAY_URL], { detached: true, env });
+      }
     }
   }, 30_000);
 }
