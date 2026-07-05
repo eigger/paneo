@@ -128,9 +128,9 @@ function sendToAgent(id, msg) {
 // including after a reconnect once the update has actually finished.
 const updateStatus = new Map(); // Map<deviceId, { status, mode, ts }>
 const UPDATE_STATUS_STALE_MS = 20 * 60_000;
-function setUpdateStatus(id, status, mode) {
-  updateStatus.set(id, { status, mode, ts: Date.now() });
-  broadcast(id, { type: 'update.status', status, mode });
+function setUpdateStatus(id, status, mode, progress = null, step = null, step_msg = null, error = null) {
+  updateStatus.set(id, { status, mode, progress, step, step_msg, error, ts: Date.now() });
+  broadcast(id, { type: 'update.status', status, mode, progress, step, step_msg, error });
 }
 function getUpdateStatus(id) {
   const entry = updateStatus.get(id);
@@ -163,7 +163,7 @@ app.get('/ws/agent', { websocket: true }, (socket, req) => {
         }
       } else if (msg.type === 'agent.status') {
         app.log.info(`agent status from ${device.name}: ${JSON.stringify(msg)}`);
-        if (msg.status) setUpdateStatus(device.id, msg.status, msg.mode);
+        if (msg.status) setUpdateStatus(device.id, msg.status, msg.mode, msg.progress, msg.step, msg.step_msg, msg.error);
       }
     } catch { /* ignore malformed */ }
   });
@@ -458,7 +458,7 @@ app.post('/api/devices/:id/command', async (req, reply) => {
       // Optimistic — set before the agent's own ack arrives, which may be
       // racing its own restart partway through the update and never arrive
       // for this specific command at all.
-      setUpdateStatus(d.id, 'running', updateMode);
+      setUpdateStatus(d.id, 'running', updateMode, 0, 'starting', 'Starting update');
       sendToAgent(d.id, { type: 'command', action: 'update', mode: updateMode });
     }
     return { ok: true, agentPresent: hasAgent };

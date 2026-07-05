@@ -42,10 +42,48 @@ esac
 # ---------------------------------------------------------------------------
 STATUS_FILE="/tmp/paneo-update-status.json"
 write_status() {
-  printf '{"state":"%s","mode":"%s","ts":%s}\n' "$1" "$MODE" "$(date +%s)" > "$STATUS_FILE" 2>/dev/null || true
+  local state="$1"
+  local progress="${2:-}"
+  local step="${3:-}"
+  local step_msg="${4:-}"
+  local error="${5:-}"
+
+  local escaped_step
+  escaped_step=$(printf '%s' "$step" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g')
+  local escaped_step_msg
+  escaped_step_msg=$(printf '%s' "$step_msg" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g')
+  local escaped_error
+  escaped_error=$(printf '%s' "$error" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g')
+
+  local json='{'
+  json="${json}\"state\":\"${state}\""
+  json="${json},\"mode\":\"${MODE}\""
+  json="${json},\"ts\":$(date +%s)"
+  if [ -n "$progress" ]; then
+    json="${json},\"progress\":${progress}"
+  fi
+  if [ -n "$step" ]; then
+    json="${json},\"step\":\"${escaped_step}\""
+  fi
+  if [ -n "$step_msg" ]; then
+    json="${json},\"step_msg\":\"${escaped_step_msg}\""
+  fi
+  if [ -n "$error" ]; then
+    json="${json},\"error\":\"${escaped_error}\""
+  fi
+  json="${json}}"
+
+  printf '%s\n' "$json" > "$STATUS_FILE" 2>/dev/null || true
 }
-write_status running
-trap '[ "$?" -ne 0 ] && write_status failed' EXIT
+trap_error() {
+  local exit_code="$?"
+  if [ "$exit_code" -ne 0 ]; then
+    local err_msg="Update failed at command: $BASH_COMMAND (exit code: $exit_code)"
+    write_status failed "" "" "" "$err_msg"
+  fi
+}
+write_status running 0 "starting" "Starting update"
+trap trap_error EXIT
 
 # ---------------------------------------------------------------------------
 # Read existing config from systemd service files (set during install)
@@ -68,11 +106,13 @@ log "Mode   : $MODE"
 # 1. Pull the latest server image
 # ---------------------------------------------------------------------------
 log "Pulling latest image: $IMAGE"
+write_status running 10 "pull_image" "Pulling latest Docker image"
 docker pull "$IMAGE"
 
 # ---------------------------------------------------------------------------
 # 2. Restart the server (uses new image on next start thanks to --rm + no -d)
 # ---------------------------------------------------------------------------
+write_status running 30 "restart_server" "Restarting Paneo server"
 if systemctl is-active --quiet paneo 2>/dev/null; then
   log "Restarting paneo server..."
   systemctl restart paneo
@@ -85,6 +125,7 @@ fi
 # 3. Wait for server to become ready
 # ---------------------------------------------------------------------------
 log "Waiting for server: $SERVER"
+write_status running 40 "wait_server" "Waiting for server to become ready"
 for _ in $(seq 1 30); do
   if curl -fsS "$SERVER/api/brand" >/dev/null 2>&1; then
     break
@@ -99,6 +140,7 @@ curl -fsS "$SERVER/api/brand" >/dev/null 2>&1 \
 # ---------------------------------------------------------------------------
 if [ -d "$AGENT_DIR" ] && [ -n "$TOKEN" ]; then
   log "Updating companion agent in $AGENT_DIR"
+  write_status running 50 "update_agent" "Updating companion agent files"
   curl -fsSL "$SERVER/agent/agent.js"      -o "$AGENT_DIR/agent.js"
   curl -fsSL "$SERVER/agent/version.json"  -o "$AGENT_DIR/version.json"
 
@@ -110,6 +152,7 @@ if [ -d "$AGENT_DIR" ] && [ -n "$TOKEN" ]; then
   # would corrupt this very run.
   update_trigger="/usr/local/bin/paneo-update-pi.sh"
   if [ -f "$update_trigger" ]; then
+    write_status running 55 "refresh_trigger" "Refreshing update trigger script"
     if curl -fsSL "$SERVER/update.sh" -o "${update_trigger}.new"; then
       chmod +x "${update_trigger}.new"
       mv "${update_trigger}.new" "$update_trigger"
@@ -121,7 +164,7 @@ if [ -d "$AGENT_DIR" ] && [ -n "$TOKEN" ]; then
   fi
 
   if systemctl is-active --quiet paneo-agent 2>/dev/null; then
-    log "Restarting companion agent..."
+    write_status running 60 "restart_agent" "Restarting companion agent"
     systemctl restart paneo-agent
   fi
 
@@ -137,6 +180,7 @@ fi
 # ---------------------------------------------------------------------------
 if [ "$MODE" != "all" ]; then
   log "Mode is '$MODE' — skipping codec install / kiosk launcher update / kiosk restart"
+  write_status done 100 "done" "Update complete"
 else
 
 # ---------------------------------------------------------------------------
@@ -146,6 +190,7 @@ else
 #    repo/arch, so failure here is not fatal — .webm videos work regardless.
 # ---------------------------------------------------------------------------
 if command -v apt-get >/dev/null 2>&1; then
+  write_status running 70 "install_codecs" "Installing chromium video codecs"
   apt-get install -y chromium-codecs-ffmpeg-extra 2>/dev/null \
     && log "Installed chromium-codecs-ffmpeg-extra" \
     || log "chromium-codecs-ffmpeg-extra not available — skipping (unrelated to this update)"
@@ -160,6 +205,7 @@ fi
 #    up fine in the editor on a desktop OS that already has one.
 # ---------------------------------------------------------------------------
 if command -v apt-get >/dev/null 2>&1; then
+  write_status running 80 "install_fonts" "Installing fonts (Korean & Emoji)"
   if ! fc-list :lang=ko 2>/dev/null | grep -qi nanum; then
     apt-get install -y fonts-nanum fonts-nanum-extra 2>/dev/null \
       || apt-get install -y fonts-nanum 2>/dev/null \
@@ -183,6 +229,7 @@ if [ -f "$KIOSK_BIN" ]; then
 
   if [ -n "$DISPLAY_URL" ] && [ -n "$CHROME" ]; then
     log "Updating kiosk launcher for $DISPLAY_URL"
+    write_status running 90 "update_kiosk" "Updating kiosk launcher"
     # Use printf instead of heredoc to avoid stdin conflict when piped via curl|bash
     printf '%s\n' \
       '#!/usr/bin/env bash' \
@@ -220,6 +267,7 @@ fi
 # ---------------------------------------------------------------------------
 # 7. Restart the kiosk browser
 # ---------------------------------------------------------------------------
+write_status running 95 "restart_kiosk" "Restarting kiosk browser"
 log "Restarting kiosk..."
 
 # Determine the desktop user: prefer the user who invoked sudo
@@ -304,5 +352,5 @@ fi
 log "Server logs : docker logs -f paneo"
 log "Agent logs  : journalctl -u paneo-agent -f"
 
-write_status done
+write_status done 100 "done" "Update complete"
 

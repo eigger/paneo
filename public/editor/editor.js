@@ -262,9 +262,30 @@ function applyUpdateProgressUI() {
     return;
   }
   box.className = `update-progress-status visible ${status}`;
-  if (status === 'running') box.textContent = t('updateProgressRunning', updateProgress.mode);
-  else if (status === 'done') box.textContent = t('updateProgressDone');
-  else if (status === 'failed') box.textContent = t('updateProgressFailed');
+  if (status === 'running') {
+    let msg = t('updateProgressRunning', updateProgress.mode);
+    if (updateProgress.progress !== undefined && updateProgress.progress !== null) {
+      msg += ` [${updateProgress.progress}%]`;
+    }
+    if (updateProgress.step) {
+      let stepText = t(`updateStep_${updateProgress.step}`);
+      if (stepText === `updateStep_${updateProgress.step}`) {
+        stepText = updateProgress.step_msg || updateProgress.step || '';
+      }
+      if (stepText) {
+        msg += ` - ${stepText}`;
+      }
+    }
+    box.textContent = msg;
+  } else if (status === 'done') {
+    box.textContent = t('updateProgressDone');
+  } else if (status === 'failed') {
+    let msg = t('updateProgressFailed');
+    if (updateProgress.error) {
+      msg += ` (${updateProgress.error})`;
+    }
+    box.textContent = msg;
+  }
 }
 
 async function loadUpdateProgress() {

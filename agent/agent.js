@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Paneo Companion Agent (docs/design.md §4.1 D, §9, §M4)
  *
  * Connects to the Paneo server via WebSocket and handles OS-level tasks
@@ -75,6 +75,7 @@ function connect() {
   onSocket(ws, 'open', () => {
     console.log('[agent] connected');
     reconnectDelay = 2000; // reset on successful connect
+    stopUpdateStatusPolling(); // Stop any legacy poll just in case
     ws.send(JSON.stringify({ type: 'agent.hello', version: AGENT_VERSION, component: AGENT_COMPONENT }));
     // The update script restarts this very process partway through (both
     // 'all' and 'server' mode always refresh the agent) -- so the instance
@@ -107,12 +108,14 @@ function connect() {
 
   onSocket(ws, 'close', () => {
     console.log(`[agent] disconnected. reconnecting in ${reconnectDelay / 1000}s...`);
+    stopUpdateStatusPolling();
     setTimeout(connect, reconnectDelay);
     reconnectDelay = Math.min(reconnectDelay * 2, 60_000);
   });
 
   onSocket(ws, 'error', (err) => {
     console.error(`[agent] WS error: ${err.message || 'connection failed'}`);
+    stopUpdateStatusPolling();
     // 'close' will fire after 'error', triggering reconnect
   });
 }
@@ -234,6 +237,7 @@ function runUpdate(mode) {
     // and reportPendingUpdateStatus() covers reporting how it actually ended.
     if (ws?.readyState === 1 /* OPEN */) {
       ws.send(JSON.stringify({ type: 'agent.status', status: 'running', mode }));
+      startUpdateStatusPolling(ws);
     }
   } catch (e) {
     console.error(`[agent] failed to start update: ${e.message}`);
@@ -250,6 +254,70 @@ function runUpdate(mode) {
 const UPDATE_STATUS_FILE = '/tmp/paneo-update-status.json';
 const UPDATE_STATUS_MAX_AGE_MS = 20 * 60_000;
 
+let updateStatusInterval = null;
+let updateStatusMissingCount = 0;
+
+function startUpdateStatusPolling(socket) {
+  if (updateStatusInterval) return;
+  updateStatusMissingCount = 0;
+
+  updateStatusInterval = setInterval(() => {
+    let entry;
+    try {
+      if (!existsSync(UPDATE_STATUS_FILE)) {
+        updateStatusMissingCount++;
+        if (updateStatusMissingCount > 5) { // 10 seconds of missing file
+          stopUpdateStatusPolling();
+        }
+        return;
+      }
+      updateStatusMissingCount = 0;
+      entry = JSON.parse(readFileSync(UPDATE_STATUS_FILE, 'utf8'));
+    } catch {
+      // File might be in the middle of being written, ignore single read error
+      return;
+    }
+
+    const ageMs = Date.now() - (Number(entry?.ts) || 0) * 1000;
+    if (ageMs > UPDATE_STATUS_MAX_AGE_MS) {
+      console.log('[agent] update status file is stale, cleaning up');
+      try { unlinkSync(UPDATE_STATUS_FILE); } catch {}
+      socket.send(JSON.stringify({ type: 'agent.status', status: 'failed', error: 'Update timed out' }));
+      stopUpdateStatusPolling();
+      return;
+    }
+
+    if (entry.state === 'running') {
+      console.log(`[agent] update progress: ${entry.progress}% - ${entry.step_msg || entry.step}`);
+      socket.send(JSON.stringify({
+        type: 'agent.status',
+        status: 'running',
+        mode: entry.mode,
+        progress: entry.progress,
+        step: entry.step,
+        step_msg: entry.step_msg
+      }));
+    } else if (['done', 'failed'].includes(entry.state)) {
+      console.log(`[agent] update finished: ${entry.state}`);
+      socket.send(JSON.stringify({
+        type: 'agent.status',
+        status: entry.state,
+        mode: entry.mode,
+        error: entry.error
+      }));
+      try { unlinkSync(UPDATE_STATUS_FILE); } catch {}
+      stopUpdateStatusPolling();
+    }
+  }, 2000);
+}
+
+function stopUpdateStatusPolling() {
+  if (updateStatusInterval) {
+    clearInterval(updateStatusInterval);
+    updateStatusInterval = null;
+  }
+}
+
 function reportPendingUpdateStatus(socket) {
   let entry;
   try {
@@ -259,13 +327,24 @@ function reportPendingUpdateStatus(socket) {
     return;
   }
   const ageMs = Date.now() - (Number(entry?.ts) || 0) * 1000;
-  if (ageMs > UPDATE_STATUS_MAX_AGE_MS || !['done', 'failed'].includes(entry?.state)) {
+  if (ageMs > UPDATE_STATUS_MAX_AGE_MS) {
     try { unlinkSync(UPDATE_STATUS_FILE); } catch { /* best-effort */ }
     return;
   }
-  console.log(`[agent] reporting update outcome: ${entry.state} (mode=${entry.mode})`);
-  socket.send(JSON.stringify({ type: 'agent.status', status: entry.state, mode: entry.mode }));
-  try { unlinkSync(UPDATE_STATUS_FILE); } catch { /* already reported; avoid re-sending on next reconnect */ }
+
+  if (entry.state === 'running') {
+    // Start polling to send updates
+    startUpdateStatusPolling(socket);
+  } else if (['done', 'failed'].includes(entry.state)) {
+    console.log(`[agent] reporting update outcome: ${entry.state} (mode=${entry.mode})`);
+    socket.send(JSON.stringify({
+      type: 'agent.status',
+      status: entry.state,
+      mode: entry.mode,
+      error: entry.error
+    }));
+    try { unlinkSync(UPDATE_STATUS_FILE); } catch { /* already reported; avoid re-sending on next reconnect */ }
+  }
 }
 
 // ---------------------------------------------------------------------------
