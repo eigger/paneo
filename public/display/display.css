@@ -273,7 +273,7 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 }
 
 /* ---- paneo.photo transition effects (D30) ---- */
-.ms-stage { position: relative; width: 100%; height: 100%; }
+.ms-stage { position: relative; width: 100%; height: 100%; contain: paint; isolation: isolate; }
 .ms-layer { position: absolute; inset: 0; width: 100%; height: 100%; }
 .ms-fade-enter { opacity: 0; transition: opacity 0.7s ease; }
 .ms-fade-enter.ms-active { opacity: 1; }
@@ -282,6 +282,7 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 
 /* ---- §Photo Overlay & Transparent BG ---- */
 .widget { z-index: 2; }
+.widget:not([data-background-layer="true"]) .widget-content { isolation: isolate; }
 /* Generic "background layer" widgets (widgets.js: backgroundLayer:true, e.g.
    paneo.photo) render behind everything else — driven by a data attribute set
    from the widget-def flag, not this widget type's name, so any other widget
