@@ -9,8 +9,6 @@ const CACHE_KEY = `paneo:layout:${token}`;
 
 let lastLayout = null;
 let lastCtx = { locale: 'ko-KR', timezone: undefined, performanceProfile: 'high' };
-let lastPublishedAt = null;
-let lastAppliedKey = null;
 let displayVersion = '';
 
 fetch('/api/version')
@@ -63,39 +61,13 @@ function renderPageIndicator(layout) {
   }
 }
 
-function layoutKey(ctx, publishedAt) {
-  return [
-    publishedAt ?? '',
-    ctx?.locale ?? '',
-    ctx?.timezone ?? '',
-    ctx?.performanceProfile ?? '',
-    currentPageIndex,
-  ].join('\0');
-}
-
-function applyLayout(layout, ctx, { force = false, publishedAt = null } = {}) {
+function applyLayout(layout, ctx) {
   if (!layout) return;
-  const nextCtx = ctx
-    ? { ...ctx, performanceProfile: resolvePerformanceProfile(ctx.performanceProfile) }
-    : lastCtx;
-  const pa = publishedAt ?? lastPublishedAt;
-  const key = layoutKey(nextCtx, pa);
-  // WS reconnect re-sends the same published layout — skip a full DOM wipe so
-  // slideshows/calendars don't restart. Use publishedAt (not layout JSON) so
-  // object key order differences never defeat the skip.
-  if (!force && key === lastAppliedKey && stage.childElementCount > 0) {
-    lastLayout = layout;
-    lastCtx = nextCtx;
-    if (publishedAt) lastPublishedAt = publishedAt;
-    return;
-  }
-  lastAppliedKey = key;
   lastLayout = layout;
-  lastCtx = nextCtx;
-  if (publishedAt) lastPublishedAt = publishedAt;
+  if (ctx) lastCtx = { ...ctx, performanceProfile: resolvePerformanceProfile(ctx.performanceProfile) };
   document.documentElement.lang = (lastCtx.locale || 'ko-KR').split('-')[0];
 
-  const { widgets: pageWidgets, pageCount } = getPageWidgets(layout);
+  const { widgets: pageWidgets } = getPageWidgets(layout);
   const page = (layout.pages && layout.pages[Math.min(currentPageIndex, layout.pages.length - 1)]) || layout;
   document.body.style.background = page.background || layout.background || '#0b0f19';
   stage.style.setProperty('--paneo-page-bg', pageSurfaceColor(page, layout));
@@ -115,9 +87,6 @@ function applyLayout(layout, ctx, { force = false, publishedAt = null } = {}) {
     content.className = buildWidgetContentClass(w);
     node.appendChild(content);
     stage.appendChild(node);
-    // widgetId + deviceToken let a widget address itself in a runtime write-back
-    // call (e.g. paneo.todo's tap-to-toggle) — the display only ever knows its
-    // own pairing token, never the internal device id.
     renderWidget(content, w.type, w.config, { ...lastCtx, widgetId: w.id, deviceToken: token });
     applyCustomCss(content, w.customCss);
   }
@@ -125,36 +94,19 @@ function applyLayout(layout, ctx, { force = false, publishedAt = null } = {}) {
   renderPageIndicator(layout);
 
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ layout, ctx: lastCtx, publishedAt: lastPublishedAt }));
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ layout, ctx: lastCtx }));
   } catch { /* quota */ }
 }
 
 // offline resilience: paint the last known layout immediately (docs/design.md §6)
 try {
   const cached = localStorage.getItem(CACHE_KEY);
-  if (cached) {
-    const c = JSON.parse(cached);
-    lastPublishedAt = c.publishedAt ?? null;
-    applyLayout(c.layout, c.ctx, { publishedAt: lastPublishedAt });
-  }
+  if (cached) { const c = JSON.parse(cached); applyLayout(c.layout, c.ctx); }
 } catch { /* ignore */ }
 
-function layoutNeedsPluginRepaint(layout) {
-  const { widgets: pageWidgets } = getPageWidgets(layout);
-  return pageWidgets.some((w) => !widgets[w.type]);
-}
-
-// §7/D17: fetch + register third-party plugins in the background — deliberately
-// NOT awaited before the cached-layout paint above, or an unreachable server
-// (the exact "offline" case §6 exists to survive) would stall the first paint.
-// If the cache held a plugin widget, it shows "? type" for a moment, then this
-// repaint (once plugins are registered) fills it in.
 loadPlugins()
   .catch((err) => console.error('[plugins] load failed', err))
-  .finally(() => {
-    if (!lastLayout || !layoutNeedsPluginRepaint(lastLayout)) return;
-    applyLayout(lastLayout, lastCtx, { publishedAt: lastPublishedAt, force: true });
-  });
+  .finally(() => { if (lastLayout) applyLayout(lastLayout, lastCtx); });
 
 function setStatus(text, cls, fade) {
   statusEl.textContent = text;
@@ -163,8 +115,6 @@ function setStatus(text, cls, fade) {
   if (fade) setTimeout(() => (statusEl.style.opacity = '0'), 2000);
 }
 
-// remote "화면 확인" command (§M2) — briefly overlay the device name so an admin
-// can tell which physical screen this is when several are running at once.
 let identifyTimer = null;
 function showIdentify(name) {
   const el = document.getElementById('identify-overlay');
@@ -174,12 +124,6 @@ function showIdentify(name) {
   identifyTimer = setTimeout(() => el.classList.add('hidden'), 4000);
 }
 
-// Remote-update progress (docs/design.md D#), broadcast by the server
-// whenever it changes (src/server.js setUpdateStatus) — best-effort, since
-// the kiosk browser itself gets killed and relaunched partway through an
-// "all"-mode update anyway (this banner just covers the window before that
-// happens: agent/codec update, before the kiosk restart step). Always
-// localized to the device's selected language (ko/en), defaulting to English.
 const displayTranslations = {
   ko: {
     updating: '업데이트 중…',
@@ -222,13 +166,13 @@ const displayTranslations = {
     step_done: 'Update complete',
     connected: '● Connected',
     reconnecting: '○ Reconnecting…',
-  }
+  },
 };
 
 function dt(key) {
   const lang = (lastCtx.locale || 'ko-KR').split('-')[0];
-  const dict = displayTranslations[lang] || displayTranslations['en'];
-  return dict[key] || displayTranslations['en'][key] || key;
+  const dict = displayTranslations[lang] || displayTranslations.en;
+  return dict[key] || displayTranslations.en[key] || key;
 }
 
 let updateBannerTimer = null;
@@ -237,13 +181,11 @@ function showUpdateStatus(status, mode, progress, step, step_msg, error) {
   if (!el) return;
   clearTimeout(updateBannerTimer);
   const lang = (lastCtx.locale || 'ko-KR').split('-')[0];
-  const dict = displayTranslations[lang] || displayTranslations['en'];
+  const dict = displayTranslations[lang] || displayTranslations.en;
   const modeText = mode === 'server' ? dt('serverMode') : dt('allMode');
   if (status === 'running') {
     let msg = `⏳ ${dt('updating')} (${modeText})`;
-    if (progress !== undefined && progress !== null) {
-      msg += ` [${progress}%]`;
-    }
+    if (progress !== undefined && progress !== null) msg += ` [${progress}%]`;
     if (step) {
       const stepText = dict[`step_${step}`] || step_msg || step;
       msg += ` - ${stepText}`;
@@ -256,9 +198,7 @@ function showUpdateStatus(status, mode, progress, step, step_msg, error) {
     updateBannerTimer = setTimeout(() => el.classList.remove('visible'), 6000);
   } else if (status === 'failed') {
     let msg = `✗ ${dt('updateFailed')}`;
-    if (error) {
-      msg += ` (${error})`;
-    }
+    if (error) msg += ` (${error})`;
     el.textContent = msg;
     el.className = 'visible failed';
     updateBannerTimer = setTimeout(() => el.classList.remove('visible'), 10000);
@@ -267,34 +207,18 @@ function showUpdateStatus(status, mode, progress, step, step_msg, error) {
   }
 }
 
-let ws = null;
-let reconnectTimer = null;
-let hasConnectedOnce = false;
-let lastConnectAt = 0;
-
 function connect() {
-  clearTimeout(reconnectTimer);
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const next = new WebSocket(`${proto}://${location.host}/ws?role=display&token=${encodeURIComponent(token)}`);
-  ws = next;
-  next.onopen = () => {
-    lastConnectAt = Date.now();
-    if (!hasConnectedOnce) {
-      setStatus(dt('connected'), 'online', true);
-      hasConnectedOnce = true;
-    } else {
-      statusEl.className = 'online';
-      statusEl.style.opacity = '0';
-    }
-  };
-  next.onmessage = (ev) => {
+  const ws = new WebSocket(`${proto}://${location.host}/ws?role=display&token=${encodeURIComponent(token)}`);
+  ws.onopen = () => setStatus(dt('connected'), 'online', true);
+  ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
     if (msg.type === 'layout.set') {
       applyLayout(msg.layout, {
         locale: msg.locale,
         timezone: msg.timezone,
         performanceProfile: msg.performanceProfile,
-      }, { publishedAt: msg.publishedAt ?? null });
+      });
     } else if (msg.type === 'command' && msg.action === 'reload') {
       location.reload();
     } else if (msg.type === 'command' && msg.action === 'identify') {
@@ -303,24 +227,13 @@ function connect() {
       showUpdateStatus(msg.status, msg.mode, msg.progress, msg.step, msg.step_msg, msg.error);
     }
   };
-  next.onclose = () => {
-    if (ws !== next) return;
-    ws = null;
-    // Brief drops (server restart during update) recover in ~2s — don't flash
-    // "reconnecting" or the user reads it as a broken loop.
-    const livedMs = Date.now() - lastConnectAt;
-    if (hasConnectedOnce && livedMs > 10_000) {
-      setStatus(dt('reconnecting'), 'offline', false);
-    }
-    reconnectTimer = setTimeout(connect, 2000);
-  };
-  next.onerror = () => { if (ws === next) next.close(); };
+  ws.onclose = () => { setStatus(dt('reconnecting'), 'offline', false); setTimeout(connect, 2000); };
+  ws.onerror = () => ws.close();
 }
 connect();
 
-window.addEventListener('resize', () => applyLayout(lastLayout, lastCtx, { force: true }));
+window.addEventListener('resize', () => applyLayout(lastLayout));
 
-// ---- Page navigation (swipe/drag + keyboard) ----
 function switchDisplayPage(delta) {
   if (!lastLayout || !lastLayout.pages || lastLayout.pages.length <= 1) return;
   const count = lastLayout.pages.length;
@@ -328,13 +241,8 @@ function switchDisplayPage(delta) {
   applyLayout(lastLayout);
 }
 
-// Swipe-to-switch-page — works for mouse and touch alike (see shared/swipe.js;
-// there is no separate touch-only fallback here, since Pointer Events already
-// fire for touch input and a second listener set would double-advance pages
-// on every real swipe).
 attachSwipeNavigation(document, (dir) => switchDisplayPage(dir));
 
-// Keyboard navigation
 document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowLeft') switchDisplayPage(-1);
   else if (e.key === 'ArrowRight') switchDisplayPage(1);

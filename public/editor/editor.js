@@ -123,8 +123,6 @@ const groupSelect = document.getElementById('group-select');
 const groupNewName = document.getElementById('group-new-name');
 const groupNewBtn = document.getElementById('group-new-btn');
 const groupApplyBtn = document.getElementById('group-apply-btn');
-const deviceConnected = document.getElementById('device-connected');
-const deviceConnectedHint = document.getElementById('device-connected-hint');
 const cmdReloadBtn = document.getElementById('cmd-reload-btn');
 const cmdIdentifyBtn = document.getElementById('cmd-identify-btn');
 // §M4: companion-agent & power schedule
@@ -326,15 +324,14 @@ function stopUpdateProgressPolling() {
   updateProgressTimer = null;
 }
 
-// Live display/agent counts are in-memory on the server — refresh while the
-// settings panel is open so "0 displays" doesn't stick after the kiosk connects.
+// Live agent status is in-memory on the server — refresh while the settings
+// panel is open so the badge updates after the companion agent connects.
 let deviceMetaTimer = null;
 
 async function refreshDeviceMeta() {
   if (!device) return;
   try {
     const d = await api(`/api/devices/${device.id}`);
-    device.displays = d.displays;
     device.agentPresent = d.agentPresent;
     device.agentVersion = d.agentVersion;
     syncDeviceMetaUI();
@@ -560,20 +557,10 @@ function initSelectors() {
   });
 }
 
-// Keep the settings-panel "connected displays" line in sync with live API
-// responses (apply / remote commands return fresh counts; the in-memory
-// `device` object was only updated on selectDevice + settings polling).
-function syncDisplaysFromResponse(res) {
-  if (!device || res?.displays === undefined) return;
-  device.displays = res.displays;
-  syncDeviceMetaUI();
-}
-
 async function sendCommand(action) {
   if (!device) return;
-  const res = await api(`/api/devices/${device.id}/command`, { method: 'POST', body: JSON.stringify({ action }) });
-  syncDisplaysFromResponse(res);
-  toast(res.displays > 0 ? t('cmdSent') : t('cmdNoDisplay'));
+  await api(`/api/devices/${device.id}/command`, { method: 'POST', body: JSON.stringify({ action }) });
+  toast(t('cmdSent'));
 }
 
 // §M4: send power on/off to the companion agent via the server
@@ -617,18 +604,6 @@ async function loadGroups() {
 function syncDeviceMetaUI() {
   perfSelect.value = device.performanceProfile || 'high';
   groupSelect.value = device.groupId || '';
-  const displayN = device.displays ?? 0;
-  deviceConnected.textContent = t('connectedCount', displayN);
-  if (deviceConnectedHint) {
-    if (device.agentPresent && displayN === 0) {
-      deviceConnectedHint.textContent = t('displayWsMissing');
-      deviceConnectedHint.classList.remove('hidden');
-    } else {
-      deviceConnectedHint.textContent = '';
-      deviceConnectedHint.classList.add('hidden');
-    }
-  }
-  // §M4: agent badge
   if (agentStatus) {
     agentStatus.textContent = device.agentPresent
       ? t('agentConnected', device.agentVersion || '')
@@ -1485,9 +1460,8 @@ async function saveDraft() {
 
 async function apply() {
   await saveDraft();
-  const res = await api(`/api/devices/${device.id}/publish`, { method: 'POST' });
-  syncDisplaysFromResponse(res);
-  toast(t('applied', res.displays));
+  await api(`/api/devices/${device.id}/publish`, { method: 'POST' });
+  toast(t('applied'));
 }
 
 let toastTimer = null;

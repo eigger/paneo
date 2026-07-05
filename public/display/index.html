@@ -14,21 +14,6 @@
   <div id="update-status-banner"></div>
   <!-- §M3: service worker for offline shell cache (docs/design.md §13 M3) -->
   <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/display/sw.js');</script>
-  <!-- Versioned module load so kiosk never runs a stale display.js from HTTP/SW cache -->
-  <script>
-    (function () {
-      function load(v) {
-        const s = document.createElement('script');
-        s.type = 'module';
-        s.src = '/display/display.js' + (v ? '?v=' + encodeURIComponent(v) : '');
-        document.body.appendChild(s);
-      }
-      fetch('/api/version')
-        .then((r) => r.json())
-        .then((m) => load(m?.components?.display || m?.release || ''))
-        .catch(() => load(''));
-    })();
-  </script>
+  <script type="module" src="/display/display.js"></script>
 </body>
 </html>
-
