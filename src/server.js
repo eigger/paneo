@@ -218,6 +218,69 @@ app.post('/api/devices/:id/publish', async (req, reply) => {
   return { ok: true, publishedAt: d.publishedAt, displays: displayCount(d.id) };
 });
 
+app.get('/api/devices/:id/backup', async (req, reply) => {
+  const d = store.getDevice(req.params.id);
+  if (!d) return reply.code(404).send({ error: 'not found' });
+  const ha_url = store.getSetting('ha_url') || '';
+  const ha_token = store.getSetting('ha_token') || '';
+  return {
+    version: 'paneo-backup-v1',
+    device: {
+      name: d.name,
+      token: d.token,
+      performanceProfile: d.performanceProfile,
+      locale: d.locale,
+      timezone: d.timezone,
+      resolutionW: d.resolutionW,
+      resolutionH: d.resolutionH,
+      groupId: d.groupId,
+      powerSchedule: d.powerSchedule,
+    },
+    layout: d.draft,
+    ha: {
+      url: ha_url,
+      token: ha_token,
+    }
+  };
+});
+
+app.post('/api/devices/:id/restore', async (req, reply) => {
+  const id = req.params.id;
+  const body = req.body || {};
+  if (body.version !== 'paneo-backup-v1') {
+    return reply.code(400).send({ error: 'Invalid backup version' });
+  }
+
+  // 1. Restore device metadata
+  if (body.device) {
+    await store.updateDevice(id, body.device);
+    if (body.device.token) {
+      try {
+        store.updateDeviceToken(id, body.device.token);
+      } catch (err) {
+        req.log.error(`Failed to restore device token: ${err.message}`);
+      }
+    }
+  }
+
+  // 2. Restore layout
+  if (body.layout) {
+    await store.saveDraft(id, body.layout);
+  }
+
+  // 3. Restore Home Assistant settings
+  if (body.ha) {
+    if (body.ha.url !== undefined) store.setSetting('ha_url', body.ha.url);
+    if (body.ha.token !== undefined) store.setSetting('ha_token', body.ha.token);
+  }
+
+  const d = store.getDevice(id);
+  if (!d) return reply.code(404).send({ error: 'not found' });
+
+  broadcast(d.id, layoutMessage(d)); // push to live displays
+  return fullDevice(d);
+});
+
 app.delete('/api/devices/:id', async (req, reply) => {
   const id = req.params.id;
   for (const s of displays.get(id) ?? []) {

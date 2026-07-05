@@ -1483,6 +1483,65 @@ settingsBtn.addEventListener('click', async () => {
 const haSaveBtn = document.getElementById('ha-save-btn');
 if (haSaveBtn) haSaveBtn.addEventListener('click', saveHASettings);
 
+// ---- backup / restore ----
+const exportLayoutBtn = document.getElementById('export-layout-btn');
+if (exportLayoutBtn) {
+  exportLayoutBtn.addEventListener('click', () => {
+    if (!layout) return;
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(layout, null, 2));
+    const downloadAnchor = document.createElement('a');
+    const safeName = device ? device.name.replace(/[^a-z0-9]/gi, '_').toLowerCase() : 'layout';
+    downloadAnchor.setAttribute("href",     dataStr);
+    downloadAnchor.setAttribute("download", `paneo-layout-${safeName}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  });
+}
+
+const importLayoutBtn = document.getElementById('import-layout-btn');
+const importLayoutInput = document.getElementById('import-layout-input');
+if (importLayoutBtn && importLayoutInput) {
+  importLayoutBtn.addEventListener('click', () => importLayoutInput.click());
+  importLayoutInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async function(evt) {
+      try {
+        const parsed = JSON.parse(evt.target.result);
+        const isValid = parsed && typeof parsed === 'object' && (Array.isArray(parsed.pages) || Array.isArray(parsed.widgets));
+        if (!isValid) {
+          toast(t('importInvalid'));
+          return;
+        }
+
+        if (!confirm(t('importConfirm'))) {
+          e.target.value = '';
+          return;
+        }
+
+        layout = migrateToPages(parsed);
+        if (layout.pages && layout.pages.length) {
+          if (layout.currentPageIndex === undefined || layout.currentPageIndex < 0 || layout.currentPageIndex >= layout.pages.length) {
+            layout.currentPageIndex = 0;
+          }
+        }
+
+        render();
+        renderInspector();
+        scheduleSave();
+        toast(t('importSuccess'));
+      } catch (err) {
+        toast(t('importInvalid'));
+      }
+      e.target.value = '';
+    };
+    reader.readAsText(file);
+  });
+}
+
 document.getElementById('settings-close').addEventListener('click', closeSettings);
 settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) closeSettings(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSettings(); });
