@@ -41,6 +41,17 @@ log "Stopping running kiosk processes and removing launcher..."
 pkill -f 'chromium.*--kiosk' 2>/dev/null || true
 pkill -f 'paneo-kiosk'       2>/dev/null || true
 pkill -f 'paneo-kiosk-restart.sh' 2>/dev/null || true
+sleep 2
+# The two pkill patterns above only match the main browser process (the one
+# that actually has --kiosk in its argv) — Chromium's renderer/GPU/utility
+# child processes don't carry that flag in their own command line, so a
+# SIGTERM to just the parent can leave them orphaned and still on screen.
+# Sweep by binary name too, and escalate to SIGKILL for anything that
+# ignored the graceful signal above.
+pkill -f 'chromium' 2>/dev/null || true
+sleep 1
+pkill -9 -f 'chromium' 2>/dev/null || true
+pkill -9 -f 'paneo-kiosk' 2>/dev/null || true
 rm -f /usr/local/bin/paneo-kiosk
 rm -f /usr/local/bin/paneo-kiosk-restart.sh
 
