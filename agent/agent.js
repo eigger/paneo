@@ -64,6 +64,10 @@ let reconnectDelay = 2000; // start at 2s, doubles up to 60s
 // Editor "성능 프로파일" setting (agent.config over the WS, see connect()) --
 // 'low' launches the kiosk with --disable-gpu (see launchKiosk()).
 let performanceProfile = 'high';
+// True once the server's first agent.config message has actually arrived --
+// ensureKioskStarted() waits on this (bounded) before its first launch so
+// that launch doesn't race the config and boot with the wrong GPU flag.
+let configReceived = false;
 
 function onSocket(socket, event, handler) {
   if (typeof socket.on === 'function') {
@@ -113,6 +117,7 @@ function connect() {
       console.log(`[agent] schedule received: ${JSON.stringify(msg.schedule)}`);
     } else if (msg.type === 'agent.config') {
       performanceProfile = msg.performanceProfile || 'high';
+      configReceived = true;
       console.log(`[agent] performance profile: ${performanceProfile}`);
     }
   });
@@ -429,10 +434,24 @@ function launchKiosk() {
 // take well over a minute to come up.
 let startupKioskCheckStarted = false;
 
+const CONFIG_WAIT_MAX_MS = 5000;
+
 function ensureKioskStarted() {
   if (startupKioskCheckStarted) return;
   startupKioskCheckStarted = true;
+  const configWaitStart = Date.now();
   const poll = () => {
+    // Wait for the server's agent.config (performance profile) to actually
+    // arrive before ever launching -- assuming a fixed delay is "enough
+    // time" raced in the field under boot-time system load, launching once
+    // with the default GPU setting instead of the device's real profile
+    // (self-corrected later by the health check, but this closes the race
+    // instead of just tolerating it). Bounded so a missing/slow config
+    // doesn't block the kiosk from starting at all.
+    if (!configReceived && Date.now() - configWaitStart < CONFIG_WAIT_MAX_MS) {
+      setTimeout(poll, 200);
+      return;
+    }
     if (isKioskSessionRunning()) {
       verifyKioskHealthAfterBoot();
       return;
@@ -447,7 +466,12 @@ function ensureKioskStarted() {
     launchKiosk();
     verifyKioskHealthAfterBoot();
   };
-  setTimeout(poll, 5000); // small initial delay so a fresh boot settles first
+  // Start checking almost immediately -- the config-wait above (up to
+  // CONFIG_WAIT_MAX_MS from configWaitStart, not from this call) already
+  // provides the "let things settle" margin the old fixed 5s delay was for,
+  // and the Wayland-readiness check further down retries on its own if the
+  // desktop session isn't up yet either.
+  setTimeout(poll, 200);
 }
 
 // Manual restart (editor "restart kiosk" button -> here): unlike the watchdog
