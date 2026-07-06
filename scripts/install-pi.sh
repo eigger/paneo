@@ -335,7 +335,11 @@ fi
 KIOSK_EOF
   # Append the chrome command with runtime-expanded variables
   cat >> /usr/local/bin/paneo-kiosk <<EOF
+# --no-sandbox: on some Pi units Chromium's sandbox init fails outright
+# (silent SIGKILL, no error output) -- kiosk only ever loads one fixed,
+# trusted URL (not arbitrary web content), so the trade-off is accepted.
 exec "$chrome" \$OZONE \$GPU_FLAG \\
+  --no-sandbox \\
   --kiosk --noerrdialogs --disable-infobars \\
   --disable-session-crashed-bubble \\
   --no-first-run \\

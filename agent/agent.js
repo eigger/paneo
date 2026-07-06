@@ -446,9 +446,29 @@ function ensureKioskStarted() {
 // ever launches when the process is already gone.
 function restartKiosk() {
   try {
+    // Only matches the main process (the one with --kiosk in its argv) --
+    // Chromium's GPU/renderer/zygote helpers don't carry that flag in their
+    // own command line and can survive as orphans after this (see
+    // uninstall.sh's own note on the same issue). Left running, they hold
+    // the profile's SingletonLock and can make the *next* launch fail
+    // outright -- exactly what repeated health-check-triggered restarts hit
+    // in the field (kiosk eventually stopped starting at all).
     execSync("pkill -f 'chromium.*--kiosk' 2>/dev/null; pkill -f paneo-kiosk 2>/dev/null", { shell: '/bin/sh' });
   } catch { /* no matching process -- fine */ }
-  setTimeout(launchKiosk, 1500); // give the old process a moment to fully exit
+  setTimeout(() => {
+    try {
+      // Escalate: sweep every remaining chromium process by binary name and
+      // force-kill anything that ignored the signal above.
+      execSync('pkill -9 -f chromium 2>/dev/null', { shell: '/bin/sh' });
+    } catch { /* already gone -- fine */ }
+    try {
+      const profileDir = path.join(os.homedir(), '.config', 'paneo-chromium');
+      for (const f of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
+        try { unlinkSync(path.join(profileDir, f)); } catch { /* not present -- fine */ }
+      }
+    } catch { /* best-effort */ }
+    launchKiosk();
+  }, 1500); // give the old process a moment to fully exit before the sweep
 }
 
 // ---------------------------------------------------------------------------

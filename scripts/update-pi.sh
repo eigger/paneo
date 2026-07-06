@@ -277,7 +277,7 @@ if [ -f "$KIOSK_BIN" ]; then
       '# Companion agent sets this per launch based on the device performance profile.' \
       'if [ "${PANEO_DISABLE_GPU:-0}" = "1" ]; then GPU_FLAG="--disable-gpu"; else GPU_FLAG=""; fi' \
       > "$KIOSK_BIN"
-    printf 'exec "%s" $OZONE $GPU_FLAG \\\n  --kiosk --noerrdialogs --disable-infobars \\\n  --disable-session-crashed-bubble \\\n  --no-first-run \\\n  --disable-translate \\\n  --disable-features=Translate \\\n  --password-store=basic \\\n  --autoplay-policy=no-user-gesture-required \\\n  --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 \\\n  --user-data-dir=%s \\\n  "%s"\n' \
+    printf '# --no-sandbox: on some Pi units Chromium sandbox init fails outright\n# (silent SIGKILL) -- kiosk only ever loads one fixed, trusted URL.\nexec "%s" $OZONE $GPU_FLAG \\\n  --no-sandbox \\\n  --kiosk --noerrdialogs --disable-infobars \\\n  --disable-session-crashed-bubble \\\n  --no-first-run \\\n  --disable-translate \\\n  --disable-features=Translate \\\n  --password-store=basic \\\n  --autoplay-policy=no-user-gesture-required \\\n  --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 \\\n  --user-data-dir=%s \\\n  "%s"\n' \
       "$CHROME" "$PROFILE_DIR" "$DISPLAY_URL" >> "$KIOSK_BIN"
     chmod +x "$KIOSK_BIN"
     log "Kiosk launcher updated"
