@@ -84,12 +84,21 @@ write_status() {
   json="${json}}"
 
   printf '%s\n' "$json" > "$STATUS_FILE" 2>/dev/null || true
-  # This script runs as root, but the agent that reads (and deletes) this
-  # file runs as a regular user -- /tmp's sticky bit means only the file's
-  # owner (or root) can unlink it, so a root-owned file here makes the
-  # agent's own cleanup silently fail every time, leaving a stale "done"
-  # entry that gets reprocessed (re-restarting the kiosk) on next reconnect.
-  [ -n "$ARG_USER" ] && chown "$ARG_USER" "$STATUS_FILE" 2>/dev/null || true
+  # Only chown on the terminal write (done/failed), never on an intermediate
+  # "running" update -- this box has fs.protected_regular=2 (a kernel
+  # hardening default confirmed via sysctl), which makes the kernel refuse
+  # *any* open() on a regular file in a world-writable sticky dir (/tmp) by
+  # a uid that doesn't own the file, even for root. Chowning this file away
+  # from root on an early call made every later write_status() in this same
+  # run fail with "Permission denied" -- root could no longer reopen the
+  # file it had just given away. Deferring to the last write avoids that:
+  # root freely rewrites its own file throughout the run, and only hands
+  # ownership to the agent's user (so it can unlink it later -- /tmp's
+  # sticky bit otherwise blocks a non-owner's unlink) once nothing more will
+  # try to write to it.
+  if [ -n "$ARG_USER" ] && { [ "$state" = "done" ] || [ "$state" = "failed" ]; }; then
+    chown "$ARG_USER" "$STATUS_FILE" 2>/dev/null || true
+  fi
 }
 trap_error() {
   local exit_code="$?"
