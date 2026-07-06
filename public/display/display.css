@@ -23,9 +23,14 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
   width: 100%; height: 100%;
   container-type: size;
   background: linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.025));
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
-  border-radius: 14px;
+  /* A crisp 1px border reads as a hard-edged sticker against the page
+     background. Softening it to a faint hairline plus an inset highlight
+     (instead of relying on the border alone for definition) and a larger,
+     lower-contrast outer shadow gives the same "card" separation without
+     the sharp cutout look. */
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.04);
+  border-radius: 18px;
   display: flex; align-items: center; justify-content: center;
   overflow: hidden;
 }
@@ -171,11 +176,19 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 .cal-d-empty { opacity: 0.4; text-align: center; padding: 12px 0; font-size: clamp(10px, 4cqh, 14px); }
 
 /* ---- §M3: Alarm / countdown timer (paneo.timer) ---- */
-.w-timer { display: flex; flex-direction: column; justify-content: center; gap: 6px; width: 100%; height: 100%; padding: 10px 14px; }
+/* Raised well above the old 14cqmin/38px cap so it reads with weight similar
+   to .w-date at the same default 3x2 size, but NOT copied 1:1 from
+   .date-main's 36cqmin: date's text wraps across lines at word boundaries,
+   while a "-HH:MM:SS" countdown is one unbreakable token — at a typical 3x2
+   widget's ~1.6:1 aspect ratio, anything above ~30cqmin measures wider than
+   the box and gets clipped by .widget-content's overflow:hidden. 24cqmin
+   keeps a safety margin below that so it scales up on bigger widgets/screens
+   without overflowing at the default size. */
+.w-timer { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 100%; padding: 10px 14px; text-align: center; }
 .w-timer-empty .timer-hint { font-size: clamp(11px, 6cqmin, 15px); opacity: 0.4; text-align: center; white-space: pre-line; }
-.timer-row { display: flex; flex-direction: column; gap: 1px; }
-.timer-label { font-size: clamp(10px, 5cqmin, 14px); opacity: 0.6; font-weight: 500; }
-.timer-val { font-size: clamp(14px, 14cqmin, 38px); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+.timer-row { display: flex; flex-direction: column; align-items: center; gap: 2px; max-width: 100%; }
+.timer-label { font-size: clamp(12px, 12cqmin, 32px); opacity: 0.6; font-weight: 500; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.timer-val { font-size: clamp(15px, 24cqmin, 72px); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: 1px; line-height: 1; }
 .timer-future { color: #f87171; } /* counts down — time still in the future */
 .timer-past   { color: #86efac; } /* elapsed — target time has passed */
 .timer-invalid { font-size: 12px; opacity: 0.4; }
