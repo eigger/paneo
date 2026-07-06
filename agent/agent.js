@@ -513,7 +513,7 @@ function restartKiosk() {
 // a normal, working kiosk. Scoped to *boot only* (called once from
 // ensureKioskStarted(), not from the watchdog or the manual restart button)
 // so a device that's genuinely unable to render doesn't get restarted in a
-// tight loop forever -- it gives up after a few tries and leaves recovery to
+// tight loop forever -- it retries at most once and then leaves recovery to
 // the editor's manual "restart kiosk" button or the next reboot.
 //
 // paneo-kiosk launches chromium with --remote-debugging-port (see
@@ -529,7 +529,12 @@ const KIOSK_DEBUG_PORT = Number(process.env.PANEO_KIOSK_DEBUG_PORT) || 9222;
 // and restarting it resets that retry sequence back to zero, actively
 // delaying the recovery it would otherwise have reached on its own.
 const KIOSK_HEALTH_CHECK_DELAY_MS = Number(process.env.PANEO_KIOSK_HEALTH_DELAY_MS) || 45_000;
-const KIOSK_HEALTH_MAX_ATTEMPTS = Number(process.env.PANEO_KIOSK_HEALTH_MAX_ATTEMPTS) || 3;
+// 2 total checks = at most 1 restart retry: attempt 1 fails -> restart once ->
+// attempt 2 is the final check, whatever its result. A device that's still
+// not rendering after one genuine restart attempt almost certainly has a
+// hardware problem (power/GPU) a second or third restart won't fix, so this
+// stops there instead of repeatedly relaunching into the same failure.
+const KIOSK_HEALTH_MAX_ATTEMPTS = Number(process.env.PANEO_KIOSK_HEALTH_MAX_ATTEMPTS) || 2;
 // A blank/solid-color PNG screenshot compresses far smaller than an actual
 // dashboard (widgets, text, photos) -- catches compositor-level failures a
 // DOM check alone can't (the DOM can be fully populated by JS while the GPU
