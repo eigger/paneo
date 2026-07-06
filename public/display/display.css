@@ -158,6 +158,7 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 .cal-m-sun .cal-m-dnum { color: #f87171; }
 .cal-m-dnum { font-size: clamp(9px, 3.5cqh, 15px); font-weight: 500; line-height: 1.2; }
 .cal-m-event { font-size: clamp(8px, 3cqh, 13px); opacity: 0.8; background: rgba(96,165,250,0.2); border-radius: 2px; padding: 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+.cal-m-event-time { opacity: 0.7; font-variant-numeric: tabular-nums; margin-right: 3px; }
 .cal-m-more { font-size: clamp(7px, 2.5cqh, 11px); opacity: 0.5; }
 .cal-m-fetch-err { font-size: 11px; color: #ff9aa7; padding: 4px; text-align: center; }
 
