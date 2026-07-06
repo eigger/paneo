@@ -260,7 +260,7 @@ if [ -f "$KIOSK_BIN" ]; then
       '  xset s noblank >/dev/null 2>&1 || true' \
       'fi' \
       > "$KIOSK_BIN"
-    printf 'exec "%s" $OZONE \\\n  --kiosk --noerrdialogs --disable-infobars \\\n  --disable-session-crashed-bubble \\\n  --no-first-run \\\n  --disable-translate \\\n  --disable-features=Translate \\\n  --password-store=basic \\\n  --autoplay-policy=no-user-gesture-required \\\n  "%s"\n' \
+    printf 'exec "%s" $OZONE \\\n  --kiosk --noerrdialogs --disable-infobars \\\n  --disable-session-crashed-bubble \\\n  --no-first-run \\\n  --disable-translate \\\n  --disable-features=Translate \\\n  --password-store=basic \\\n  --autoplay-policy=no-user-gesture-required \\\n  --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 \\\n  "%s"\n' \
       "$CHROME" "$DISPLAY_URL" >> "$KIOSK_BIN"
     chmod +x "$KIOSK_BIN"
     log "Kiosk launcher updated"

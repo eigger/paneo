@@ -48,6 +48,7 @@ if (!WebSocketImpl) {
 const SERVER = (process.env.PANEO_SERVER || 'http://localhost:4321').replace(/\/$/, '');
 const TOKEN  = process.env.PANEO_TOKEN;
 const WS_URL = SERVER.replace(/^http/, 'ws') + `/ws/agent?token=${TOKEN}`;
+const DISPLAY_URL = process.env.PANEO_DISPLAY_URL || `${SERVER}/d/${TOKEN}`;
 
 if (!TOKEN) {
   console.error('[agent] PANEO_TOKEN is required. Set it to your device\'s pairing token.');
@@ -395,7 +396,6 @@ function launchKiosk() {
   } else {
     // Standalone/older install without the launcher script — fall back
     // to a raw launch, at least with the right display env if we found one.
-    const DISPLAY_URL = process.env.PANEO_DISPLAY_URL || `${SERVER}/d/${TOKEN}`;
     execFile('chromium-browser', ['--kiosk', DISPLAY_URL], { detached: true, env });
   }
 }
@@ -413,7 +413,10 @@ function ensureKioskStarted() {
   if (startupKioskCheckStarted) return;
   startupKioskCheckStarted = true;
   const poll = () => {
-    if (isKioskSessionRunning()) return;
+    if (isKioskSessionRunning()) {
+      verifyKioskHealthAfterBoot();
+      return;
+    }
     if (!resolveWaylandEnv() && !process.env.DISPLAY) {
       // Desktop session isn't up yet -- keep waiting rather than launching
       // into a dead environment (see launchKiosk()'s comment on this).
@@ -422,6 +425,7 @@ function ensureKioskStarted() {
     }
     console.log('[agent] startup: kiosk not running, launching...');
     launchKiosk();
+    verifyKioskHealthAfterBoot();
   };
   setTimeout(poll, 5000); // small initial delay so a fresh boot settles first
 }
@@ -437,8 +441,114 @@ function restartKiosk() {
   setTimeout(launchKiosk, 1500); // give the old process a moment to fully exit
 }
 
+// ---------------------------------------------------------------------------
+// Post-boot render health check (CDP) -- isKioskSessionRunning() only proves
+// the process exists, not that it actually painted anything. A GPU driver
+// fault (under-voltage, EGL context failure, etc.) can leave chromium alive
+// but showing a blank/white frame forever, which pgrep can't tell apart from
+// a normal, working kiosk. Scoped to *boot only* (called once from
+// ensureKioskStarted(), not from the watchdog or the manual restart button)
+// so a device that's genuinely unable to render doesn't get restarted in a
+// tight loop forever -- it gives up after a few tries and leaves recovery to
+// the editor's manual "restart kiosk" button or the next reboot.
+//
+// paneo-kiosk launches chromium with --remote-debugging-port (see
+// install-pi.sh/update-pi.sh), bound to loopback only, so this talks to it
+// with nothing but Node's built-in fetch/WebSocket -- no new dependency.
+// ---------------------------------------------------------------------------
+
+const KIOSK_DEBUG_PORT = Number(process.env.PANEO_KIOSK_DEBUG_PORT) || 9222;
+const KIOSK_HEALTH_CHECK_DELAY_MS = Number(process.env.PANEO_KIOSK_HEALTH_DELAY_MS) || 15_000;
+const KIOSK_HEALTH_MAX_ATTEMPTS = Number(process.env.PANEO_KIOSK_HEALTH_MAX_ATTEMPTS) || 3;
+// A blank/solid-color PNG screenshot compresses far smaller than an actual
+// dashboard (widgets, text, photos) -- catches compositor-level failures a
+// DOM check alone can't (the DOM can be fully populated by JS while the GPU
+// still fails to actually paint it to the screen).
+const KIOSK_HEALTH_MIN_SCREENSHOT_LEN = Number(process.env.PANEO_KIOSK_HEALTH_MIN_SCREENSHOT_LEN) || 8000;
+
+// One request/response round trip over a target's CDP WebSocket. Opens a
+// fresh connection per call (simpler and more robust than multiplexing
+// several calls over one socket) -- this only ever runs a handful of times
+// right after boot, so the extra connection overhead doesn't matter.
+function cdpRequest(wsUrl, method, params, timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let ws;
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    function finish(result) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { ws?.close(); } catch { /* already closed/never opened */ }
+      resolve(result);
+    }
+    try {
+      ws = new WebSocketImpl(wsUrl);
+    } catch {
+      finish(null);
+      return;
+    }
+    onSocket(ws, 'open', () => {
+      try {
+        ws.send(JSON.stringify({ id: 1, method, params }));
+      } catch {
+        finish(null);
+      }
+    });
+    onSocket(ws, 'message', (event) => {
+      let msg;
+      try { msg = JSON.parse(event?.data ?? event); } catch { return; }
+      if (msg.id === 1) finish(msg.result ?? null);
+    });
+    onSocket(ws, 'error', () => finish(null));
+  });
+}
+
+async function getKioskPageTarget() {
+  try {
+    const res = await fetch(`http://127.0.0.1:${KIOSK_DEBUG_PORT}/json/list`, { signal: AbortSignal.timeout(3000) });
+    if (!res.ok) return null;
+    const targets = await res.json();
+    return targets.find((t) => t.type === 'page' && typeof t.url === 'string' && t.url.includes('/d/')) || null;
+  } catch {
+    return null; // debug port not up yet, or nothing listening there
+  }
+}
+
+async function checkKioskRendering() {
+  const target = await getKioskPageTarget();
+  if (!target) return false;
+
+  const domResult = await cdpRequest(target.webSocketDebuggerUrl, 'Runtime.evaluate', {
+    expression: "!!document.getElementById('stage') && document.getElementById('stage').childElementCount > 0",
+    returnByValue: true,
+  });
+  if (!domResult?.result?.value) return false;
+
+  const shotResult = await cdpRequest(target.webSocketDebuggerUrl, 'Page.captureScreenshot', { format: 'png' }, 8000);
+  const dataLen = shotResult?.data?.length || 0;
+  return dataLen >= KIOSK_HEALTH_MIN_SCREENSHOT_LEN;
+}
+
+function verifyKioskHealthAfterBoot(attempt = 1) {
+  setTimeout(async () => {
+    let healthy = false;
+    try { healthy = await checkKioskRendering(); } catch { healthy = false; }
+    if (healthy) {
+      console.log('[agent] startup health check: kiosk is rendering OK');
+      return;
+    }
+    if (attempt >= KIOSK_HEALTH_MAX_ATTEMPTS) {
+      console.log(`[agent] startup health check: kiosk still not rendering after ${attempt} attempts -- giving up (use the editor's "restart kiosk" button, or it may recover on the next reboot)`);
+      return;
+    }
+    console.log(`[agent] startup health check: kiosk not rendering (attempt ${attempt}/${KIOSK_HEALTH_MAX_ATTEMPTS}), restarting...`);
+    restartKiosk();
+    verifyKioskHealthAfterBoot(attempt + 1);
+  }, KIOSK_HEALTH_CHECK_DELAY_MS);
+}
+
 if (process.env.PANEO_WATCHDOG === '1') {
-  const DISPLAY_URL = process.env.PANEO_DISPLAY_URL || `${SERVER}/d/${TOKEN}`;
   const graceMs = Number(process.env.PANEO_WATCHDOG_GRACE_MS) || 180_000;
   const startedAt = Date.now();
   console.log(`[agent] watchdog enabled for: ${DISPLAY_URL}`);

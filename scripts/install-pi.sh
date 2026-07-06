@@ -327,6 +327,7 @@ exec "$chrome" \$OZONE \\
   --disable-features=Translate \\
   --password-store=basic \\
   --autoplay-policy=no-user-gesture-required \\
+  --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 \\
   "$display_url"
 EOF
   chmod +x /usr/local/bin/paneo-kiosk
