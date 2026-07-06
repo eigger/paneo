@@ -151,6 +151,11 @@ app.get('/ws/agent', { websocket: true }, (socket, req) => {
   const ps = store.getDevice(device.id)?.powerSchedule;
   if (ps) socket.send(JSON.stringify({ type: 'agent.schedule', schedule: ps }));
 
+  // Send current performance profile so the agent can decide whether to
+  // launch the kiosk with --disable-gpu (editor "저성능" setting -- see
+  // agent/agent.js's launchKiosk()).
+  socket.send(JSON.stringify({ type: 'agent.config', performanceProfile: device.performanceProfile || 'high' }));
+
   socket.on('message', (raw) => {
     try {
       const msg = JSON.parse(raw);
@@ -198,6 +203,11 @@ app.patch('/api/devices/:id', async (req, reply) => {
   const d = await store.updateDevice(req.params.id, req.body || {});
   if (!d) return reply.code(404).send({ error: 'not found' });
   broadcast(d.id, layoutMessage(d)); // push locale change to live displays
+  if ('performanceProfile' in (req.body || {})) {
+    // Keep an already-connected agent's cached value current without
+    // requiring it to reconnect (it only otherwise learns this on connect).
+    sendToAgent(d.id, { type: 'agent.config', performanceProfile: d.performanceProfile || 'high' });
+  }
   return publicDevice(d);
 });
 

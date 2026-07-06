@@ -238,6 +238,21 @@ if [ -f "$KIOSK_BIN" ]; then
   DISPLAY_URL="$(grep -o 'http[^ "]*' "$KIOSK_BIN" 2>/dev/null | tail -1 || true)"
   CHROME="$(grep 'exec ' "$KIOSK_BIN" 2>/dev/null | grep -v '#' | head -1 | awk '{print $2}' || true)"
   CHROME="${CHROME:-$(command -v chromium-browser 2>/dev/null || command -v chromium 2>/dev/null || true)}"
+  # Reuse the existing profile dir (keeps the same Chromium profile/cache
+  # across updates) -- fall back to computing it fresh only for launchers
+  # from before this flag existed.
+  PROFILE_DIR="$(grep -o -- '--user-data-dir=[^ \\]*' "$KIOSK_BIN" 2>/dev/null | head -1 | sed 's/--user-data-dir=//' || true)"
+  if [ -z "$PROFILE_DIR" ]; then
+    KIOSK_USER="${SUDO_USER:-}"
+    if [ -z "$KIOSK_USER" ]; then
+      KIOSK_USER="$(grep -m1 'User=' /etc/systemd/system/paneo-agent.service 2>/dev/null \
+        | sed 's/User=//' | tr -d '[:space:]' || true)"
+    fi
+    KIOSK_USER="${KIOSK_USER:-pi}"
+    PROFILE_DIR="/home/$KIOSK_USER/.config/paneo-chromium"
+    mkdir -p "$PROFILE_DIR"
+    chown -R "$KIOSK_USER:$KIOSK_USER" "$PROFILE_DIR"
+  fi
 
   if [ -n "$DISPLAY_URL" ] && [ -n "$CHROME" ]; then
     log "Updating kiosk launcher for $DISPLAY_URL"
@@ -259,9 +274,11 @@ if [ -f "$KIOSK_BIN" ]; then
       '  xset -dpms     >/dev/null 2>&1 || true' \
       '  xset s noblank >/dev/null 2>&1 || true' \
       'fi' \
+      '# Companion agent sets this per launch based on the device performance profile.' \
+      'if [ "${PANEO_DISABLE_GPU:-0}" = "1" ]; then GPU_FLAG="--disable-gpu"; else GPU_FLAG=""; fi' \
       > "$KIOSK_BIN"
-    printf 'exec "%s" $OZONE \\\n  --kiosk --noerrdialogs --disable-infobars \\\n  --disable-session-crashed-bubble \\\n  --no-first-run \\\n  --disable-translate \\\n  --disable-features=Translate \\\n  --password-store=basic \\\n  --autoplay-policy=no-user-gesture-required \\\n  --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 \\\n  "%s"\n' \
-      "$CHROME" "$DISPLAY_URL" >> "$KIOSK_BIN"
+    printf 'exec "%s" $OZONE $GPU_FLAG \\\n  --kiosk --noerrdialogs --disable-infobars \\\n  --disable-session-crashed-bubble \\\n  --no-first-run \\\n  --disable-translate \\\n  --disable-features=Translate \\\n  --password-store=basic \\\n  --autoplay-policy=no-user-gesture-required \\\n  --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 \\\n  --user-data-dir=%s \\\n  "%s"\n' \
+      "$CHROME" "$PROFILE_DIR" "$DISPLAY_URL" >> "$KIOSK_BIN"
     chmod +x "$KIOSK_BIN"
     log "Kiosk launcher updated"
   else

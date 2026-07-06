@@ -61,6 +61,9 @@ console.log(`[agent] connecting to ${WS_URL}`);
 
 let ws = null;
 let reconnectDelay = 2000; // start at 2s, doubles up to 60s
+// Editor "성능 프로파일" setting (agent.config over the WS, see connect()) --
+// 'low' launches the kiosk with --disable-gpu (see launchKiosk()).
+let performanceProfile = 'high';
 
 function onSocket(socket, event, handler) {
   if (typeof socket.on === 'function') {
@@ -108,6 +111,9 @@ function connect() {
       }
     } else if (msg.type === 'agent.schedule') {
       console.log(`[agent] schedule received: ${JSON.stringify(msg.schedule)}`);
+    } else if (msg.type === 'agent.config') {
+      performanceProfile = msg.performanceProfile || 'high';
+      console.log(`[agent] performance profile: ${performanceProfile}`);
     }
   });
 
@@ -390,7 +396,11 @@ function isKioskSessionRunning() {
 // runtime, same as scripts/update-pi.sh's kiosk-restart.
 function launchKiosk() {
   const waylandEnv = resolveWaylandEnv();
-  const env = waylandEnv ? { ...process.env, ...waylandEnv, XDG_SESSION_TYPE: 'wayland' } : process.env;
+  const env = {
+    ...process.env,
+    ...(waylandEnv ? { ...waylandEnv, XDG_SESSION_TYPE: 'wayland' } : {}),
+    PANEO_DISABLE_GPU: performanceProfile === 'low' ? '1' : '0',
+  };
   if (existsSync(KIOSK_LAUNCHER)) {
     execFile(KIOSK_LAUNCHER, [], { detached: true, env });
   } else {
@@ -458,7 +468,13 @@ function restartKiosk() {
 // ---------------------------------------------------------------------------
 
 const KIOSK_DEBUG_PORT = Number(process.env.PANEO_KIOSK_DEBUG_PORT) || 9222;
-const KIOSK_HEALTH_CHECK_DELAY_MS = Number(process.env.PANEO_KIOSK_HEALTH_DELAY_MS) || 15_000;
+// Chromium retries its own GPU process several times before giving up and
+// falling back to software rendering -- observed in the field taking ~30s
+// (7 consecutive GPU-init failures) on a device with marginal power. Too
+// short a delay here judges a kiosk "broken" while it's still mid-recovery,
+// and restarting it resets that retry sequence back to zero, actively
+// delaying the recovery it would otherwise have reached on its own.
+const KIOSK_HEALTH_CHECK_DELAY_MS = Number(process.env.PANEO_KIOSK_HEALTH_DELAY_MS) || 45_000;
 const KIOSK_HEALTH_MAX_ATTEMPTS = Number(process.env.PANEO_KIOSK_HEALTH_MAX_ATTEMPTS) || 3;
 // A blank/solid-color PNG screenshot compresses far smaller than an actual
 // dashboard (widgets, text, photos) -- catches compositor-level failures a
