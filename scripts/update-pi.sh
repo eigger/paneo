@@ -21,6 +21,16 @@ AGENT_DIR="${PANEO_AGENT_DIR:-/opt/paneo-agent}"
 # rule (see scripts/install-pi.sh's install_agent) can match on it directly;
 # the env var still works for the plain `curl | sudo bash` usage.
 MODE="${1:-${PANEO_UPDATE_MODE:-all}}"
+# Agent-triggered runs pass these explicitly (see agent/agent.js's
+# runUpdate()) so step 6 below can rebuild the kiosk launcher's display URL
+# directly instead of grepping it out of the *existing* launcher file --
+# grep-based extraction has no way to recover if that file was ever left
+# corrupt/incomplete (e.g. a reboot mid-write), silently skipping the
+# launcher update forever after. Falls back to grepping when run standalone
+# (plain `curl | sudo bash`, no agent involved).
+ARG_TOKEN="${2:-}"
+ARG_SERVER="${3:-}"
+ARG_USER="${4:-}"
 
 log()  { printf '[paneo-update] %s\n' "$*"; }
 fail() { printf '[paneo-update] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -74,6 +84,12 @@ write_status() {
   json="${json}}"
 
   printf '%s\n' "$json" > "$STATUS_FILE" 2>/dev/null || true
+  # This script runs as root, but the agent that reads (and deletes) this
+  # file runs as a regular user -- /tmp's sticky bit means only the file's
+  # owner (or root) can unlink it, so a root-owned file here makes the
+  # agent's own cleanup silently fail every time, leaving a stale "done"
+  # entry that gets reprocessed (re-restarting the kiosk) on next reconnect.
+  [ -n "$ARG_USER" ] && chown "$ARG_USER" "$STATUS_FILE" 2>/dev/null || true
 }
 trap_error() {
   local exit_code="$?"
@@ -235,7 +251,11 @@ fi
 # ---------------------------------------------------------------------------
 KIOSK_BIN="/usr/local/bin/paneo-kiosk"
 if [ -f "$KIOSK_BIN" ]; then
-  DISPLAY_URL="$(grep -o 'http[^ "]*' "$KIOSK_BIN" 2>/dev/null | tail -1 || true)"
+  if [ -n "$ARG_TOKEN" ] && [ -n "$ARG_SERVER" ]; then
+    DISPLAY_URL="${ARG_SERVER}/d/${ARG_TOKEN}"
+  else
+    DISPLAY_URL="$(grep -o 'http[^ "]*' "$KIOSK_BIN" 2>/dev/null | tail -1 || true)"
+  fi
   CHROME="$(grep 'exec ' "$KIOSK_BIN" 2>/dev/null | grep -v '#' | head -1 | awk '{print $2}' || true)"
   CHROME="${CHROME:-$(command -v chromium-browser 2>/dev/null || command -v chromium 2>/dev/null || true)}"
   # Reuse the existing profile dir (keeps the same Chromium profile/cache
@@ -257,6 +277,12 @@ if [ -f "$KIOSK_BIN" ]; then
   if [ -n "$DISPLAY_URL" ] && [ -n "$CHROME" ]; then
     log "Updating kiosk launcher for $DISPLAY_URL"
     write_status running 90 "update_kiosk" "Updating kiosk launcher"
+    # Build in a temp file + atomic mv rather than writing $KIOSK_BIN directly
+    # across two separate printf calls -- an interruption between them (e.g.
+    # this device's under-voltage-triggered spontaneous reboots) would
+    # otherwise leave a launcher truncated with no exec line at all, exactly
+    # what caused the "kiosk permanently stops starting" incident this fixes.
+    KIOSK_TMP="${KIOSK_BIN}.tmp.$$"
     # Use printf instead of heredoc to avoid stdin conflict when piped via curl|bash
     printf '%s\n' \
       '#!/usr/bin/env bash' \
@@ -276,10 +302,11 @@ if [ -f "$KIOSK_BIN" ]; then
       'fi' \
       '# Companion agent sets this per launch based on the device performance profile.' \
       'if [ "${PANEO_DISABLE_GPU:-0}" = "1" ]; then GPU_FLAG="--disable-gpu"; else GPU_FLAG=""; fi' \
-      > "$KIOSK_BIN"
+      > "$KIOSK_TMP"
     printf '# --no-sandbox: on some Pi units Chromium sandbox init fails outright\n# (silent SIGKILL) -- kiosk only ever loads one fixed, trusted URL.\nexec "%s" $OZONE $GPU_FLAG \\\n  --no-sandbox \\\n  --kiosk --noerrdialogs --disable-infobars \\\n  --disable-session-crashed-bubble \\\n  --no-first-run \\\n  --disable-translate \\\n  --disable-features=Translate \\\n  --password-store=basic \\\n  --autoplay-policy=no-user-gesture-required \\\n  --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 \\\n  --user-data-dir=%s \\\n  "%s"\n' \
-      "$CHROME" "$PROFILE_DIR" "$DISPLAY_URL" >> "$KIOSK_BIN"
-    chmod +x "$KIOSK_BIN"
+      "$CHROME" "$PROFILE_DIR" "$DISPLAY_URL" >> "$KIOSK_TMP"
+    chmod +x "$KIOSK_TMP"
+    mv "$KIOSK_TMP" "$KIOSK_BIN"
     log "Kiosk launcher updated"
   else
     log "Could not detect chrome/URL from existing launcher — skipping launcher update"

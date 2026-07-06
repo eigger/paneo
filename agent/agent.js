@@ -235,7 +235,17 @@ function runUpdate(mode) {
   try {
     const out = openSync(logFile, 'a');
     const err = openSync(logFile, 'a');
-    const child = spawn('sudo', [scriptPath, mode], {
+    // Pass TOKEN/SERVER/our own user explicitly rather than making
+    // update-pi.sh re-derive the display URL by grepping the *existing*
+    // kiosk launcher -- if that file was ever left corrupt/incomplete (e.g.
+    // a reboot mid-write), grep-based extraction fails forever and every
+    // future update silently skips regenerating it. Also passes our OS user
+    // so update-pi.sh can chown the status file to it (see write_status()
+    // in update-pi.sh) -- otherwise it stays root-owned in the sticky /tmp
+    // dir and this agent's own unlinkSync() on it silently fails, leaving a
+    // stale "done" status that gets reprocessed (and re-restarts the kiosk)
+    // on the very next reconnect.
+    const child = spawn('sudo', [scriptPath, mode, TOKEN, SERVER, os.userInfo().username], {
       detached: true,
       stdio: ['ignore', out, err],
     });

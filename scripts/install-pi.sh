@@ -289,7 +289,7 @@ install_kiosk() {
 
   install_chromium
 
-  local chrome display_url chrome_profile_dir
+  local chrome display_url chrome_profile_dir KIOSK_TMP
   [ -n "$(user_home)" ] || fail "cannot find home directory for $SERVICE_USER"
   chrome="$(chromium_cmd)"
   display_url="${SERVER}/d/${TOKEN}"
@@ -305,7 +305,12 @@ install_kiosk() {
   # Runtime Wayland detection: $WAYLAND_DISPLAY is set by the desktop session
   # manager when Wayland is active (Wayfire/Labwc on Bookworm), empty on X11.
   # We evaluate it at launch time, not at install time.
-  cat > /usr/local/bin/paneo-kiosk <<'KIOSK_EOF'
+  # Build in a temp file + atomic mv rather than writing the real path
+  # directly across two separate `cat` calls -- an interruption between them
+  # (e.g. this device's under-voltage-triggered spontaneous reboots) would
+  # otherwise leave a launcher truncated with no exec line at all.
+  KIOSK_TMP="/usr/local/bin/paneo-kiosk.tmp.$$"
+  cat > "$KIOSK_TMP" <<'KIOSK_EOF'
 #!/usr/bin/env bash
 set -e
 # Launch immediately — callers that need a live server (update-pi.sh) already
@@ -334,7 +339,7 @@ else
 fi
 KIOSK_EOF
   # Append the chrome command with runtime-expanded variables
-  cat >> /usr/local/bin/paneo-kiosk <<EOF
+  cat >> "$KIOSK_TMP" <<EOF
 # --no-sandbox: on some Pi units Chromium's sandbox init fails outright
 # (silent SIGKILL, no error output) -- kiosk only ever loads one fixed,
 # trusted URL (not arbitrary web content), so the trade-off is accepted.
@@ -351,7 +356,8 @@ exec "$chrome" \$OZONE \$GPU_FLAG \\
   --user-data-dir=$chrome_profile_dir \\
   "$display_url"
 EOF
-  chmod +x /usr/local/bin/paneo-kiosk
+  chmod +x "$KIOSK_TMP"
+  mv "$KIOSK_TMP" /usr/local/bin/paneo-kiosk
 
   # No desktop-session autostart entry is registered here anymore — the
   # companion agent launches /usr/local/bin/paneo-kiosk itself once it has
