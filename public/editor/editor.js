@@ -129,6 +129,7 @@ const cmdIdentifyBtn = document.getElementById('cmd-identify-btn');
 const agentStatus = document.getElementById('agent-status');
 const cmdPowerOnBtn = document.getElementById('cmd-power-on-btn');
 const cmdPowerOffBtn = document.getElementById('cmd-power-off-btn');
+const cmdRestartKioskBtn = document.getElementById('cmd-restart-kiosk-btn');
 const cmdUpdateAllBtn = document.getElementById('cmd-update-all-btn');
 const cmdUpdateServerBtn = document.getElementById('cmd-update-server-btn');
 const powerOnInput = document.getElementById('power-on-time');
@@ -503,6 +504,15 @@ function initSelectors() {
   if (cmdPowerOnBtn) cmdPowerOnBtn.addEventListener('click', () => sendPower(true));
   if (cmdPowerOffBtn) cmdPowerOffBtn.addEventListener('click', () => sendPower(false));
 
+  // Manual kiosk restart (agent-relayed, like sendPower()) — for when the
+  // browser is up but stuck showing a blank/broken screen (e.g. a GPU driver
+  // fault) and the process itself never crashed, so the agent's own watchdog
+  // (which only checks whether the process is alive) won't intervene.
+  if (cmdRestartKioskBtn) cmdRestartKioskBtn.addEventListener('click', () => {
+    if (!confirm(t('restartKioskHint'))) return;
+    sendRestartKiosk();
+  });
+
   // Remote update trigger (agent-relayed — docs/design.md D#)
   if (cmdUpdateAllBtn) cmdUpdateAllBtn.addEventListener('click', () => {
     if (!confirm(t('updateHint'))) return;
@@ -574,6 +584,15 @@ async function sendPower(on) {
   }
 }
 
+// Manual kiosk restart — agent-relayed, like sendPower(). Kills and relaunches
+// the Chromium process on the device directly (see agent/agent.js), unlike
+// 'reload' which just asks the already-running page to location.reload().
+async function sendRestartKiosk() {
+  if (!device) return;
+  const res = await api(`/api/devices/${device.id}/command`, { method: 'POST', body: JSON.stringify({ action: 'restart-kiosk' }) });
+  toast(res.agentPresent ? t('restartKioskSent') : t('powerNoAgent'));
+}
+
 // Remote update trigger — agent-relayed, like sendPower() (docs/design.md D#).
 // mode: 'all' (server+agent+kiosk) or 'server' (Docker image + agent only).
 async function sendUpdate(mode) {
@@ -623,6 +642,7 @@ function syncDeviceMetaUI() {
   const hasAgent = device.agentPresent ?? false;
   if (cmdPowerOnBtn) { cmdPowerOnBtn.disabled = !hasAgent; cmdPowerOnBtn.title = hasAgent ? '' : t('agentMissingTip'); }
   if (cmdPowerOffBtn) { cmdPowerOffBtn.disabled = !hasAgent; cmdPowerOffBtn.title = hasAgent ? '' : t('agentMissingTip'); }
+  if (cmdRestartKioskBtn) { cmdRestartKioskBtn.disabled = !hasAgent; cmdRestartKioskBtn.title = hasAgent ? '' : t('agentMissingTip'); }
   // Update buttons: disabled with no agent (as before), while an update is
   // already running (avoid re-triggering a second one on top of it), or once
   // the update-check has positively confirmed this is already the latest

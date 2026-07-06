@@ -55,6 +55,14 @@ self.addEventListener('fetch', (ev) => {
         }
         return res;
       })
-      .catch(() => caches.match(ev.request))
+      .catch(() => {
+        // Page navigations (e.g. /d/<token>) aren't cached under their own
+        // URL — fall back to the cached shell HTML so the kiosk still shows
+        // the last-known layout instead of a blank/error page.
+        if (ev.request.mode === 'navigate') {
+          return caches.match('/display/index.html');
+        }
+        return caches.match(ev.request);
+      })
   );
 });

@@ -503,13 +503,20 @@ app.post('/api/devices/:id/apply-to-group', async (req, reply) => {
 // --- remote commands (§M2): reload / identify | §M4: power ---
 app.post('/api/devices/:id/command', async (req, reply) => {
   const { action, on, mode } = req.body || {};
-  if (!['reload', 'identify', 'power', 'update'].includes(action)) return reply.code(400).send({ error: 'invalid action' });
+  if (!['reload', 'identify', 'power', 'update', 'restart-kiosk'].includes(action)) return reply.code(400).send({ error: 'invalid action' });
   const d = store.getDevice(req.params.id);
   if (!d) return reply.code(404).send({ error: 'not found' });
   if (action === 'power') {
     // Power commands are routed to the companion agent, not the display browser
     const hasAgent = agents.has(d.id);
     sendToAgent(d.id, { type: 'command', action: 'power', on: Boolean(on) });
+    return { ok: true, agentPresent: hasAgent };
+  }
+  if (action === 'restart-kiosk') {
+    // Also agent-routed: killing/relaunching the Chromium process is OS-level,
+    // the display browser page itself can't do it (unlike 'reload').
+    const hasAgent = agents.has(d.id);
+    sendToAgent(d.id, { type: 'command', action: 'restart-kiosk' });
     return { ok: true, agentPresent: hasAgent };
   }
   if (action === 'update') {
