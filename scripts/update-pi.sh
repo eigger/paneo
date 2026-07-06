@@ -21,6 +21,16 @@ AGENT_DIR="${PANEO_AGENT_DIR:-/opt/paneo-agent}"
 # rule (see scripts/install-pi.sh's install_agent) can match on it directly;
 # the env var still works for the plain `curl | sudo bash` usage.
 MODE="${1:-${PANEO_UPDATE_MODE:-all}}"
+# Agent-triggered runs pass these explicitly (see agent/agent.js's
+# runUpdate()) so step 6 below can rebuild the kiosk launcher's display URL
+# directly instead of grepping it out of the *existing* launcher file --
+# grep-based extraction has no way to recover if that file was ever left
+# corrupt/incomplete (e.g. a reboot mid-write), silently skipping the
+# launcher update forever after. Falls back to grepping when run standalone
+# (plain `curl | sudo bash`, no agent involved).
+ARG_TOKEN="${2:-}"
+ARG_SERVER="${3:-}"
+ARG_USER="${4:-}"
 
 log()  { printf '[paneo-update] %s\n' "$*"; }
 fail() { printf '[paneo-update] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -74,6 +84,12 @@ write_status() {
   json="${json}}"
 
   printf '%s\n' "$json" > "$STATUS_FILE" 2>/dev/null || true
+  # This script runs as root, but the agent that reads (and deletes) this
+  # file runs as a regular user -- /tmp's sticky bit means only the file's
+  # owner (or root) can unlink it, so a root-owned file here makes the
+  # agent's own cleanup silently fail every time, leaving a stale "done"
+  # entry that gets reprocessed (re-restarting the kiosk) on next reconnect.
+  [ -n "$ARG_USER" ] && chown "$ARG_USER" "$STATUS_FILE" 2>/dev/null || true
 }
 trap_error() {
   local exit_code="$?"
@@ -235,7 +251,11 @@ fi
 # ---------------------------------------------------------------------------
 KIOSK_BIN="/usr/local/bin/paneo-kiosk"
 if [ -f "$KIOSK_BIN" ]; then
-  DISPLAY_URL="$(grep -o 'http[^ "]*' "$KIOSK_BIN" 2>/dev/null | tail -1 || true)"
+  if [ -n "$ARG_TOKEN" ] && [ -n "$ARG_SERVER" ]; then
+    DISPLAY_URL="${ARG_SERVER}/d/${ARG_TOKEN}"
+  else
+    DISPLAY_URL="$(grep -o 'http[^ "]*' "$KIOSK_BIN" 2>/dev/null | tail -1 || true)"
+  fi
   CHROME="$(grep 'exec ' "$KIOSK_BIN" 2>/dev/null | grep -v '#' | head -1 | awk '{print $2}' || true)"
   CHROME="${CHROME:-$(command -v chromium-browser 2>/dev/null || command -v chromium 2>/dev/null || true)}"
   # Reuse the existing profile dir (keeps the same Chromium profile/cache
