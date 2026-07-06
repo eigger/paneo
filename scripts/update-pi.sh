@@ -272,92 +272,15 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 7. Restart the kiosk browser
+# 7. Kiosk restart -- handled by the companion agent, not this script.
 # ---------------------------------------------------------------------------
-write_status running 95 "restart_kiosk" "Restarting kiosk browser"
-log "Restarting kiosk..."
-
-# Determine the desktop user: prefer the user who invoked sudo
-KIOSK_USER="${SUDO_USER:-}"
-if [ -z "$KIOSK_USER" ]; then
-  # Try to read from agent service file
-  KIOSK_USER="$(grep -m1 'User=' /etc/systemd/system/paneo-agent.service 2>/dev/null \
-    | sed 's/User=//' | tr -d '[:space:]' || true)"
-fi
-KIOSK_USER="${KIOSK_USER:-pi}"
-
-KIOSK_UID="$(id -u "$KIOSK_USER" 2>/dev/null || echo 1000)"
-RUNTIME_DIR="/run/user/$KIOSK_UID"
-
-# Kill existing kiosk/chromium processes
-pkill -f 'chromium.*--kiosk' 2>/dev/null || true
-pkill -f 'paneo-kiosk'       2>/dev/null || true
-sleep 2
-
-if [ -f "$KIOSK_BIN" ]; then
-  # Find wayland socket (Bookworm default)
-  WAYLAND_SOCK="$(ls "$RUNTIME_DIR"/wayland-* 2>/dev/null | head -1 | xargs -I{} basename {} 2>/dev/null || true)"
-  DBUS_ADDR="unix:path=${RUNTIME_DIR}/bus"
-
-  # Write a helper script so we can launch it completely detached from
-  # the curl|bash pipe (background jobs in non-interactive piped bash are
-  # unreliable — the helper approach is always safe).
-  # Lives in /usr/local/bin/ (not /tmp) — some Pi OS images mount /tmp with
-  # noexec, which intermittently blocks execution with "Permission denied".
-  HELPER="/usr/local/bin/paneo-kiosk-restart.sh"
-  HELPER_TMP="${HELPER}.tmp.$$"
-  if [ -n "$WAYLAND_SOCK" ]; then
-    cat > "$HELPER_TMP" <<HELPER_EOF
-#!/usr/bin/env bash
-export WAYLAND_DISPLAY="$WAYLAND_SOCK"
-export XDG_RUNTIME_DIR="$RUNTIME_DIR"
-export XDG_SESSION_TYPE="wayland"
-export DBUS_SESSION_BUS_ADDRESS="$DBUS_ADDR"
-exec /usr/local/bin/paneo-kiosk
-HELPER_EOF
-    log "Launching kiosk via Wayland ($WAYLAND_SOCK) as $KIOSK_USER"
-  else
-    cat > "$HELPER_TMP" <<HELPER_EOF
-#!/usr/bin/env bash
-export DISPLAY=":0"
-export XAUTHORITY="/home/$KIOSK_USER/.Xauthority"
-exec /usr/local/bin/paneo-kiosk
-HELPER_EOF
-    log "Launching kiosk via X11 as $KIOSK_USER"
-  fi
-  chmod +x "$HELPER_TMP"
-  chown "$KIOSK_USER" "$HELPER_TMP"
-  mv "$HELPER_TMP" "$HELPER"
-
-  # Log under the desktop user's home — /tmp/paneo-kiosk.log is often root-owned
-  # after a prior update (sudo redirect), which breaks later manual restarts.
-  KIOSK_LOG="/home/$KIOSK_USER/paneo-kiosk.log"
-  touch "$KIOSK_LOG"
-  chown "$KIOSK_USER:$KIOSK_USER" "$KIOSK_LOG"
-
-  # Run the helper as the desktop user, fully detached.
-  # Prefer `at` when it works, but always fall back — on many Pi images `at`
-  # is installed yet `at now` fails silently (no atd / permission), which left
-  # the kiosk dead after update once WATCHDOG=0 stopped auto-relaunching it.
-  kiosk_launched=0
-  if command -v at >/dev/null 2>&1; then
-    if echo "sudo -u $KIOSK_USER $HELPER >> $KIOSK_LOG 2>&1" | at now 2>/dev/null; then
-      log "Kiosk scheduled via 'at' (log: $KIOSK_LOG)"
-      kiosk_launched=1
-    else
-      log "'at now' failed — falling back to nohup launch"
-    fi
-  fi
-  if [ "$kiosk_launched" -eq 0 ]; then
-    (
-      sleep 1
-      sudo -u "$KIOSK_USER" bash -c "nohup \"$HELPER\" >> \"$KIOSK_LOG\" 2>&1 &"
-    ) &
-    log "Kiosk launched via nohup (log: $KIOSK_LOG)"
-  fi
-else
-  log "Kiosk binary not found — skipping restart"
-fi
+# The launcher script above is already updated on disk; the agent restarts
+# the browser itself (kill + relaunch, resolving its own Wayland/X11 env --
+# same logic as the editor's manual "restart kiosk" button) once it reconnects
+# after step 9 and sees this run's final status recorded with mode=all. No
+# desktop-user detection, helper scripts, or at/nohup fallbacks needed here
+# anymore -- the agent already runs as that same user and handles all of it.
+log "Kiosk launcher updated -- agent will restart the browser once it reconnects"
 
 fi # MODE = all
 

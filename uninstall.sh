@@ -63,32 +63,36 @@ pkill -9 -f 'paneo-kiosk' 2>/dev/null || true
 rm -f /usr/local/bin/paneo-kiosk
 rm -f /usr/local/bin/paneo-kiosk-restart.sh
 
-# 5. Clean up autostart entries for all users
+# 5. Clean up autostart entries for all users (only relevant to installs from
+# before the companion agent took over launching the kiosk itself -- current
+# installs never write any of these).
 log "Cleaning up user autostart configurations..."
 for home in /home/*; do
   [ -d "$home" ] || continue
-  
+
   # Remove autostart desktop file
   rm -f "$home/.config/autostart/paneo-kiosk.desktop"
-  
+
   # Revert Wayfire changes
   wayfire_ini="$home/.config/wayfire.ini"
   if [ -f "$wayfire_ini" ]; then
     sed -i '/paneo-kiosk/d' "$wayfire_ini"
   fi
-  
+
   # Revert labwc changes
   labwc_as="$home/.config/labwc/autostart"
   if [ -f "$labwc_as" ]; then
     sed -i '/paneo-kiosk/d' "$labwc_as"
   fi
-done
 
-# Revert legacy LXDE autostart
-lxde_as="/etc/xdg/lxsession/LXDE-pi/autostart"
-if [ -f "$lxde_as" ]; then
-  sed -i '/paneo-kiosk/d' "$lxde_as"
-fi
+  # Revert legacy LXDE autostart -- per-user file install-pi.sh actually wrote
+  # to ($home/.config/..., not the system-wide /etc/xdg/... template), and it
+  # appended the xset blanking lines alongside the paneo-kiosk line itself.
+  lxde_as="$home/.config/lxsession/LXDE-pi/autostart"
+  if [ -f "$lxde_as" ]; then
+    sed -i '/paneo-kiosk/d; /xset s off/d; /xset -dpms/d; /xset s noblank/d' "$lxde_as"
+  fi
+done
 
 # 6. Remove installation directories
 log "Removing installation directories..."

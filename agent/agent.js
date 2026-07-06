@@ -85,6 +85,7 @@ function connect() {
     // update-pi.sh itself writes (see reportPendingUpdateStatus below).
     reportPendingUpdateStatus(ws);
     startHeartbeat();
+    ensureKioskStarted();
   });
 
   onSocket(ws, 'message', (event) => {
@@ -100,6 +101,9 @@ function connect() {
         const mode = msg.mode === 'server' ? 'server' : 'all';
         console.log(`[agent] update command: mode=${mode}`);
         runUpdate(mode);
+      } else if (msg.action === 'restart-kiosk') {
+        console.log('[agent] restart-kiosk command received');
+        restartKiosk();
       }
     } else if (msg.type === 'agent.schedule') {
       console.log(`[agent] schedule received: ${JSON.stringify(msg.schedule)}`);
@@ -298,17 +302,30 @@ function startUpdateStatusPolling(socket) {
         step_msg: entry.step_msg
       }));
     } else if (['done', 'failed'].includes(entry.state)) {
-      console.log(`[agent] update finished: ${entry.state}`);
-      socket.send(JSON.stringify({
-        type: 'agent.status',
-        status: entry.state,
-        mode: entry.mode,
-        error: entry.error
-      }));
-      try { unlinkSync(UPDATE_STATUS_FILE); } catch {}
+      finishUpdateStatus(socket, entry);
       stopUpdateStatusPolling();
     }
   }, 2000);
+}
+
+// Reports the terminal state of a finished update-pi.sh run and, for a
+// successful mode='all' run (server+agent+kiosk), restarts the kiosk so it
+// picks up the freshly rewritten /usr/local/bin/paneo-kiosk launcher script
+// (new flags/URL) -- update-pi.sh no longer restarts the browser itself
+// (see scripts/update-pi.sh step 7), the agent is the only thing that does.
+function finishUpdateStatus(socket, entry) {
+  console.log(`[agent] update finished: ${entry.state}`);
+  socket.send(JSON.stringify({
+    type: 'agent.status',
+    status: entry.state,
+    mode: entry.mode,
+    error: entry.error
+  }));
+  try { unlinkSync(UPDATE_STATUS_FILE); } catch { /* already reported; avoid re-sending on next reconnect */ }
+  if (entry.state === 'done' && entry.mode === 'all') {
+    console.log('[agent] update touched the kiosk — restarting it to pick up the new launcher script');
+    restartKiosk();
+  }
 }
 
 function stopUpdateStatusPolling() {
@@ -336,14 +353,7 @@ function reportPendingUpdateStatus(socket) {
     // Start polling to send updates
     startUpdateStatusPolling(socket);
   } else if (['done', 'failed'].includes(entry.state)) {
-    console.log(`[agent] reporting update outcome: ${entry.state} (mode=${entry.mode})`);
-    socket.send(JSON.stringify({
-      type: 'agent.status',
-      status: entry.state,
-      mode: entry.mode,
-      error: entry.error
-    }));
-    try { unlinkSync(UPDATE_STATUS_FILE); } catch { /* already reported; avoid re-sending on next reconnect */ }
+    finishUpdateStatus(socket, entry);
   }
 }
 
@@ -369,6 +379,64 @@ function isKioskSessionRunning() {
   }
 }
 
+// Launch the kiosk browser. A systemd service doesn't inherit the desktop
+// session's env — a raw `chromium-browser` spawn here has no
+// WAYLAND_DISPLAY/XDG_RUNTIME_DIR to connect to the compositor (same problem
+// setPower() above already works around via resolveWaylandEnv()), so it would
+// fail to actually show anything even though the process technically starts.
+// Launch the real kiosk launcher script instead of raw chromium — it already
+// has the right flags/URL baked in and does its own Wayland/X11 detection at
+// runtime, same as scripts/update-pi.sh's kiosk-restart.
+function launchKiosk() {
+  const waylandEnv = resolveWaylandEnv();
+  const env = waylandEnv ? { ...process.env, ...waylandEnv, XDG_SESSION_TYPE: 'wayland' } : process.env;
+  if (existsSync(KIOSK_LAUNCHER)) {
+    execFile(KIOSK_LAUNCHER, [], { detached: true, env });
+  } else {
+    // Standalone/older install without the launcher script — fall back
+    // to a raw launch, at least with the right display env if we found one.
+    const DISPLAY_URL = process.env.PANEO_DISPLAY_URL || `${SERVER}/d/${TOKEN}`;
+    execFile('chromium-browser', ['--kiosk', DISPLAY_URL], { detached: true, env });
+  }
+}
+
+// Launch the kiosk once we know the server is reachable (first successful WS
+// connect). There is no desktop-session autostart entry anymore (see
+// install-pi.sh's install_kiosk()) -- the agent is the *only* thing that ever
+// launches paneo-kiosk, so this keeps polling indefinitely rather than giving
+// up: the agent's systemd unit commonly starts before the desktop session
+// does, and on some devices (e.g. under-voltage/throttling) that session can
+// take well over a minute to come up.
+let startupKioskCheckStarted = false;
+
+function ensureKioskStarted() {
+  if (startupKioskCheckStarted) return;
+  startupKioskCheckStarted = true;
+  const poll = () => {
+    if (isKioskSessionRunning()) return;
+    if (!resolveWaylandEnv() && !process.env.DISPLAY) {
+      // Desktop session isn't up yet -- keep waiting rather than launching
+      // into a dead environment (see launchKiosk()'s comment on this).
+      setTimeout(poll, 5000);
+      return;
+    }
+    console.log('[agent] startup: kiosk not running, launching...');
+    launchKiosk();
+  };
+  setTimeout(poll, 5000); // small initial delay so a fresh boot settles first
+}
+
+// Manual restart (editor "restart kiosk" button -> here): unlike the watchdog
+// below, this must actively kill an already-running (but possibly just
+// stuck/blank, e.g. a GPU driver fault) browser first -- the watchdog only
+// ever launches when the process is already gone.
+function restartKiosk() {
+  try {
+    execSync("pkill -f 'chromium.*--kiosk' 2>/dev/null; pkill -f paneo-kiosk 2>/dev/null", { shell: '/bin/sh' });
+  } catch { /* no matching process -- fine */ }
+  setTimeout(launchKiosk, 1500); // give the old process a moment to fully exit
+}
+
 if (process.env.PANEO_WATCHDOG === '1') {
   const DISPLAY_URL = process.env.PANEO_DISPLAY_URL || `${SERVER}/d/${TOKEN}`;
   const graceMs = Number(process.env.PANEO_WATCHDOG_GRACE_MS) || 180_000;
@@ -378,23 +446,7 @@ if (process.env.PANEO_WATCHDOG === '1') {
     if (isKioskSessionRunning()) return;
     if (Date.now() - startedAt < graceMs) return;
     console.log('[agent] watchdog: kiosk not running, relaunching...');
-    // A systemd service doesn't inherit the desktop session's env — a raw
-    // `chromium-browser` spawn here has no WAYLAND_DISPLAY/XDG_RUNTIME_DIR
-    // to connect to the compositor (same problem setPower() above already
-    // works around via resolveWaylandEnv()), so it would fail to actually
-    // show anything even though the process technically starts. Launch
-    // the real kiosk launcher script instead of raw chromium — it already
-    // has the right flags/URL baked in and does its own Wayland/X11
-    // detection at runtime, same as scripts/update-pi.sh's kiosk-restart.
-    const waylandEnv = resolveWaylandEnv();
-    const env = waylandEnv ? { ...process.env, ...waylandEnv, XDG_SESSION_TYPE: 'wayland' } : process.env;
-    if (existsSync(KIOSK_LAUNCHER)) {
-      execFile(KIOSK_LAUNCHER, [], { detached: true, env });
-    } else {
-      // Standalone/older install without the launcher script — fall back
-      // to a raw launch, at least with the right display env if we found one.
-      execFile('chromium-browser', ['--kiosk', DISPLAY_URL], { detached: true, env });
-    }
+    launchKiosk();
   }, 30_000);
 }
 

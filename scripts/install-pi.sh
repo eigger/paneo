@@ -289,9 +289,8 @@ install_kiosk() {
 
   install_chromium
 
-  local home chrome display_url
-  home="$(user_home)"
-  [ -n "$home" ] || fail "cannot find home directory for $SERVICE_USER"
+  local chrome display_url
+  [ -n "$(user_home)" ] || fail "cannot find home directory for $SERVICE_USER"
   chrome="$(chromium_cmd)"
   display_url="${SERVER}/d/${TOKEN}"
 
@@ -332,57 +331,12 @@ exec "$chrome" \$OZONE \\
 EOF
   chmod +x /usr/local/bin/paneo-kiosk
 
-  log "Registering desktop autostart"
-
-  # ---- LXDE / Bullseye ----
-  mkdir -p "$home/.config/autostart" "$home/.config/lxsession/LXDE-pi"
-  cat > "$home/.config/autostart/paneo-kiosk.desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=Paneo Kiosk
-Exec=/usr/local/bin/paneo-kiosk
-X-GNOME-Autostart-enabled=true
-EOF
-  if [ -d "$home/.config/lxsession/LXDE-pi" ]; then
-    cat >> "$home/.config/lxsession/LXDE-pi/autostart" <<EOF
-@xset s off
-@xset -dpms
-@xset s noblank
-@sleep 90
-@/usr/local/bin/paneo-kiosk
-EOF
-  fi
-
-  # ---- Wayfire (Bookworm default on Pi 4/5) ----
-  local wayfire_ini="$home/.config/wayfire.ini"
-  mkdir -p "$home/.config"
-  if [ ! -f "$wayfire_ini" ]; then
-    cat > "$wayfire_ini" <<EOF
-[autostart]
-paneo-kiosk = /usr/local/bin/paneo-kiosk
-EOF
-  elif ! grep -q "paneo-kiosk" "$wayfire_ini"; then
-    if grep -q "^\[autostart\]" "$wayfire_ini"; then
-      sed -i "/^\[autostart\]/a paneo-kiosk = /usr/local/bin/paneo-kiosk" "$wayfire_ini"
-    else
-      printf '\n[autostart]\npaneo-kiosk = /usr/local/bin/paneo-kiosk\n' >> "$wayfire_ini"
-    fi
-  fi
-
-  # ---- Labwc (alternative Wayland compositor on some Pi builds) ----
-  mkdir -p "$home/.config/labwc"
-  local labwc_as="$home/.config/labwc/autostart"
-  if ! grep -q "paneo-kiosk" "$labwc_as" 2>/dev/null; then
-    echo "/usr/local/bin/paneo-kiosk &" >> "$labwc_as"
-  fi
-
-  chown -R "$SERVICE_USER:$SERVICE_USER" \
-    "$home/.config/autostart" \
-    "$home/.config/lxsession" \
-    "$home/.config/wayfire.ini" \
-    "$home/.config/labwc" 2>/dev/null || true
-
-  log "Kiosk autostart registered. It will launch after the desktop session starts."
+  # No desktop-session autostart entry is registered here anymore — the
+  # companion agent launches /usr/local/bin/paneo-kiosk itself once it has
+  # confirmed the server is reachable and a Wayland/X11 session exists (see
+  # ensureKioskStarted() in agent/agent.js). This avoids the two mechanisms
+  # racing into a duplicate spawn and centralizes kiosk lifecycle in one place.
+  log "Kiosk launcher installed. The companion agent will launch it on boot."
 }
 
 # Lets the (non-root) companion agent trigger `sudo <this exact script>` when
