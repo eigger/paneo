@@ -348,6 +348,7 @@ EOF
 @xset s off
 @xset -dpms
 @xset s noblank
+@sleep 90
 @/usr/local/bin/paneo-kiosk
 EOF
   fi
