@@ -289,10 +289,17 @@ install_kiosk() {
 
   install_chromium
 
-  local chrome display_url
+  local chrome display_url chrome_profile_dir
   [ -n "$(user_home)" ] || fail "cannot find home directory for $SERVICE_USER"
   chrome="$(chromium_cmd)"
   display_url="${SERVER}/d/${TOKEN}"
+  # Recent Chromium (136+) refuses to open the --remote-debugging-port at all
+  # on the default profile (security hardening) -- a custom --user-data-dir
+  # is required for it to actually listen. Dedicated dir (not the default
+  # ~/.config/chromium) so it never collides with a manually-run browser.
+  chrome_profile_dir="$(user_home)/.config/paneo-chromium"
+  mkdir -p "$chrome_profile_dir"
+  chown -R "$SERVICE_USER:$SERVICE_USER" "$chrome_profile_dir"
 
   log "Writing kiosk launcher for $display_url"
   # Runtime Wayland detection: $WAYLAND_DISPLAY is set by the desktop session
@@ -316,10 +323,19 @@ else
   xset -dpms    >/dev/null 2>&1 || true
   xset s noblank >/dev/null 2>&1 || true
 fi
+# The companion agent sets this per launch based on the device's performance
+# profile (editor setting -> agent.config over the agent WS -> here) -- some
+# Pi models/driver combos retry hardware GPU init for ~30s before falling
+# back to software rendering on their own; "저성능" skips straight to it.
+if [ "${PANEO_DISABLE_GPU:-0}" = "1" ]; then
+  GPU_FLAG="--disable-gpu"
+else
+  GPU_FLAG=""
+fi
 KIOSK_EOF
   # Append the chrome command with runtime-expanded variables
   cat >> /usr/local/bin/paneo-kiosk <<EOF
-exec "$chrome" \$OZONE \\
+exec "$chrome" \$OZONE \$GPU_FLAG \\
   --kiosk --noerrdialogs --disable-infobars \\
   --disable-session-crashed-bubble \\
   --no-first-run \\
@@ -328,6 +344,7 @@ exec "$chrome" \$OZONE \\
   --password-store=basic \\
   --autoplay-policy=no-user-gesture-required \\
   --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 \\
+  --user-data-dir=$chrome_profile_dir \\
   "$display_url"
 EOF
   chmod +x /usr/local/bin/paneo-kiosk
