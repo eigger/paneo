@@ -199,6 +199,11 @@ export async function fetchCalendarSource(url, range) {
         toRRuleQuirkSpace(windowTo),
         true,
       );
+      // dateOnly comes from the *master* VEVENT's DTSTART (node-ical flags a
+      // `VALUE=DATE` start with `.dateOnly = true`) — an all-day recurring
+      // event's expanded occurrences are plain Dates with no such flag of
+      // their own, so this has to be read off `e.start`, not `occStart`.
+      const allDay = !!e.start.dateOnly;
       for (const rawStart of occurrences) {
         const occStart = fromRRuleQuirkSpace(rawStart);
         all.push({
@@ -206,6 +211,7 @@ export async function fetchCalendarSource(url, range) {
           start: occStart.toISOString(),
           end: durationMs ? new Date(occStart.getTime() + durationMs).toISOString() : undefined,
           source: url,
+          allDay,
         });
       }
     } else {
@@ -214,6 +220,7 @@ export async function fetchCalendarSource(url, range) {
         start: e.start.toISOString(),
         end: e.end?.toISOString(),
         source: url,
+        allDay: !!e.start.dateOnly,
       });
     }
   }

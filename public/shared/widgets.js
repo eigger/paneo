@@ -813,7 +813,7 @@ export const widgets = {
         const items = events.map((e) => {
           const color = urlColors[e.source] || '';
           const style = color ? `style="border-left:3px solid ${color}; padding-left:6px; margin-left:0"` : '';
-          const timeHtml = expanded ? `<span class="cal-time">${timeFmt.format(new Date(e.start))}</span>` : '';
+          const timeHtml = (expanded && !e.allDay) ? `<span class="cal-time">${timeFmt.format(new Date(e.start))}</span>` : '';
           return `<li ${style}><span class="cal-date">${dateFmt.format(new Date(e.start))}</span>${timeHtml}<span class="cal-summary">${escapeHtml(e.summary)}</span></li>`;
         }).join('');
         const legendHtml = (expanded && hasColors)
@@ -914,10 +914,40 @@ export const widgets = {
       }
 
       function cellsForView(view, now) {
-        if (view === 'day') return [now];
+        // Midnight-normalized, not the live `now` instant — cells[0]/[cells.length-1]
+        // feed paintAndFetch()'s fetch range below, and using the current time-of-day
+        // as the day view's range start meant any event earlier today than "right
+        // now" (e.g. a 9am meeting checked at 2pm) silently never appeared, while
+        // the week/3week/month views (whose cells are already built from
+        // year/month/date only) never had this problem.
+        if (view === 'day') return [new Date(now.getFullYear(), now.getMonth(), now.getDate())];
         if (view === 'week') return buildWeekRows(now, 0, 0, !!config.startOnSunday);
         if (view === '3week') return buildWeekRows(now, 1, 1, !!config.startOnSunday);
         return buildMonthGrid(now, !!config.startOnSunday);
+      }
+
+      // Grid views (week/3week/month) only show each event's title by default —
+      // there's rarely room for more once a month is packed into 5-6 rows of 7
+      // narrow day cells. But a large enough box (few rows, or just a lot of
+      // pixels to work with) has room per cell for a time prefix too, so this
+      // is re-derived from the *measured* per-cell size on every resize, same
+      // idea as CAL_MIN_*_HEIGHT above — not a fixed per-view on/off switch,
+      // since a "month" view can still be spacious on a big display and a
+      // "week" view can still be tight on a small one.
+      const CAL_GRID_TIME_MIN_CELL_W = 68;
+      const CAL_GRID_TIME_MIN_CELL_H = 52;
+      const CAL_GRID_HEADER_H = 46; // approx month-title + weekday-header rows
+      function gridRowsForView(view) {
+        if (view === 'week') return 1;
+        if (view === '3week') return 3;
+        return 6; // month: worst-case (5 real weeks most months, 6 some) — conservative
+      }
+      function shouldShowGridEventTime(view, width, height) {
+        if (view === 'day') return false; // day view has its own always-on time display
+        const cols = config.showWeekNumber ? 8 : 7;
+        const cellW = width / cols;
+        const cellH = (height - CAL_GRID_HEADER_H) / gridRowsForView(view);
+        return cellW >= CAL_GRID_TIME_MIN_CELL_W && cellH >= CAL_GRID_TIME_MIN_CELL_H;
       }
 
       const rangeFmt = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', timeZone: tz });
@@ -938,8 +968,9 @@ export const widgets = {
           ? events.map((e) => {
               const color = urlColors[e.source] || '';
               const style = color ? `style="border-left:3px solid ${color}"` : '';
+              const timeHtml = e.allDay ? '' : `<span class="cal-d-time">${timeFmt.format(new Date(e.start))}</span>`;
               return `<div class="cal-d-item" ${style}>
-                <span class="cal-d-time">${timeFmt.format(new Date(e.start))}</span>
+                ${timeHtml}
                 <span class="cal-d-summary">${escapeHtml(e.summary)}</span>
               </div>`;
             }).join('')
@@ -950,7 +981,7 @@ export const widgets = {
         </div>`;
       }
 
-      function renderGridView(view, now, cells, eventsByDate) {
+      function renderGridView(view, now, cells, eventsByDate, showEventTime) {
         const todayStr = isoDate(now);
         const curMonth = now.getMonth();
         const dimOtherMonth = view === 'month'; // week/3-week cells are all "real" days, not padding
@@ -995,10 +1026,14 @@ export const widgets = {
 
             const events = (eventsByDate[ds] || []);
             const eventHtml = events.slice(0, 3).map((e) => {
-              const title = String(e.summary || '').slice(0, 14);
+              const showTime = showEventTime && !e.allDay;
+              // A little more title budget when there's no time prefix eating
+              // into the same line's width.
+              const title = String(e.summary || '').slice(0, showTime ? 12 : 14);
               const color = urlColors[e.source] || '';
               const style = color ? `style="background:${color}33; border-left:2px solid ${color}; padding-left:2px"` : '';
-              return `<div class="cal-m-event" ${style} title="${escapeAttr(e.summary)}">${escapeHtml(title)}</div>`;
+              const timeHtml = showTime ? `<span class="cal-m-event-time">${timeFmt.format(new Date(e.start))}</span>` : '';
+              return `<div class="cal-m-event" ${style} title="${escapeAttr(e.summary)}">${timeHtml}${escapeHtml(title)}</div>`;
             }).join('');
             const moreCount = events.length > 3 ? `<div class="cal-m-more">+${events.length - 3}</div>` : '';
 
@@ -1018,6 +1053,7 @@ export const widgets = {
       }
 
       let currentView = null;
+      let showEventTime = false;
       let ro = null;
 
       function paintAndFetch() {
@@ -1026,7 +1062,7 @@ export const widgets = {
 
         function renderAll(eventsByDate = {}) {
           if (currentView === 'day') renderDayView(now, eventsByDate);
-          else renderGridView(currentView, now, cells, eventsByDate);
+          else renderGridView(currentView, now, cells, eventsByDate, showEventTime);
         }
 
         // Paint immediately (empty or last-known events), then fetch.
@@ -1076,8 +1112,10 @@ export const widgets = {
       ro = new ResizeObserver((entries) => {
         const { width, height } = entries[0].contentRect;
         const nextView = pickView(width, height);
-        if (nextView !== currentView) {
+        const nextShowEventTime = shouldShowGridEventTime(nextView, width, height);
+        if (nextView !== currentView || nextShowEventTime !== showEventTime) {
           currentView = nextView;
+          showEventTime = nextShowEventTime;
           paintAndFetch();
         }
       });
@@ -1089,6 +1127,7 @@ export const widgets = {
       // the wrong view for one frame on every fresh render.
       const rect = el.getBoundingClientRect();
       currentView = pickView(rect.width, rect.height);
+      showEventTime = shouldShowGridEventTime(currentView, rect.width, rect.height);
       paintAndFetch();
     },
   },

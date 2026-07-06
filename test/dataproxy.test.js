@@ -128,6 +128,32 @@ test('fetchCalendarSource unwraps a parameterized SUMMARY (e.g. SUMMARY;LANGUAGE
 
 test.after(() => paramSummaryServer.close());
 
+// paneo.calendar.month's grid view only shows a time-of-day prefix for events
+// that actually have one — an all-day VEVENT (DTSTART;VALUE=DATE, no time
+// component) must be flagged so the widget doesn't invent a misleading
+// midnight timestamp for it.
+const ALLDAY_ICS_BODY = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Paneo//Test//EN\r\n` +
+  `BEGIN:VEVENT\r\nUID:allday\r\nDTSTAMP:${icsTimestamp(offsets.future1h)}\r\n` +
+  `DTSTART;VALUE=DATE:20260710\r\nDTEND;VALUE=DATE:20260711\r\nSUMMARY:allday\r\nEND:VEVENT\r\n` +
+  vevent('timed', offsets.future1h) +
+  `END:VCALENDAR\r\n`;
+
+const alldayServer = createServer((req, res) => {
+  res.writeHead(200, { 'content-type': 'text/calendar' });
+  res.end(ALLDAY_ICS_BODY);
+});
+await new Promise((resolve) => alldayServer.listen(0, resolve));
+const alldayUrl = `http://localhost:${alldayServer.address().port}/allday.ics`;
+
+test('fetchCalendarSource flags an all-day (VALUE=DATE) event as allDay, leaves a timed event as not', async () => {
+  const events = await fetchCalendarSource(alldayUrl, { from: now - DAY, to: now + 30 * DAY });
+  const byName = Object.fromEntries(events.map((e) => [e.summary, e]));
+  assert.equal(byName.allday.allDay, true);
+  assert.equal(byName.timed.allDay, false);
+});
+
+test.after(() => alldayServer.close());
+
 test('gradeIndex maps values to tier index, boundaries inclusive on the lower tier', () => {
   const thresholds = [30, 80, 150]; // PM10-style
   assert.equal(gradeIndex(0, thresholds), 0);
