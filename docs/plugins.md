@@ -1,63 +1,63 @@
-# Paneo 서드파티 위젯 플러그인 (docs/design.md §7, D17)
+# Paneo Third-Party Widget Plugins (docs/design.md §7, D17)
 
-Paneo는 내장 위젯 외에 **서드파티 위젯 플러그인**을 설치할 수 있습니다. 두 가지 유형이 있고, 신뢰 경계가 다릅니다.
+In addition to built-in widgets, Paneo supports installing **third-party widget plugins**. There are two plugin types with distinct trust boundaries.
 
-| 유형 | 설치 방법 | 실행 위치 | 신뢰 수준 |
+| Type | Installation Method | Execution Context | Trust Level |
 |---|---|---|---|
-| `module` | 서버 파일시스템에 직접 폴더 설치 | 편집기/디스플레이 페이지에서 직접 실행 (샌드박스 없음) | 파일시스템에 넣는 행위 자체가 관리자의 신뢰 결정 — 내장 위젯과 동일 수준 |
-| `iframe` | manifest에 외부 URL만 등록 | 샌드박스 `<iframe>` 안에서 실행 (`paneo.iframe`과 동일 메커니즘) | 파일시스템 접근 없음 — URL만 등록하면 되므로 가장 가벼움 |
+| `module` | Install folders directly onto the server's filesystem | Executed directly on the editor/display page (not sandboxed) | The act of placing files on the filesystem is the administrator's trust decision — same level as built-in widgets |
+| `iframe` | Register an external URL in the manifest | Executed inside a sandboxed `<iframe>` (same mechanism as `paneo.iframe`) | No filesystem access required — simply register the URL; the most lightweight option |
 
-## 설치 방법
+## Installation
 
-1. `data/plugins/<플러그인id>/` 폴더를 만들고 `manifest.json`을 넣습니다. (`data/`는 런타임 데이터 디렉토리로, git에 커밋되지 않습니다 — 기기별로 필요한 플러그인만 설치하세요.)
-2. `module` 타입이면 같은 폴더에 `entry`로 지정한 JS 파일(예: `widget.js`)도 넣습니다.
-3. 서버를 재시작합니다. 플러그인은 서버 기동 시 1회 스캔됩니다(핫 리로드 없음 — 컴패니언 에이전트 설치와 같은 방식).
-4. 편집기의 "+ 위젯 추가" 팝오버에 **서드파티** 카테고리로 나타납니다.
+1. Create a directory named `data/plugins/<plugin-id>/` and place `manifest.json` inside. (`data/` is the runtime data directory and is not committed to git — only install the plugins needed for each device.)
+2. If using the `module` type, place the entry JavaScript file (e.g., `widget.js`) in the same folder.
+3. Restart the server. Plugins are scanned once during server startup (no hot reloading — similar to the companion agent installation).
+4. The plugin will appear under the **plugins** category in the editor's "+ Add Widget" popover.
 
-동작하는 예제가 [docs/examples/plugins/hello-badge/](examples/plugins/hello-badge/)에 있습니다. `data/plugins/hello-badge/`로 복사하고 서버를 재시작해 보세요.
+A working example is available at [docs/examples/plugins/hello-badge/](examples/plugins/hello-badge/). You can try copying it to `data/plugins/hello-badge/` and restarting the server.
 
-## manifest.json 스키마
+## manifest.json Schema
 
 ```json
 {
-  "id": "hello-badge",            // 필수. 폴더 이름과 반드시 일치해야 함
-  "version": "1.0.0",             // 필수
-  "type": "module",               // 필수. "module" | "iframe"
-  "entry": "widget.js",           // type=module일 때 필수
-  "url": "https://example.com/w", // type=iframe일 때 필수
-  "sandboxMode": "scripts",       // type=iframe 전용. "strict" | "scripts" | "trusted"
+  "id": "hello-badge",            // Required. Must match the directory name exactly
+  "version": "1.0.0",             // Required
+  "type": "module",               // Required. "module" | "iframe"
+  "entry": "widget.js",           // Required if type=module
+  "url": "https://example.com/w", // Required if type=iframe
+  "sandboxMode": "scripts",       // For type=iframe only. "strict" | "scripts" | "trusted"
   "label": { "ko": "...", "en": "..." },
   "icon": "🔌",
-  "defaultSize": { "w": 3, "h": 2 }, // 필수
+  "defaultSize": { "w": 3, "h": 2 }, // Required
   "minSize": { "w": 2, "h": 1 },
-  "requires": [],                 // 성능 프로파일 요구사항 태그 (§4.3)
-  "permissions": [],              // 편집기 인스펙터에 검토용으로 표시됨
-  "config": [                     // 인스펙터 자동 생성 폼 — 내장 위젯과 동일한 필드 형식
+  "requires": [],                 // Performance profile tags (§4.3)
+  "permissions": [],              // Displayed in the editor inspector for review
+  "config": [                     // Custom inspector form schema — same fields as built-in widgets
     { "key": "text", "label": { "ko": "문구", "en": "Text" }, "type": "text", "default": "" }
   ]
 }
 ```
 
-`config` 필드 `type`은 내장 위젯과 동일하게 `text`/`number`/`checkbox`/`enum`/`list`/`textarea`를 지원합니다 (`public/shared/widgets.js`의 인스펙터 렌더링 로직을 그대로 재사용).
+The config field `type` supports `text`/`number`/`checkbox`/`enum`/`list`/`textarea` (reusing the inspector rendering logic from `public/shared/widgets.js`).
 
-## `module` 타입 작성법
+## Writing `module` Plugins
 
-`widget.js`는 `render(el, config, ctx)`를 export하는 ES 모듈입니다 — 내장 위젯과 완전히 같은 계약입니다.
+`widget.js` is an ES module that exports a `render(el, config, ctx)` function — matching the contract of built-in widgets.
 
 ```js
 export function render(el, config, ctx) {
-  // el: 이 위젯 인스턴스의 콘텐츠 엘리먼트
-  // config: manifest의 config 필드값 (편집기 인스펙터에서 입력됨)
+  // el: The widget instance's content DOM element
+  // config: The config values collected from the editor inspector (based on the manifest schema)
   // ctx: { locale, timezone, performanceProfile }
   el.textContent = config.text ?? '';
 }
 ```
 
-**샌드박스가 없습니다** — 이 코드는 편집기/디스플레이 메인 페이지에서 그대로 실행됩니다. `config` 값을 `innerHTML`에 꽂을 땐 직접 이스케이프하거나 `textContent`를 쓰세요(예제 참고). 정리(clear interval 등)가 필요하면 내장 위젯처럼 `el._cleanup = () => {...}`를 지정하세요 — `renderWidget()`이 다음 렌더 전에 자동으로 호출합니다.
+**There is no sandbox** — this code executes directly on the editor and display pages. Make sure to escape values or use `textContent` when inserting config values into `innerHTML` (see example). If cleanup is required (e.g., clearing intervals), set `el._cleanup = () => {...}` just like in-tree widgets — `renderWidget()` will automatically invoke it before the next render.
 
-## `iframe` 타입 작성법
+## Writing `iframe` Plugins
 
-파일시스템 설치 없이 `manifest.json`만으로 등록합니다:
+You can register an iframe plugin using only a `manifest.json` file without any filesystem installation:
 
 ```json
 {
@@ -71,6 +71,6 @@ export function render(el, config, ctx) {
 }
 ```
 
-`config` 값은 쿼리 스트링으로 `url`에 붙어 iframe에 전달됩니다(예: `?room=거실&locale=ko-KR`). 페이지 쪽에서 `location.search`로 읽으면 됩니다. `paneo.iframe`과 동일한 샌드박스 토큰(`strict`/`scripts`/`trusted`)을 사용합니다 — 신뢰하지 않는 사이트는 `strict`를 권장합니다.
+Configuration values are appended to the `url` as a query string and sent to the iframe (e.g., `?room=LivingRoom&locale=en-US`). Read these parameters using `location.search` in your iframe application. These utilize the same sandbox tokens (`strict`/`scripts`/`trusted`) as `paneo.iframe` — `strict` is recommended for untrusted sites.
 
-> postMessage 기반 실시간 데이터 채널(iframe → config/data 양방향)은 아직 없습니다 — 현재는 최초 로드 시 쿼리스트링으로만 config가 전달됩니다. 향후 확장 후보입니다.
+> A postMessage-based real-time data channel (iframe ⇄ host config/data) is not yet supported. Currently, the config is only passed via the query string at initial load. This is a candidate for future extension.
