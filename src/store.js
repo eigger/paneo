@@ -105,7 +105,6 @@ const stmt = {
   groupInsert: db.prepare('INSERT INTO groups (id, name) VALUES (@id, @name)'),
   updateDraft: db.prepare('UPDATE devices SET draft = ? WHERE id = ?'),
   updatePublish: db.prepare('UPDATE devices SET published = ?, publishedAt = ? WHERE id = ?'),
-  updateToken: db.prepare('UPDATE devices SET token = ? WHERE id = ?'),
   updateFields: db.prepare(`UPDATE devices SET name = @name, performanceProfile = @performanceProfile,
     locale = @locale, timezone = @timezone, resolutionW = @resolutionW, resolutionH = @resolutionH,
     groupId = @groupId, powerSchedule = @powerSchedule WHERE id = @id`),
@@ -213,10 +212,6 @@ export async function updateDevice(id, patch) {
     powerSchedule: ps !== null ? JSON.stringify(ps) : null,
   });
   return getDevice(id);
-}
-
-export function updateDeviceToken(id, token) {
-  stmt.updateToken.run(token, id);
 }
 
 // §M4: called by the /ws/agent handler when an agent connects/disconnects.
