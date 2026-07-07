@@ -131,7 +131,7 @@ GitHub Actions(`.github/workflows/ci.yml`)에서 Node.js 22·24 환경으로 동
 curl -fsSL https://raw.githubusercontent.com/eigger/paneo/master/install.sh | sudo env PANEO_MODE=all bash
 ```
 
-끝나면 재부팅하세요 (`sudo reboot`) — 디스플레이가 바로 키오스크로 부팅됩니다. 서버와 디스플레이를
+디스플레이가 바로 키오스크로 부팅됩니다. 서버와 디스플레이를
 여러 대의 Pi로 나누는 경우가 아니라면 아래는 건너뛰어도 됩니다.
 
 > **참고:** 설치 및 재부팅 후 디스플레이(키오스크)가 완전히 뜨기까지 **처음에는 약 5분** 정도
