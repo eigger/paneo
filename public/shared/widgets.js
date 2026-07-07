@@ -58,6 +58,32 @@ function measureTextWidth(text, fontPx, weight = 400) {
   return _measureCtx.measureText(text).width;
 }
 
+// Runs `fn` once per wall-clock second, at (as close as setTimeout allows to)
+// the actual ":000ms" boundary -- not a plain `setInterval(fn, 1000)`, whose
+// first tick lands 1000ms after whatever arbitrary moment the widget
+// happened to mount. Two widgets that each independently do that (clock,
+// timer, world clock, ...) end up ticking at two different offsets into
+// each second, so their displayed seconds visibly change at slightly
+// different instants -- which reads as "out of sync" even though each one
+// individually looks fine. Recomputing the delay every tick (instead of one
+// setInterval) also self-corrects for setTimeout/setInterval drift over
+// time, so they stay aligned with each other indefinitely, not just at
+// startup. Returns a cancel function.
+function scheduleSecondTick(fn) {
+  let cancelled = false;
+  let timer = null;
+  function armNext() {
+    timer = setTimeout(tick, 1000 - (Date.now() % 1000));
+  }
+  function tick() {
+    if (cancelled) return;
+    fn();
+    armNext();
+  }
+  armNext();
+  return () => { cancelled = true; clearTimeout(timer); };
+}
+
 function escapeAttr(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }
@@ -322,11 +348,11 @@ export const widgets = {
         fit();
       };
       update();
-      const t = setInterval(update, 1000);
+      const cancelTick = scheduleSecondTick(update);
 
       const ro = new ResizeObserver(fit);
       ro.observe(el);
-      el._cleanup = () => { clearInterval(t); ro.disconnect(); };
+      el._cleanup = () => { cancelTick(); ro.disconnect(); };
     },
   },
 
@@ -1483,8 +1509,16 @@ export const widgets = {
       }
 
       tick();
-      const t = setInterval(tick, showSec ? 1000 : 10000);
-      el._cleanup = () => clearInterval(t);
+      // Aligned to the real second boundary (scheduleSecondTick) when
+      // showing seconds, so the countdown's last digit changes at the same
+      // instant as the clock widget's -- a plain setInterval(tick, 1000)
+      // here ticked 1000ms after whenever *this* widget happened to mount,
+      // which visibly disagreed with any other per-second widget's own
+      // arbitrary offset.
+      const cancelTick = showSec
+        ? scheduleSecondTick(tick)
+        : (() => { const t = setInterval(tick, 10000); return () => clearInterval(t); })();
+      el._cleanup = () => cancelTick();
     },
   },
 
@@ -1766,8 +1800,8 @@ export const widgets = {
         el.innerHTML = `<div class="w-worldclock">${rows}</div>`;
       };
       update();
-      const t = setInterval(update, 1000);
-      el._cleanup = () => clearInterval(t);
+      const cancelTick = scheduleSecondTick(update);
+      el._cleanup = () => cancelTick();
     },
   },
 
