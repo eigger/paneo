@@ -57,22 +57,25 @@ if (process.env.PANEO_ADMIN_PASSWORD) {
 // behind /api/auth/status until login succeeds, so gating only the API is
 // sufficient and avoids fighting fastify-static's routing for the login page.
 //
-// Two credential kinds are accepted: the browser's session cookie, or a
-// long-lived API token (Authorization: Bearer <token>) for non-browser
-// callers that can't hold a cookie — e.g. a Home Assistant rest_command
-// hitting /api/devices/:id/command to toggle screen power. Prefix-matching
-// only the exact public auth endpoints (not all of /api/auth/) matters here:
-// /api/auth/token must stay session/token-gated, not walk-up public.
+// D69/D70: no separate API token — a device's own pairing token, already
+// used to identify *which* display in /api/devices/:idOrToken/command, also
+// *authorizes* that call when it's the token (not the internal id) in the
+// URL. One value does both jobs, so a Home Assistant rest_command needs
+// nothing beyond the pairing token already shown in editor Settings (same
+// one baked into that display's "Open display" URL). It only ever unlocks
+// that one device's /command endpoint — every other /api/* route (device
+// list, layout, backup/restore, HA settings, ...) still needs the admin
+// session.
 const PUBLIC_API_ROUTES = ['/api/auth/status', '/api/auth/setup', '/api/auth/login', '/api/auth/logout'];
 const PUBLIC_API_PREFIXES = ['/api/proxy/', '/api/display/', '/api/brand', '/api/version', '/api/update-check', '/api/plugins'];
+const COMMAND_ROUTE = /^\/api\/devices\/([^/]+)\/command$/;
 app.addHook('onRequest', async (req, reply) => {
   if (!req.url.startsWith('/api/')) return;
   const path = req.url.split('?')[0];
   if (PUBLIC_API_ROUTES.includes(path)) return;
   if (PUBLIC_API_PREFIXES.some((p) => path === p || path.startsWith(p))) return;
-  const authHeader = req.headers.authorization || '';
-  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (bearer && auth.isValidApiToken(bearer)) return;
+  const commandMatch = path.match(COMMAND_ROUTE);
+  if (commandMatch && store.getDeviceByToken(commandMatch[1])) return;
   const cookies = auth.parseCookies(req.headers.cookie);
   if (!auth.isValidSession(cookies[auth.SESSION_COOKIE_NAME])) {
     reply.code(401).send({ error: 'unauthorized' });
@@ -83,12 +86,6 @@ app.get('/api/auth/status', async (req) => {
   const cookies = auth.parseCookies(req.headers.cookie);
   return { configured: auth.isConfigured(), authenticated: auth.isValidSession(cookies[auth.SESSION_COOKIE_NAME]) };
 });
-
-// API token: a single long-lived credential for machine callers (Home
-// Assistant rest_command, scripts, ...). Session-gated like everything else
-// under /api/devices — you need to already be logged in to view or rotate it.
-app.get('/api/auth/token', async () => ({ token: auth.getApiToken() }));
-app.post('/api/auth/token/regenerate', async () => ({ token: auth.regenerateApiToken() }));
 
 app.post('/api/auth/setup', async (req, reply) => {
   if (auth.isConfigured()) return reply.code(409).send({ error: 'already configured' });
@@ -588,11 +585,9 @@ app.post('/api/devices/:id/apply-to-group', async (req, reply) => {
 app.post('/api/devices/:id/command', async (req, reply) => {
   const { action, on, mode } = req.body || {};
   if (!['reload', 'identify', 'power', 'update', 'restart-kiosk'].includes(action)) return reply.code(400).send({ error: 'invalid action' });
-  // Accepts either the internal device id or its pairing token (§D69/§D70) —
-  // an automation like a Home Assistant rest_command already has the
-  // pairing token on hand (it's in the "Open display" URL, and shown next
-  // to the API token in Settings), so it doesn't need a separate
-  // authenticated GET /api/devices call just to look up the internal id.
+  // Accepts either the internal device id (browser/editor, session-gated
+  // above) or the pairing token (§D69/§D70 — self-authorizing, see the
+  // onRequest hook above).
   const d = store.getDevice(req.params.id) || store.getDeviceByToken(req.params.id);
   if (!d) return reply.code(404).send({ error: 'not found' });
   if (action === 'power') {

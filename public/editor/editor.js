@@ -1542,20 +1542,9 @@ function closeSettings() {
   stopDeviceMetaPolling();
 }
 
-// §12 보안: Home Assistant rest_command 등 브라우저가 아닌 클라이언트가 세션 쿠키
-// 없이 /api/devices/:id/command 등을 호출할 때 쓰는 Authorization: Bearer 토큰.
-async function loadApiToken() {
-  try {
-    const data = await api('/api/auth/token');
-    const input = document.getElementById('api-token-value');
-    if (input) input.value = data.token || '';
-  } catch (err) {
-    console.error('Failed to load API token', err);
-  }
-}
-
-// Already present on the selected device object (publicDevice() always
-// includes it) — no extra request needed, unlike the admin-only API token.
+// §12 보안 D69/D70: 페어링 토큰 자체가 그 기기의 /command 호출을 인가하므로(서버
+// 쪽 onRequest 훅 참고) 별도 API 토큰이 필요 없음 — 이미 device 객체에 있는 값을
+// 보여주기만 하면 됨 (publicDevice()가 항상 token을 포함).
 function loadDeviceToken() {
   const input = document.getElementById('device-token-value');
   if (input) input.value = device?.token || '';
@@ -1565,7 +1554,6 @@ settingsBtn.addEventListener('click', async () => {
   settingsOverlay.classList.remove('hidden');
   loadDeviceToken();
   await loadHASettings();
-  await loadApiToken();
   // Reflects whatever's currently going on (or just finished) even if this
   // device's update was triggered from a different tab/session — and keeps
   // polling on its own while the panel is open and a run is still active.
@@ -1582,33 +1570,10 @@ if (deviceTokenCopyBtn) {
     const input = document.getElementById('device-token-value');
     try {
       await navigator.clipboard.writeText(input.value);
-      toast(t('apiTokenCopied'));
+      toast(t('tokenCopied'));
     } catch {
       input.select();
     }
-  });
-}
-
-const apiTokenCopyBtn = document.getElementById('api-token-copy-btn');
-if (apiTokenCopyBtn) {
-  apiTokenCopyBtn.addEventListener('click', async () => {
-    const input = document.getElementById('api-token-value');
-    try {
-      await navigator.clipboard.writeText(input.value);
-      toast(t('apiTokenCopied'));
-    } catch {
-      input.select();
-    }
-  });
-}
-
-const apiTokenRegenerateBtn = document.getElementById('api-token-regenerate-btn');
-if (apiTokenRegenerateBtn) {
-  apiTokenRegenerateBtn.addEventListener('click', async () => {
-    if (!confirm(t('apiTokenRegenerateConfirm'))) return;
-    const data = await api('/api/auth/token/regenerate', { method: 'POST' });
-    document.getElementById('api-token-value').value = data.token || '';
-    toast(t('apiTokenRegenerated'));
   });
 }
 

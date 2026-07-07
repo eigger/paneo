@@ -399,34 +399,27 @@ cp *.jpg data/photos/
 
 §8.3은 HA 데이터를 Paneo 위젯으로 가져오는 방향입니다. 반대로 HA 자동화에서 Paneo 디스플레이를 켜고 끄는 건 Paneo 쪽 코드 변경이 필요 없습니다 — 에디터의 "화면 켜기"/"화면 끄기" 버튼도 평범한 REST 엔드포인트를 호출할 뿐이라, HA가 `rest_command`로 같은 엔드포인트를 직접 호출하면 됩니다.
 
-§12부터 에디터는 관리자 로그인이 필요하고 `/api/*`도 그에 맞춰 보호됩니다 — `rest_command`는 브라우저 세션 쿠키를 가질 수 없으므로 대신 **API 토큰**으로 인증합니다. 필요한 두 값 모두 에디터 → ⚙ 설정에 나란히 있습니다:
+§12부터 에디터는 관리자 로그인이 필요하고 `/api/*`도 그에 맞춰 보호됩니다 — 다만 `/api/devices/<토큰>/command`는 예외로, URL에 쓰는 화면의 **페어링 토큰** 자체가 인증 수단을 겸합니다 (별도 API 토큰이나 `Authorization` 헤더 불필요). 에디터 → ⚙ 설정 → **이 화면의 기기 토큰**에서 확인하세요.
 
-- **이 화면의 기기 토큰** — *어느* 화면인지 지정. 아래 명령 URL에 바로 사용할 수 있어 별도 조회 호출이 필요 없습니다.
-- **API 토큰 (자동화)** — 요청 자체를 인증.
-
-1. 홈어시스턴트 `configuration.yaml`에 `rest_command`를 추가합니다. URL에는 기기 토큰을, 헤더에는 API 토큰을 넣습니다:
+1. 홈어시스턴트 `configuration.yaml`에 `rest_command`를 추가합니다. device id 대신 기기 토큰을 URL에 넣습니다:
 
    ```yaml
    rest_command:
      paneo_screen_on:
        url: "http://<서버-IP>:4321/api/devices/<device-token>/command"
        method: POST
-       headers:
-         Authorization: "Bearer <api-token>"
        content_type: "application/json"
        payload: '{"action": "power", "on": true}'
      paneo_screen_off:
        url: "http://<서버-IP>:4321/api/devices/<device-token>/command"
        method: POST
-       headers:
-         Authorization: "Bearer <api-token>"
        content_type: "application/json"
        payload: '{"action": "power", "on": false}'
    ```
 
 2. 이제 어떤 HA 자동화·스크립트·대시보드 버튼에서든 `rest_command.paneo_screen_on` / `rest_command.paneo_screen_off`를 호출하면 됩니다.
 
-해당 화면에 컴패니언 에이전트가 설치되어 연결되어 있어야 합니다(§6) — 에디터 자체의 전원 버튼과 완전히 같은 경로로 에이전트에 명령이 전달됩니다. API 토큰을 재발급하면(같은 설정 패널) 즉시 이전 토큰이 무효화되니, 재발급 시 `rest_command` 설정도 새 값으로 갱신하세요.
+해당 화면에 컴패니언 에이전트가 설치되어 연결되어 있어야 합니다(§6) — 에디터 자체의 전원 버튼과 완전히 같은 경로로 에이전트에 명령이 전달됩니다. 이 토큰은 오직 *이 화면 하나*의 명령만 허용합니다 — 기기 목록 조회, 레이아웃 편집 등 다른 `/api/*` 요청에는 사용할 수 없습니다.
 
 ## 9. 버전 확인
 
