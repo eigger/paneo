@@ -99,6 +99,7 @@
 | D68 | 경계 동기화 | **scheduleBoundaryTick 정밀 정렬** | 날짜/디데이 동기화 및 데이터 폴링 지터 추가 |
 | D69 | 자동화 인증 | **별도 API 토큰 없이 페어링 토큰이 자기 `/command`를 자가 인가** | 에디터 세션 로그인(B3) 도입 후 Home Assistant `rest_command` 등 비-브라우저 클라이언트가 `/api/devices/:id/command` 호출 시 401 발생 — 처음엔 별도 관리자 API 토큰을 추가했으나, 기기별 페어링 토큰 하나로 식별·인가를 겸하도록 단순화(그 기기의 `/command`만 허용, 다른 `/api/*`는 여전히 세션 필요). 에디터 설정에 기기 토큰 노출 |
 | D71 | 백업 API 정리 | **미사용 서버 백업/복원 라우트 삭제 (HA 토큰 평문 노출)** | 백업/복원 UI 버튼은 실제로는 클라이언트 사이드 구현(layout+기본 설정만, 토큰 미포함)을 쓰는데, `GET/POST /api/devices/:id/backup·restore` 서버 라우트가 아무 데서도 호출되지 않는 채 남아 있으면서 HA 장기 액세스 토큰을 마스킹 없이 그대로 반환 — editor.js 주석의 설계 의도(HA 자격증명 제외)와도 어긋나 라우트·`store.updateDeviceToken` 전부 삭제 |
+| D72 | 상태 확인 API | **`/update-status`도 페어링 토큰으로 조회 가능** | `/command`(D69)는 토큰 하나로 제어까지 되는데 결과 확인(`/update-status`)은 세션 전용이라 자동화가 명령 성공 여부를 폴링할 방법이 없었음 — 같은 self-authorizing 패턴 적용, `docs/install-device*.md` §8.6에 제어(`command` 액션 표)·상태 확인 REST API 표로 정리 |
 
 ---
 
