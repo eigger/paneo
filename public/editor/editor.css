@@ -361,6 +361,24 @@ main { flex: 1; display: flex; min-height: 0; }
 .settings-close:hover { background: #2b3648; transform: translateY(-1px); }
 .settings-close:active { transform: translateY(0) scale(0.98); }
 .settings-divider { border: 0; border-top: 1px solid #232a38; margin: 16px 0; }
+
+/* §12 보안: 편집기 관리자 로그인/최초 설정 화면 — 캔버스보다 위, 설정 모달과
+   동일한 시각 언어를 쓰되 z-index만 더 높게 (로그인 전엔 그 아래 무엇도 보이면 안 됨) */
+#auth-overlay { z-index: 200; }
+#auth-panel { background: rgba(20, 25, 36, 0.94); backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 14px;
+  padding: 26px; width: 300px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05); }
+#auth-panel h3 { font-size: 16px; margin-bottom: 8px; }
+#auth-panel .field-hint { margin-bottom: 16px; }
+#auth-panel .field { margin-bottom: 10px; }
+#auth-panel input[type="password"] { width: 100%; }
+#auth-confirm-field[hidden] { display: none; }
+#auth-submit { width: 100%; margin-top: 4px; background: #2b6bff; color: #fff;
+  border: none; border-radius: 8px; padding: 9px; cursor: pointer; font-weight: 600; }
+#auth-submit:hover { background: #4f7fff; }
+.auth-error { color: #ff9aa7; font-size: 12px; margin: 0 0 10px; }
+.auth-error.hidden { display: none; }
 .group-new-row { display: flex; gap: 6px; margin-top: 8px; }
 .group-new-row input { flex: 1 1 auto; min-width: 0; }
 .group-new-row button { flex: 0 0 auto; background: #1c2330; color: #cfe0ff; border: 1px solid #2a3040;

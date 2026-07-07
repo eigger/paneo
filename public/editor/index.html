@@ -7,6 +7,23 @@
   <link rel="stylesheet" href="/editor/editor.css" />
 </head>
 <body>
+  <div id="auth-overlay" class="overlay hidden">
+    <div id="auth-panel" role="dialog" aria-modal="true">
+      <h3 id="auth-title"></h3>
+      <p id="auth-hint" class="field-hint"></p>
+      <form id="auth-form">
+        <div class="field">
+          <input type="password" id="auth-password" autocomplete="current-password" required />
+        </div>
+        <div class="field" id="auth-confirm-field" hidden>
+          <input type="password" id="auth-password-confirm" autocomplete="new-password" />
+        </div>
+        <p id="auth-error" class="auth-error hidden"></p>
+        <button type="submit" id="auth-submit" data-i18n="authSubmitBtn"></button>
+      </form>
+    </div>
+  </div>
+
   <header>
     <div class="brand">Paneo <span class="tag" id="editor-version-tag" data-i18n="tag"></span></div>
 
@@ -145,6 +162,7 @@
       </div>
 
       <button id="settings-close" class="settings-close" data-i18n="close"></button>
+      <button type="button" id="logout-btn" class="settings-close" data-i18n="authLogoutBtn"></button>
       <button type="button" id="device-delete-btn" class="danger" data-i18n="deleteDevice"></button>
     </div>
   </div>

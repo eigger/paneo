@@ -12,6 +12,7 @@ import * as store from './store.js';
 import { registerDataProxy } from './dataproxy.js';
 import { setAgentPresent } from './store.js';
 import * as plugins from './plugins.js';
+import * as auth from './auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -40,6 +41,60 @@ await app.register(fastifyStatic, { root: plugins.pluginsDir(), prefix: '/plugin
 await registerDataProxy(app);
 await store.load();
 plugins.scan();
+
+// PANEO_ADMIN_PASSWORD lets a docker-compose/systemd deployment declare the
+// editor password up front (re-applied on every boot); without it, the editor
+// shows a one-time "set admin password" form on first load (see /api/auth/setup).
+if (process.env.PANEO_ADMIN_PASSWORD) {
+  auth.setPassword(process.env.PANEO_ADMIN_PASSWORD);
+}
+
+// §12 보안: gate every /api/* route behind the editor's admin session, except
+// the routes the *kiosk display itself* (unauthenticated by design — it only
+// carries a per-device pairing token) and install scripts must keep calling
+// directly. `/editor/*` static assets are intentionally NOT gated here — the
+// SPA shell has no secrets in it; public/editor/editor.js blocks its own UI
+// behind /api/auth/status until login succeeds, so gating only the API is
+// sufficient and avoids fighting fastify-static's routing for the login page.
+const PUBLIC_API_PREFIXES = ['/api/auth/', '/api/proxy/', '/api/display/', '/api/brand', '/api/version', '/api/update-check', '/api/plugins'];
+app.addHook('onRequest', async (req, reply) => {
+  if (!req.url.startsWith('/api/')) return;
+  if (PUBLIC_API_PREFIXES.some((p) => req.url === p || req.url.startsWith(p))) return;
+  const cookies = auth.parseCookies(req.headers.cookie);
+  if (!auth.isValidSession(cookies[auth.SESSION_COOKIE_NAME])) {
+    reply.code(401).send({ error: 'unauthorized' });
+  }
+});
+
+app.get('/api/auth/status', async (req) => {
+  const cookies = auth.parseCookies(req.headers.cookie);
+  return { configured: auth.isConfigured(), authenticated: auth.isValidSession(cookies[auth.SESSION_COOKIE_NAME]) };
+});
+
+app.post('/api/auth/setup', async (req, reply) => {
+  if (auth.isConfigured()) return reply.code(409).send({ error: 'already configured' });
+  const password = String(req.body?.password || '');
+  if (password.length < 8) return reply.code(400).send({ error: 'password too short' });
+  auth.setPassword(password);
+  reply.header('set-cookie', auth.sessionCookieHeader(auth.createSession()));
+  return { ok: true };
+});
+
+app.post('/api/auth/login', async (req, reply) => {
+  if (auth.isRateLimited(req.ip)) return reply.code(429).send({ error: 'too many attempts' });
+  const password = String(req.body?.password || '');
+  if (!auth.isConfigured() || !auth.checkPassword(password)) {
+    return reply.code(401).send({ error: 'invalid password' });
+  }
+  reply.header('set-cookie', auth.sessionCookieHeader(auth.createSession()));
+  return { ok: true };
+});
+
+app.post('/api/auth/logout', async (req, reply) => {
+  auth.destroySession(auth.parseCookies(req.headers.cookie)[auth.SESSION_COOKIE_NAME]);
+  reply.header('set-cookie', auth.clearCookieHeader());
+  return { ok: true };
+});
 
 // --- live display connections: Map<deviceId, Set<socket>> ---
 const displays = new Map();
@@ -579,6 +634,10 @@ app.get('/install/pi.sh', async (_req, reply) => {
 app.get('/update.sh', async (_req, reply) => {
   reply.type('text/x-shellscript; charset=utf-8');
   return reply.sendFile('update-pi.sh', SCRIPTS_DIR);
+});
+app.get('/diagnose.sh', async (_req, reply) => {
+  reply.type('text/x-shellscript; charset=utf-8');
+  return reply.sendFile('diagnose-pi.sh', SCRIPTS_DIR);
 });
 
 app.listen({ port: PORT, host: '0.0.0.0' })

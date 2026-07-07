@@ -2,6 +2,11 @@ import { widgets, renderWidget, widgetLabel, fieldLabel, fieldPlaceholder, CATEG
 import { t, getLang, setLang, LANGS, LOCALES, RESOLUTIONS } from '/editor/i18n.js';
 import { effectiveRows, applyGridContainer, applyGridItem, applyCustomCss, buildWidgetContentClass, pageSurfaceColor } from '/shared/gridlayout.js';
 import { attachSwipeNavigation } from '/shared/swipe.js';
+import { ensureAuthenticated } from '/editor/auth-gate.js';
+
+// Blocks everything below (top-level await) until the admin session is
+// valid — nothing in this module touches /api/* before this resolves.
+await ensureAuthenticated();
 
 let device = null;
 let layout = null;
@@ -175,6 +180,12 @@ async function api(path, opts = {}) {
   // (bit us on the body-less POST /publish call).
   const headers = opts.body ? { 'content-type': 'application/json' } : {};
   const res = await fetch(path, { ...opts, headers: { ...headers, ...opts.headers } });
+  if (res.status === 401) {
+    // Session expired/cleared mid-use — reload re-runs ensureAuthenticated()
+    // above and shows the login screen again instead of surfacing raw 401s.
+    location.reload();
+    throw new Error('unauthorized');
+  }
   if (!res.ok) throw new Error(`${res.status} ${path}`);
   return res.json();
 }
@@ -1648,6 +1659,10 @@ if (importBackupBtn && importBackupInput) {
   });
 }
 
+document.getElementById('logout-btn').addEventListener('click', async () => {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  location.reload();
+});
 document.getElementById('settings-close').addEventListener('click', closeSettings);
 settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) closeSettings(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSettings(); });

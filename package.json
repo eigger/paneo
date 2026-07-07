@@ -1,6 +1,6 @@
 {
   "name": "paneo",
-  "version": "0.0.38",
+  "version": "0.0.39",
   "private": true,
   "type": "module",
   "description": "Paneo — web-editable dashboards for Raspberry Pi / ambient displays",
@@ -29,5 +29,8 @@
     "node-ical": "^0.20.1",
     "qrcode": "^1.5.4",
     "rss-parser": "^3.13.0"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
   }
 }

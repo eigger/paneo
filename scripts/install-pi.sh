@@ -437,6 +437,7 @@ print_summary() {
   fi
   log "Server logs: systemctl status paneo (or: docker logs -f paneo)"
   log "Agent logs:  systemctl status paneo-agent && journalctl -u paneo-agent -f"
+  log "Troubleshooting: curl -fsSL $SERVER/diagnose.sh | bash"
 }
 
 main() {
