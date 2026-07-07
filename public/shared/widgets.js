@@ -58,22 +58,30 @@ function measureTextWidth(text, fontPx, weight = 400) {
   return _measureCtx.measureText(text).width;
 }
 
-// Runs `fn` once per wall-clock second, at (as close as setTimeout allows to)
-// the actual ":000ms" boundary -- not a plain `setInterval(fn, 1000)`, whose
-// first tick lands 1000ms after whatever arbitrary moment the widget
-// happened to mount. Two widgets that each independently do that (clock,
-// timer, world clock, ...) end up ticking at two different offsets into
-// each second, so their displayed seconds visibly change at slightly
-// different instants -- which reads as "out of sync" even though each one
-// individually looks fine. Recomputing the delay every tick (instead of one
-// setInterval) also self-corrects for setTimeout/setInterval drift over
-// time, so they stay aligned with each other indefinitely, not just at
-// startup. Returns a cancel function.
-function scheduleSecondTick(fn) {
+// Runs `fn` once per `intervalMs`, aligned to the real wall-clock boundary
+// (see delayUntilNextBoundary() below) -- not a plain `setInterval(fn,
+// intervalMs)`, whose first tick lands `intervalMs` after whatever arbitrary
+// moment the widget happened to mount. Two widgets that each independently
+// do that (clock, timer, world clock, ...) end up ticking at two different
+// offsets into each second, so their displayed seconds visibly change at
+// slightly different instants -- which reads as "out of sync" even though
+// each one individually looks fine. Recomputing the delay every tick
+// (instead of one setInterval) also self-corrects for setTimeout/setInterval
+// drift over time, so they stay aligned with each other indefinitely, not
+// just at startup. Returns a cancel function.
+//
+// This is the "make it visually synchronized" primitive, meant for widgets
+// a user actually watches tick in real time (clock/timer/worldclock's
+// seconds, date/dday's day rollover). It should NOT be used for background
+// data-refresh widgets -- synchronizing *those* to each other is actively
+// undesirable, since it'd make multiple instances (or widget types sharing
+// an upstream API) all fire their fetch at the same instant every cycle
+// instead of spreading the load out. See pollJson()'s jitter for that case.
+function scheduleBoundaryTick(intervalMs, fn) {
   let cancelled = false;
   let timer = null;
   function armNext() {
-    timer = setTimeout(tick, 1000 - (Date.now() % 1000));
+    timer = setTimeout(tick, delayUntilNextBoundary(intervalMs));
   }
   function tick() {
     if (cancelled) return;
@@ -82,6 +90,9 @@ function scheduleSecondTick(fn) {
   }
   armNext();
   return () => { cancelled = true; clearTimeout(timer); };
+}
+function scheduleSecondTick(fn) {
+  return scheduleBoundaryTick(1000, fn);
 }
 
 function escapeAttr(s) {
@@ -164,8 +175,19 @@ function pollJson(el, url, intervalMs, onData, onError) {
       if (err.name !== 'AbortError') onError(err);
     }
   };
-  tick();
-  timer = setInterval(tick, intervalMs);
+  tick(); // immediate first load -- don't make the user wait to see data
+  // Deliberate per-instance jitter on the *interval*, not just relying on
+  // "widgets mount at slightly different times" -- in practice a page's
+  // widgets all mount within the same render pass, so several instances of
+  // the same widget type (e.g. 3 weather widgets for 3 cities) sharing the
+  // same intervalMs would otherwise stay locked in step and all hit the
+  // upstream API at the same instant every cycle. This is the opposite of
+  // scheduleBoundaryTick() above on purpose: those widgets are meant to look
+  // synchronized to a human watching them tick; these are background
+  // refreshes nobody watches fire, where synchronizing instances only
+  // creates avoidable simultaneous load.
+  const jitteredMs = intervalMs + (Math.random() - 0.5) * intervalMs * 0.4; // ±20%
+  timer = setInterval(tick, jitteredMs);
   el._cleanup = () => { clearInterval(timer); ctrl?.abort(); };
 }
 
@@ -392,10 +414,14 @@ export const widgets = {
         fit();
       };
       update();
-      const t = setInterval(update, 60000);
+      // Minute-boundary aligned (scheduleBoundaryTick), not a plain
+      // setInterval(update, 60000) -- that ticks 60s after whatever
+      // arbitrary moment the widget mounted, so an actual midnight rollover
+      // could take up to 59s to actually show on screen.
+      const cancelTick = scheduleBoundaryTick(60000, update);
       const ro = new ResizeObserver(fit);
       ro.observe(el);
-      el._cleanup = () => { clearInterval(t); ro.disconnect(); };
+      el._cleanup = () => { cancelTick(); ro.disconnect(); };
     },
   },
 
@@ -998,7 +1024,16 @@ export const widgets = {
       // still blow through once "HH:MM " is prepended, crushing the actual
       // title to 1-2 characters before CSS ellipsis kicks in (showing a time
       // next to an unreadable sliver of a title isn't actually useful).
-      const CAL_GRID_TIME_MIN_SUMMARY_CH = 4;
+      // Raised from an earlier 4 -- reserving room for only ~4 characters
+      // still let a real event title get ellipsised down to a couple of
+      // syllables on typical Korean titles once "HH:MM " ate into the cell,
+      // which still read as "cut off" even though it wasn't the 1-2
+      // -character extreme this check was originally added to prevent.
+      // 10 pushes the practical bar up to a genuinely spacious cell (roughly
+      // 150-160px wide at this widget's default height range) so the time
+      // prefix only appears once there's real room for a short title to
+      // still read normally next to it.
+      const CAL_GRID_TIME_MIN_SUMMARY_CH = 10;
       const CAL_GRID_EVENT_CELL_PADDING = 10; // .cal-m-day (2px 3px) + .cal-m-event (0 2px) padding, approx
       function gridRowsForView(view) {
         if (view === 'week') return 1;
@@ -1849,8 +1884,11 @@ export const widgets = {
         el.innerHTML = `<div class="w-dday">${rows}</div>`;
       };
       update();
-      const t = setInterval(update, 60_000);
-      el._cleanup = () => clearInterval(t);
+      // Minute-boundary aligned -- see paneo.date's identical comment on why
+      // a plain setInterval(update, 60000) can leave a real day-rollover
+      // reflected up to 59s late.
+      const cancelTick = scheduleBoundaryTick(60000, update);
+      el._cleanup = () => cancelTick();
     },
   },
 
