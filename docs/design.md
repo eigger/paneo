@@ -98,6 +98,7 @@
 | D67 | 초 동기화 | **scheduleSecondTick 정각 정렬 예약** | 시계/타이머/세계시계 초 전환 시점 일치 |
 | D68 | 경계 동기화 | **scheduleBoundaryTick 정밀 정렬** | 날짜/디데이 동기화 및 데이터 폴링 지터 추가 |
 | D69 | 자동화 인증 | **API 토큰(Bearer) 도입** | 에디터 세션 로그인(B3) 도입 후 Home Assistant `rest_command` 등 비-브라우저 클라이언트가 `/api/devices/:id/command` 호출 시 401 발생 — 세션과 별개로 `Authorization: Bearer <token>` 인증 경로 추가, 에디터 설정에서 조회/재발급 |
+| D70 | 기기 식별 간소화 | **`/command`가 device id·페어링 토큰 모두 허용** | 자동화가 내부 UUID 조회용 별도 인증 호출 없이도 이미 알고 있는 페어링 토큰으로 기기를 특정 가능 — 기기 토큰도 API 토큰 옆 설정 패널에 노출 |
 
 ---
 

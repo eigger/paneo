@@ -1554,8 +1554,16 @@ async function loadApiToken() {
   }
 }
 
+// Already present on the selected device object (publicDevice() always
+// includes it) — no extra request needed, unlike the admin-only API token.
+function loadDeviceToken() {
+  const input = document.getElementById('device-token-value');
+  if (input) input.value = device?.token || '';
+}
+
 settingsBtn.addEventListener('click', async () => {
   settingsOverlay.classList.remove('hidden');
+  loadDeviceToken();
   await loadHASettings();
   await loadApiToken();
   // Reflects whatever's currently going on (or just finished) even if this
@@ -1567,6 +1575,19 @@ settingsBtn.addEventListener('click', async () => {
 
 const haSaveBtn = document.getElementById('ha-save-btn');
 if (haSaveBtn) haSaveBtn.addEventListener('click', saveHASettings);
+
+const deviceTokenCopyBtn = document.getElementById('device-token-copy-btn');
+if (deviceTokenCopyBtn) {
+  deviceTokenCopyBtn.addEventListener('click', async () => {
+    const input = document.getElementById('device-token-value');
+    try {
+      await navigator.clipboard.writeText(input.value);
+      toast(t('apiTokenCopied'));
+    } catch {
+      input.select();
+    }
+  });
+}
 
 const apiTokenCopyBtn = document.getElementById('api-token-copy-btn');
 if (apiTokenCopyBtn) {

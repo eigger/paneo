@@ -588,7 +588,12 @@ app.post('/api/devices/:id/apply-to-group', async (req, reply) => {
 app.post('/api/devices/:id/command', async (req, reply) => {
   const { action, on, mode } = req.body || {};
   if (!['reload', 'identify', 'power', 'update', 'restart-kiosk'].includes(action)) return reply.code(400).send({ error: 'invalid action' });
-  const d = store.getDevice(req.params.id);
+  // Accepts either the internal device id or its pairing token (§D69/§D70) —
+  // an automation like a Home Assistant rest_command already has the
+  // pairing token on hand (it's in the "Open display" URL, and shown next
+  // to the API token in Settings), so it doesn't need a separate
+  // authenticated GET /api/devices call just to look up the internal id.
+  const d = store.getDevice(req.params.id) || store.getDeviceByToken(req.params.id);
   if (!d) return reply.code(404).send({ error: 'not found' });
   if (action === 'power') {
     // Power commands are routed to the companion agent, not the display browser

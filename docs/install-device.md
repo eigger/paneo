@@ -402,29 +402,24 @@ Some sites block iframe embedding via `X-Frame-Options` or CSP — that is the s
 
 §8.3 covers pulling HA data *into* Paneo widgets. The reverse — letting an HA automation turn a Paneo display on/off — needs no Paneo-side changes: the editor's own "Screen on"/"Screen off" buttons already call a plain REST endpoint, and HA can call the same one directly via `rest_command`.
 
-Since §12 the editor requires an admin login, and `/api/*` is gated accordingly — `rest_command` can't hold a browser session cookie, so it authenticates with the **API token** instead: open the editor → ⚙ Settings → **API token (automation)**, copy the value shown there.
+Since §12 the editor requires an admin login, and `/api/*` is gated accordingly — `rest_command` can't hold a browser session cookie, so it authenticates with the **API token** instead. Both values you need are in the editor → ⚙ Settings, right next to each other:
 
-1. Find the display's internal device ID (not its pairing token) — this call also needs the token:
+- **This display's device token** — identifies *which* display; the command URL below accepts it directly, no separate lookup call needed.
+- **API token (automation)** — authenticates the *request itself*.
 
-   ```sh
-   curl -H "Authorization: Bearer <api-token>" http://<server-ip>:4321/api/devices
-   ```
-
-   Match the entry by `name` and note its `id`.
-
-2. Add a `rest_command` to Home Assistant's `configuration.yaml`:
+1. Add a `rest_command` to Home Assistant's `configuration.yaml`, using the device token in the URL and the API token in the header:
 
    ```yaml
    rest_command:
      paneo_screen_on:
-       url: "http://<server-ip>:4321/api/devices/<device-id>/command"
+       url: "http://<server-ip>:4321/api/devices/<device-token>/command"
        method: POST
        headers:
          Authorization: "Bearer <api-token>"
        content_type: "application/json"
        payload: '{"action": "power", "on": true}'
      paneo_screen_off:
-       url: "http://<server-ip>:4321/api/devices/<device-id>/command"
+       url: "http://<server-ip>:4321/api/devices/<device-token>/command"
        method: POST
        headers:
          Authorization: "Bearer <api-token>"
@@ -432,7 +427,7 @@ Since §12 the editor requires an admin login, and `/api/*` is gated accordingly
        payload: '{"action": "power", "on": false}'
    ```
 
-3. Call `rest_command.paneo_screen_on` / `rest_command.paneo_screen_off` from any HA automation, script, or dashboard button.
+2. Call `rest_command.paneo_screen_on` / `rest_command.paneo_screen_off` from any HA automation, script, or dashboard button.
 
 This needs the companion agent installed and connected on that display (§6) — the request is relayed to the agent exactly the way the editor's own power buttons work. Regenerating the API token (same Settings panel) immediately invalidates it — update the `rest_command` config with the new value if you rotate it.
 
