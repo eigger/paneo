@@ -402,33 +402,27 @@ Some sites block iframe embedding via `X-Frame-Options` or CSP — that is the s
 
 §8.3 covers pulling HA data *into* Paneo widgets. The reverse — letting an HA automation turn a Paneo display on/off — needs no Paneo-side changes: the editor's own "Screen on"/"Screen off" buttons already call a plain REST endpoint, and HA can call the same one directly via `rest_command`.
 
-1. Find the display's internal device ID (not its pairing token):
+Since §12 the editor requires an admin login and `/api/*` is gated accordingly — but `/api/devices/<token>/command` is an exception: the display's own **pairing token**, used in the URL, doubles as the credential (no separate API token, no `Authorization` header). Find it in the editor → ⚙ Settings → **This display's device token**.
 
-   ```sh
-   curl http://<server-ip>:4321/api/devices
-   ```
-
-   Match the entry by `name` and note its `id`.
-
-2. Add a `rest_command` to Home Assistant's `configuration.yaml`:
+1. Add a `rest_command` to Home Assistant's `configuration.yaml`, using the device token in place of a device id:
 
    ```yaml
    rest_command:
      paneo_screen_on:
-       url: "http://<server-ip>:4321/api/devices/<device-id>/command"
+       url: "http://<server-ip>:4321/api/devices/<device-token>/command"
        method: POST
        content_type: "application/json"
        payload: '{"action": "power", "on": true}'
      paneo_screen_off:
-       url: "http://<server-ip>:4321/api/devices/<device-id>/command"
+       url: "http://<server-ip>:4321/api/devices/<device-token>/command"
        method: POST
        content_type: "application/json"
        payload: '{"action": "power", "on": false}'
    ```
 
-3. Call `rest_command.paneo_screen_on` / `rest_command.paneo_screen_off` from any HA automation, script, or dashboard button.
+2. Call `rest_command.paneo_screen_on` / `rest_command.paneo_screen_off` from any HA automation, script, or dashboard button.
 
-This needs the companion agent installed and connected on that display (§6) — the request is relayed to the agent exactly the way the editor's own power buttons work. Since the editor itself is intentionally unauthenticated on the LAN (§10), this endpoint has no separate access control either — treat network exposure the same way you'd treat the editor: LAN-only, or behind your own reverse proxy/VPN if reaching it from outside the LAN.
+This needs the companion agent installed and connected on that display (§6) — the request is relayed to the agent exactly the way the editor's own power buttons work. The token only ever authorizes commands for *this one display* — it can't list other devices, edit layouts, or reach anything else under `/api/*`.
 
 ## 9. Version information
 

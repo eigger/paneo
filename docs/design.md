@@ -97,6 +97,8 @@
 | D66 | 헬스체크 | **verify 횟수 2회(재시작 1회) 제한** | 언더볼티지 장치 무한 재시작 방지 |
 | D67 | 초 동기화 | **scheduleSecondTick 정각 정렬 예약** | 시계/타이머/세계시계 초 전환 시점 일치 |
 | D68 | 경계 동기화 | **scheduleBoundaryTick 정밀 정렬** | 날짜/디데이 동기화 및 데이터 폴링 지터 추가 |
+| D69 | 자동화 인증 | **별도 API 토큰 없이 페어링 토큰이 자기 `/command`를 자가 인가** | 에디터 세션 로그인(B3) 도입 후 Home Assistant `rest_command` 등 비-브라우저 클라이언트가 `/api/devices/:id/command` 호출 시 401 발생 — 처음엔 별도 관리자 API 토큰을 추가했으나, 기기별 페어링 토큰 하나로 식별·인가를 겸하도록 단순화(그 기기의 `/command`만 허용, 다른 `/api/*`는 여전히 세션 필요). 에디터 설정에 기기 토큰 노출 |
+| D71 | 백업 API 정리 | **미사용 서버 백업/복원 라우트 삭제 (HA 토큰 평문 노출)** | 백업/복원 UI 버튼은 실제로는 클라이언트 사이드 구현(layout+기본 설정만, 토큰 미포함)을 쓰는데, `GET/POST /api/devices/:id/backup·restore` 서버 라우트가 아무 데서도 호출되지 않는 채 남아 있으면서 HA 장기 액세스 토큰을 마스킹 없이 그대로 반환 — editor.js 주석의 설계 의도(HA 자격증명 제외)와도 어긋나 라우트·`store.updateDeviceToken` 전부 삭제 |
 
 ---
 
@@ -260,6 +262,7 @@ render(el, config, ctx) => void
 
 - **디스플레이 연결**: 기기 페어링 시 발급되는 URL 토큰 기반 단순 인증 적용 (읽기 전용 캔버스 수신).
 - **편집기 인증**: scrypt 해시 기반 관리자 단일 암호 세션 로그인 필수화, HttpOnly + SameSite=Lax 쿠키 세션 수립.
+- **자동화 인증 (D69)**: 세션 쿠키를 가질 수 없는 비-브라우저 클라이언트(예: Home Assistant `rest_command`)는 기기별 페어링 토큰을 URL에 그대로 사용 — 그 값 자체가 해당 기기의 `/api/devices/<token>/command` 호출을 자가 인가하며, 다른 기기·다른 `/api/*` 경로에는 권한이 없음.
 - **XSS 방지**: iCal, RSS 등의 외부 데이터 주입 시 `escapeHtml` 및 `safeHttpUrl`을 공통 적용하여 보안 위협 격리.
 
 ## 13. 마일스톤 (Milestones)

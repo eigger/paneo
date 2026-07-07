@@ -161,6 +161,10 @@ const catalogs = {
     authErrorInvalid: '비밀번호가 올바르지 않습니다.',
     authErrorRateLimited: '시도 횟수가 많습니다. 잠시 후 다시 시도하세요.',
     authErrorGeneric: '오류가 발생했습니다. 다시 시도하세요.',
+    deviceTokenLabel: '이 화면의 기기 토큰',
+    deviceTokenHint: '이 값 하나로 기기 식별과 인증을 함께 처리합니다 — Home Assistant rest_command 등에서 device id 대신 명령 URL(/api/devices/<토큰>/command)에 그대로 사용하세요. 별도 API 토큰/헤더는 필요 없습니다.',
+    tokenCopyBtn: '복사',
+    tokenCopied: '토큰이 복사되었습니다',
   },
   en: {
     tag: 'editor',
@@ -318,6 +322,10 @@ const catalogs = {
     authErrorInvalid: 'Incorrect password.',
     authErrorRateLimited: 'Too many attempts. Try again shortly.',
     authErrorGeneric: 'Something went wrong. Please try again.',
+    deviceTokenLabel: 'This display\'s device token',
+    deviceTokenHint: 'One value handles both identifying and authorizing — use it in place of the device id in an automation\'s command URL (e.g. Home Assistant rest_command: /api/devices/<token>/command). No separate API token or header needed.',
+    tokenCopyBtn: 'Copy',
+    tokenCopied: 'Token copied',
   },
   ja: {
     tag: 'エディタ',
@@ -471,6 +479,10 @@ const catalogs = {
     authErrorInvalid: 'パスワードが正しくありません。',
     authErrorRateLimited: '試行回数が多すぎます。しばらくしてから再試行してください。',
     authErrorGeneric: 'エラーが発生しました。もう一度お試しください。',
+    deviceTokenLabel: 'この画面のデバイストークン',
+    deviceTokenHint: 'この1つの値だけでデバイスの識別と認証を兼ねます — Home Assistantのrest_commandなどで、device idの代わりにコマンドURL(/api/devices/<トークン>/command)にそのまま使用してください。別途APIトークンやヘッダーは不要です。',
+    tokenCopyBtn: 'コピー',
+    tokenCopied: 'トークンをコピーしました',
   },
   de: {
     tag: 'Editor',
@@ -624,6 +636,10 @@ const catalogs = {
     authErrorInvalid: 'Falsches Passwort.',
     authErrorRateLimited: 'Zu viele Versuche. Bitte versuchen Sie es später erneut.',
     authErrorGeneric: 'Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.',
+    deviceTokenLabel: 'Geräte-Token dieses Displays',
+    deviceTokenHint: 'Ein einziger Wert übernimmt Identifikation und Autorisierung zugleich — anstelle der device id direkt in der Befehls-URL einer Automatisierung verwenden (z. B. Home Assistant rest_command: /api/devices/<Token>/command). Kein separates API-Token oder Header nötig.',
+    tokenCopyBtn: 'Kopieren',
+    tokenCopied: 'Token kopiert',
   },
   fr: {
     tag: 'Éditeur',
@@ -777,6 +793,10 @@ const catalogs = {
     authErrorInvalid: 'Mot de passe incorrect.',
     authErrorRateLimited: 'Trop de tentatives. Réessayez dans un instant.',
     authErrorGeneric: 'Une erreur est survenue. Veuillez réessayer.',
+    deviceTokenLabel: 'Jeton d’appareil de cet écran',
+    deviceTokenHint: 'Une seule valeur identifie et autorise à la fois — à utiliser à la place du device id dans l’URL de commande d’une automatisation (ex. rest_command Home Assistant : /api/devices/<jeton>/command). Aucun jeton API ni en-tête séparé n’est nécessaire.',
+    tokenCopyBtn: 'Copier',
+    tokenCopied: 'Jeton copié',
   },
   es: {
     tag: 'Editor',
@@ -930,6 +950,10 @@ const catalogs = {
     authErrorInvalid: 'Contraseña incorrecta.',
     authErrorRateLimited: 'Demasiados intentos. Vuelve a intentarlo en un momento.',
     authErrorGeneric: 'Algo salió mal. Inténtalo de nuevo.',
+    deviceTokenLabel: 'Token de dispositivo de esta pantalla',
+    deviceTokenHint: 'Un solo valor identifica y autoriza a la vez — úsalo en lugar del device id en la URL de comando de una automatización (p. ej. rest_command de Home Assistant: /api/devices/<token>/command). No hace falta un token de API ni una cabecera aparte.',
+    tokenCopyBtn: 'Copiar',
+    tokenCopied: 'Token copiado',
   },
 };
 

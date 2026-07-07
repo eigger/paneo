@@ -1542,8 +1542,17 @@ function closeSettings() {
   stopDeviceMetaPolling();
 }
 
+// §12 보안 D69/D70: 페어링 토큰 자체가 그 기기의 /command 호출을 인가하므로(서버
+// 쪽 onRequest 훅 참고) 별도 API 토큰이 필요 없음 — 이미 device 객체에 있는 값을
+// 보여주기만 하면 됨 (publicDevice()가 항상 token을 포함).
+function loadDeviceToken() {
+  const input = document.getElementById('device-token-value');
+  if (input) input.value = device?.token || '';
+}
+
 settingsBtn.addEventListener('click', async () => {
   settingsOverlay.classList.remove('hidden');
+  loadDeviceToken();
   await loadHASettings();
   // Reflects whatever's currently going on (or just finished) even if this
   // device's update was triggered from a different tab/session — and keeps
@@ -1554,6 +1563,19 @@ settingsBtn.addEventListener('click', async () => {
 
 const haSaveBtn = document.getElementById('ha-save-btn');
 if (haSaveBtn) haSaveBtn.addEventListener('click', saveHASettings);
+
+const deviceTokenCopyBtn = document.getElementById('device-token-copy-btn');
+if (deviceTokenCopyBtn) {
+  deviceTokenCopyBtn.addEventListener('click', async () => {
+    const input = document.getElementById('device-token-value');
+    try {
+      await navigator.clipboard.writeText(input.value);
+      toast(t('tokenCopied'));
+    } catch {
+      input.select();
+    }
+  });
+}
 
 // ---- backup / restore (layout + device settings; §D53) ----
 // HA credentials are deliberately excluded: the URL is global (not

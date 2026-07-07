@@ -56,10 +56,26 @@ if (process.env.PANEO_ADMIN_PASSWORD) {
 // SPA shell has no secrets in it; public/editor/editor.js blocks its own UI
 // behind /api/auth/status until login succeeds, so gating only the API is
 // sufficient and avoids fighting fastify-static's routing for the login page.
-const PUBLIC_API_PREFIXES = ['/api/auth/', '/api/proxy/', '/api/display/', '/api/brand', '/api/version', '/api/update-check', '/api/plugins'];
+//
+// D69/D70: no separate API token — a device's own pairing token, already
+// used to identify *which* display in /api/devices/:idOrToken/command, also
+// *authorizes* that call when it's the token (not the internal id) in the
+// URL. One value does both jobs, so a Home Assistant rest_command needs
+// nothing beyond the pairing token already shown in editor Settings (same
+// one baked into that display's "Open display" URL). It only ever unlocks
+// that one device's /command endpoint — every other /api/* route (device
+// list, layout, backup/restore, HA settings, ...) still needs the admin
+// session.
+const PUBLIC_API_ROUTES = ['/api/auth/status', '/api/auth/setup', '/api/auth/login', '/api/auth/logout'];
+const PUBLIC_API_PREFIXES = ['/api/proxy/', '/api/display/', '/api/brand', '/api/version', '/api/update-check', '/api/plugins'];
+const COMMAND_ROUTE = /^\/api\/devices\/([^/]+)\/command$/;
 app.addHook('onRequest', async (req, reply) => {
   if (!req.url.startsWith('/api/')) return;
-  if (PUBLIC_API_PREFIXES.some((p) => req.url === p || req.url.startsWith(p))) return;
+  const path = req.url.split('?')[0];
+  if (PUBLIC_API_ROUTES.includes(path)) return;
+  if (PUBLIC_API_PREFIXES.some((p) => path === p || path.startsWith(p))) return;
+  const commandMatch = path.match(COMMAND_ROUTE);
+  if (commandMatch && store.getDeviceByToken(commandMatch[1])) return;
   const cookies = auth.parseCookies(req.headers.cookie);
   if (!auth.isValidSession(cookies[auth.SESSION_COOKIE_NAME])) {
     reply.code(401).send({ error: 'unauthorized' });
@@ -281,69 +297,6 @@ app.post('/api/devices/:id/publish', async (req, reply) => {
   if (!d) return reply.code(404).send({ error: 'not found' });
   broadcast(d.id, layoutMessage(d));
   return { ok: true, publishedAt: d.publishedAt };
-});
-
-app.get('/api/devices/:id/backup', async (req, reply) => {
-  const d = store.getDevice(req.params.id);
-  if (!d) return reply.code(404).send({ error: 'not found' });
-  const ha_url = store.getSetting('ha_url') || '';
-  const ha_token = store.getSetting('ha_token') || '';
-  return {
-    version: 'paneo-backup-v1',
-    device: {
-      name: d.name,
-      token: d.token,
-      performanceProfile: d.performanceProfile,
-      locale: d.locale,
-      timezone: d.timezone,
-      resolutionW: d.resolutionW,
-      resolutionH: d.resolutionH,
-      groupId: d.groupId,
-      powerSchedule: d.powerSchedule,
-    },
-    layout: d.draft,
-    ha: {
-      url: ha_url,
-      token: ha_token,
-    }
-  };
-});
-
-app.post('/api/devices/:id/restore', async (req, reply) => {
-  const id = req.params.id;
-  const body = req.body || {};
-  if (body.version !== 'paneo-backup-v1') {
-    return reply.code(400).send({ error: 'Invalid backup version' });
-  }
-
-  // 1. Restore device metadata
-  if (body.device) {
-    await store.updateDevice(id, body.device);
-    if (body.device.token) {
-      try {
-        store.updateDeviceToken(id, body.device.token);
-      } catch (err) {
-        req.log.error(`Failed to restore device token: ${err.message}`);
-      }
-    }
-  }
-
-  // 2. Restore layout
-  if (body.layout) {
-    await store.saveDraft(id, body.layout);
-  }
-
-  // 3. Restore Home Assistant settings
-  if (body.ha) {
-    if (body.ha.url !== undefined) store.setSetting('ha_url', body.ha.url);
-    if (body.ha.token !== undefined) store.setSetting('ha_token', body.ha.token);
-  }
-
-  const d = store.getDevice(id);
-  if (!d) return reply.code(404).send({ error: 'not found' });
-
-  broadcast(d.id, layoutMessage(d)); // push to live displays
-  return fullDevice(d);
 });
 
 app.delete('/api/devices/:id', async (req, reply) => {
@@ -569,7 +522,10 @@ app.post('/api/devices/:id/apply-to-group', async (req, reply) => {
 app.post('/api/devices/:id/command', async (req, reply) => {
   const { action, on, mode } = req.body || {};
   if (!['reload', 'identify', 'power', 'update', 'restart-kiosk'].includes(action)) return reply.code(400).send({ error: 'invalid action' });
-  const d = store.getDevice(req.params.id);
+  // Accepts either the internal device id (browser/editor, session-gated
+  // above) or the pairing token (§D69/§D70 — self-authorizing, see the
+  // onRequest hook above).
+  const d = store.getDevice(req.params.id) || store.getDeviceByToken(req.params.id);
   if (!d) return reply.code(404).send({ error: 'not found' });
   if (action === 'power') {
     // Power commands are routed to the companion agent, not the display browser
