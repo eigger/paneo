@@ -47,6 +47,17 @@ function fitTextToBox(el, minRatio = 0.4) {
   }
 }
 
+// Measures text width without touching the DOM (no reflow) -- used where a
+// layout decision (e.g. "is there room for this text?") has to be made
+// *before* actually rendering it, so fitTextToBox's after-the-fact DOM
+// measurement doesn't apply.
+let _measureCtx = null;
+function measureTextWidth(text, fontPx, weight = 400) {
+  if (!_measureCtx) _measureCtx = document.createElement('canvas').getContext('2d');
+  _measureCtx.font = `${weight} ${fontPx}px 'Pretendard Variable', Pretendard, sans-serif`;
+  return _measureCtx.measureText(text).width;
+}
+
 function escapeAttr(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }
@@ -334,13 +345,31 @@ export const widgets = {
       const tz = ctx.timezone || undefined;
       const dateFmt = new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'long', day: 'numeric', timeZone: tz });
       const wdFmt = new Intl.DateTimeFormat(locale, { weekday: 'long', timeZone: tz });
+
+      function fit() {
+        const mainEl = el.querySelector('.date-main');
+        const wdEl = el.querySelector('.date-weekday');
+        // Reset to the CSS clamp() value before measuring -- locale month/
+        // weekday names vary a lot in rendered width (e.g. "September" vs
+        // "9월"), which clamp()'s cqmin-based max doesn't know about, so
+        // without this the text can wrap/overflow its box in some locales
+        // or at some container aspect ratios (clamp() alone can compute a
+        // font-size that fits the editor's preview box but not the real
+        // kiosk's, or vice versa, since it only sees the box, not the text).
+        if (mainEl) { mainEl.style.fontSize = ''; fitTextToBox(mainEl, 0.3); }
+        if (wdEl) { wdEl.style.fontSize = ''; fitTextToBox(wdEl, 0.3); }
+      }
+
       const update = () => {
         const now = new Date();
         el.innerHTML = `<div class="w-date"><div class="date-main">${dateFmt.format(now)}</div><div class="date-weekday">${wdFmt.format(now)}</div></div>`;
+        fit();
       };
       update();
       const t = setInterval(update, 60000);
-      el._cleanup = () => clearInterval(t);
+      const ro = new ResizeObserver(fit);
+      ro.observe(el);
+      el._cleanup = () => { clearInterval(t); ro.disconnect(); };
     },
   },
 
@@ -937,6 +966,14 @@ export const widgets = {
       const CAL_GRID_TIME_MIN_CELL_W = 68;
       const CAL_GRID_TIME_MIN_CELL_H = 52;
       const CAL_GRID_HEADER_H = 46; // approx month-title + weekday-header rows
+      // Minimum event-title characters that must still fit *after* the time
+      // prefix eats into the cell — the cell-size check above only asks "is
+      // this cell generically big enough", which a long event title can
+      // still blow through once "HH:MM " is prepended, crushing the actual
+      // title to 1-2 characters before CSS ellipsis kicks in (showing a time
+      // next to an unreadable sliver of a title isn't actually useful).
+      const CAL_GRID_TIME_MIN_SUMMARY_CH = 4;
+      const CAL_GRID_EVENT_CELL_PADDING = 10; // .cal-m-day (2px 3px) + .cal-m-event (0 2px) padding, approx
       function gridRowsForView(view) {
         if (view === 'week') return 1;
         if (view === '3week') return 3;
@@ -947,7 +984,21 @@ export const widgets = {
         const cols = config.showWeekNumber ? 8 : 7;
         const cellW = width / cols;
         const cellH = (height - CAL_GRID_HEADER_H) / gridRowsForView(view);
-        return cellW >= CAL_GRID_TIME_MIN_CELL_W && cellH >= CAL_GRID_TIME_MIN_CELL_H;
+        if (cellW < CAL_GRID_TIME_MIN_CELL_W || cellH < CAL_GRID_TIME_MIN_CELL_H) return false;
+        // Combined-width check: mirrors .cal-m-event's font-size clamp(8px,
+        // 3cqh, 13px) (cqh here is the *widget's* own height, same basis the
+        // CSS clamp uses) so the estimate tracks the actual rendered size,
+        // then measures a sample "HH:MM " against a conservative per-char
+        // width (CJK glyphs, which run close to 1em/char and are wider than
+        // Latin text — event titles can be in any language, so sizing the
+        // reserved space for the *widest* common case avoids happily showing
+        // a time next to a crushed Korean/Japanese/Chinese title while still
+        // being generous enough for narrower scripts).
+        const fontPx = Math.min(13, Math.max(8, height * 0.03));
+        const timeW = measureTextWidth(`${timeFmt.format(new Date())} `, fontPx);
+        const avgCjkCharW = measureTextWidth('가나다라마', fontPx) / 5;
+        const availableForSummary = cellW - CAL_GRID_EVENT_CELL_PADDING - timeW;
+        return availableForSummary >= avgCjkCharW * CAL_GRID_TIME_MIN_SUMMARY_CH;
       }
 
       const rangeFmt = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', timeZone: tz });
