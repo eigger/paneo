@@ -56,10 +56,23 @@ if (process.env.PANEO_ADMIN_PASSWORD) {
 // SPA shell has no secrets in it; public/editor/editor.js blocks its own UI
 // behind /api/auth/status until login succeeds, so gating only the API is
 // sufficient and avoids fighting fastify-static's routing for the login page.
-const PUBLIC_API_PREFIXES = ['/api/auth/', '/api/proxy/', '/api/display/', '/api/brand', '/api/version', '/api/update-check', '/api/plugins'];
+//
+// Two credential kinds are accepted: the browser's session cookie, or a
+// long-lived API token (Authorization: Bearer <token>) for non-browser
+// callers that can't hold a cookie — e.g. a Home Assistant rest_command
+// hitting /api/devices/:id/command to toggle screen power. Prefix-matching
+// only the exact public auth endpoints (not all of /api/auth/) matters here:
+// /api/auth/token must stay session/token-gated, not walk-up public.
+const PUBLIC_API_ROUTES = ['/api/auth/status', '/api/auth/setup', '/api/auth/login', '/api/auth/logout'];
+const PUBLIC_API_PREFIXES = ['/api/proxy/', '/api/display/', '/api/brand', '/api/version', '/api/update-check', '/api/plugins'];
 app.addHook('onRequest', async (req, reply) => {
   if (!req.url.startsWith('/api/')) return;
-  if (PUBLIC_API_PREFIXES.some((p) => req.url === p || req.url.startsWith(p))) return;
+  const path = req.url.split('?')[0];
+  if (PUBLIC_API_ROUTES.includes(path)) return;
+  if (PUBLIC_API_PREFIXES.some((p) => path === p || path.startsWith(p))) return;
+  const authHeader = req.headers.authorization || '';
+  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (bearer && auth.isValidApiToken(bearer)) return;
   const cookies = auth.parseCookies(req.headers.cookie);
   if (!auth.isValidSession(cookies[auth.SESSION_COOKIE_NAME])) {
     reply.code(401).send({ error: 'unauthorized' });
@@ -70,6 +83,12 @@ app.get('/api/auth/status', async (req) => {
   const cookies = auth.parseCookies(req.headers.cookie);
   return { configured: auth.isConfigured(), authenticated: auth.isValidSession(cookies[auth.SESSION_COOKIE_NAME]) };
 });
+
+// API token: a single long-lived credential for machine callers (Home
+// Assistant rest_command, scripts, ...). Session-gated like everything else
+// under /api/devices — you need to already be logged in to view or rotate it.
+app.get('/api/auth/token', async () => ({ token: auth.getApiToken() }));
+app.post('/api/auth/token/regenerate', async () => ({ token: auth.regenerateApiToken() }));
 
 app.post('/api/auth/setup', async (req, reply) => {
   if (auth.isConfigured()) return reply.code(409).send({ error: 'already configured' });

@@ -146,6 +146,18 @@
       <hr class="settings-divider" />
 
       <div class="field">
+        <label data-i18n="apiTokenLabel"></label>
+        <p class="field-hint" data-i18n="apiTokenHint"></p>
+        <div class="grid2">
+          <input type="text" id="api-token-value" readonly />
+          <button type="button" id="api-token-copy-btn" data-i18n="apiTokenCopyBtn"></button>
+        </div>
+        <button type="button" id="api-token-regenerate-btn" class="danger" data-i18n="apiTokenRegenerateBtn"></button>
+      </div>
+
+      <hr class="settings-divider" />
+
+      <div class="field">
         <label data-i18n="backupRestoreLabel"></label>
         <div class="button-row">
           <button type="button" id="export-backup-btn" data-i18n="backupExport"></button>

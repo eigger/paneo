@@ -1542,9 +1542,22 @@ function closeSettings() {
   stopDeviceMetaPolling();
 }
 
+// §12 보안: Home Assistant rest_command 등 브라우저가 아닌 클라이언트가 세션 쿠키
+// 없이 /api/devices/:id/command 등을 호출할 때 쓰는 Authorization: Bearer 토큰.
+async function loadApiToken() {
+  try {
+    const data = await api('/api/auth/token');
+    const input = document.getElementById('api-token-value');
+    if (input) input.value = data.token || '';
+  } catch (err) {
+    console.error('Failed to load API token', err);
+  }
+}
+
 settingsBtn.addEventListener('click', async () => {
   settingsOverlay.classList.remove('hidden');
   await loadHASettings();
+  await loadApiToken();
   // Reflects whatever's currently going on (or just finished) even if this
   // device's update was triggered from a different tab/session — and keeps
   // polling on its own while the panel is open and a run is still active.
@@ -1554,6 +1567,29 @@ settingsBtn.addEventListener('click', async () => {
 
 const haSaveBtn = document.getElementById('ha-save-btn');
 if (haSaveBtn) haSaveBtn.addEventListener('click', saveHASettings);
+
+const apiTokenCopyBtn = document.getElementById('api-token-copy-btn');
+if (apiTokenCopyBtn) {
+  apiTokenCopyBtn.addEventListener('click', async () => {
+    const input = document.getElementById('api-token-value');
+    try {
+      await navigator.clipboard.writeText(input.value);
+      toast(t('apiTokenCopied'));
+    } catch {
+      input.select();
+    }
+  });
+}
+
+const apiTokenRegenerateBtn = document.getElementById('api-token-regenerate-btn');
+if (apiTokenRegenerateBtn) {
+  apiTokenRegenerateBtn.addEventListener('click', async () => {
+    if (!confirm(t('apiTokenRegenerateConfirm'))) return;
+    const data = await api('/api/auth/token/regenerate', { method: 'POST' });
+    document.getElementById('api-token-value').value = data.token || '';
+    toast(t('apiTokenRegenerated'));
+  });
+}
 
 // ---- backup / restore (layout + device settings; §D53) ----
 // HA credentials are deliberately excluded: the URL is global (not

@@ -48,6 +48,37 @@ export function checkPassword(password) {
   return verifyPassword(password, store.getSetting(SETTING_KEY));
 }
 
+// A single long-lived credential for non-browser callers (Home Assistant
+// rest_command, scripts, ...) that can't hold a session cookie — sent as
+// `Authorization: Bearer <token>`. Stored in plaintext (not hashed) because,
+// like a device pairing token, it must be re-displayed to the admin for
+// copy/paste; it grants the same scope as the admin session, so it's only
+// ever shown/rotated over an already-authenticated request (see server.js).
+const API_TOKEN_KEY = 'apiToken';
+
+export function getApiToken() {
+  let token = store.getSetting(API_TOKEN_KEY);
+  if (!token) {
+    token = crypto.randomBytes(24).toString('hex');
+    store.setSetting(API_TOKEN_KEY, token);
+  }
+  return token;
+}
+
+export function regenerateApiToken() {
+  const token = crypto.randomBytes(24).toString('hex');
+  store.setSetting(API_TOKEN_KEY, token);
+  return token;
+}
+
+export function isValidApiToken(token) {
+  const stored = store.getSetting(API_TOKEN_KEY);
+  if (!token || !stored) return false;
+  const a = Buffer.from(token);
+  const b = Buffer.from(stored);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 export function createSession() {
   const id = crypto.randomBytes(32).toString('hex');
   sessions.set(id, Date.now() + SESSION_TTL_MS);
