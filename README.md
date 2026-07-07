@@ -114,6 +114,15 @@ docker compose pull && docker compose up -d   # released image
 
 Open the display in a second tab/window, arrange widgets in the editor, press **Apply**, and watch it update live.
 
+### Production Deployment & HTTPS
+
+Since the editor is password-protected, exposing it directly over HTTP is insecure. It is highly recommended to run Paneo behind a reverse proxy (e.g., Nginx, Traefik, or Cloudflare Tunnels) to enforce HTTPS:
+
+1. **Proxy Setup**: Direct incoming port 443 (HTTPS) traffic from your reverse proxy to Paneo's local port 4321.
+2. **Reverse Proxy SSL**: Set up Let's Encrypt or your own SSL certificates at the reverse proxy layer.
+3. **Security**: Ensure client browsers connect securely so session cookies (`paneo_session`) cannot be intercepted over the network.
+
+
 ## Tests
 
 ```sh
