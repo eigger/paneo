@@ -67,11 +67,17 @@ select:focus, input:focus { outline: none; border-color: #4f8cff; }
 .save-state { font-size: 12px; opacity: 0.55; min-width: 52px; }
 .link { color: #8ab4ff; font-size: 13px; text-decoration: none; }
 .link:hover { text-decoration: underline; }
+/* box-shadow was a strong, always-on colored glow (0.32 opacity, 14px blur)
+   -- every other header button (.icon-btn/.palette-btn) has no shadow at
+   all, so this one visibly "glowed" at rest against the dark header even
+   when nobody was interacting with it. Toned down to a subtle resting
+   shadow; the stronger glow now only appears on hover, as feedback for
+   the interaction rather than a constant ambient effect. */
 .apply { background: linear-gradient(135deg, #4f8cff, #6a5cf5); color: #fff; border: 0; border-radius: 8px;
   padding: 8px 18px; font-weight: 600; cursor: pointer;
-  box-shadow: 0 4px 14px rgba(79, 140, 255, 0.32);
+  box-shadow: 0 2px 6px rgba(79, 140, 255, 0.15);
   transition: filter 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease; }
-.apply:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 6px 18px rgba(79, 140, 255, 0.4); }
+.apply:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 6px 18px rgba(79, 140, 255, 0.35); }
 .apply:active { transform: translateY(0) scale(0.97); }
 
 main { flex: 1; display: flex; min-height: 0; }
