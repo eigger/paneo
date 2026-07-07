@@ -92,9 +92,12 @@ main { flex: 1; display: flex; min-height: 0; }
 .ed-widget .widget-content { width: 100%; height: 100%;
   container-type: size;
   background: linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.025));
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  box-shadow: 0 4px 14px rgba(0,0,0,0.22);
-  border-radius: 12px; display: flex; align-items: center; justify-content: center; overflow: hidden;
+  /* Matches the softened card treatment in display.css — a faint hairline
+     border plus an inset highlight and a larger, low-contrast outer shadow
+     instead of one sharp 1px edge. */
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.04);
+  border-radius: 16px; display: flex; align-items: center; justify-content: center; overflow: hidden;
   transition: box-shadow 0.15s ease; }
 .ed-widget.selected .widget-content { box-shadow: 0 0 0 2px #3b82f6, 0 0 22px rgba(59,130,246,0.35); }
 .resize-handle { position: absolute; right: -4px; bottom: -4px; width: 16px; height: 16px;
@@ -146,9 +149,25 @@ main { flex: 1; display: flex; min-height: 0; }
    it was inheriting the ancestor's base 16px font-size instead, rendering
    at an illegibly tiny ~6px regardless of the clock's actual size. */
 .clock-sec { font-size: 0.5em; opacity: 0.6; }
-.w-date { text-align: center; line-height: 1; }
-.w-date .date-main { font-size: clamp(16px, 36cqmin, 90px); font-weight: 500; }
-.w-date .date-weekday { font-size: clamp(13px, 18cqmin, 44px); opacity: 0.6; margin-top: 2px; }
+/* width/height:100% (not shrink-to-fit) so fitTextToBox() -- which measures
+   .date-main/.date-weekday against *this* element's clientWidth/Height --
+   sees the widget's actual available box, not a size that depends on the
+   text it's supposed to be measuring against. */
+.w-date { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; text-align: center; line-height: 1; }
+.w-date .date-main { font-size: clamp(16px, 36cqmin, 90px); font-weight: 500; white-space: nowrap; max-width: 100%; }
+.w-date .date-weekday { font-size: clamp(13px, 18cqmin, 44px); opacity: 0.6; margin-top: 2px; white-space: nowrap; max-width: 100%; }
+/* Mirrors display.css's .w-timer rules — this editor stylesheet had never had
+   them at all, so the alarm timer widget fell back to unstyled browser
+   defaults (small, left-aligned) in the editor preview even though the real
+   kiosk display rendered it correctly. */
+.w-timer { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 100%; padding: 10px 14px; text-align: center; }
+.w-timer-empty .timer-hint { font-size: clamp(11px, 6cqmin, 15px); opacity: 0.4; text-align: center; white-space: pre-line; }
+.timer-row { display: flex; flex-direction: column; align-items: center; gap: 2px; max-width: 100%; }
+.timer-label { font-size: clamp(12px, 12cqmin, 32px); opacity: 0.6; font-weight: 500; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.timer-val { font-size: clamp(15px, 24cqmin, 72px); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: 1px; line-height: 1; }
+.timer-future { color: #f87171; }
+.timer-past   { color: #86efac; }
+.timer-invalid { font-size: 12px; opacity: 0.4; }
 .w-text { font-size: clamp(16px, 20cqmin, 64px); padding: 10px; text-align: center; }
 .w-image { width: 100%; height: 100%; background-size: cover; background-position: center; }
 .w-placeholder { display: flex; align-items: center; justify-content: center; opacity: 0.5; font-size: 13px; }
