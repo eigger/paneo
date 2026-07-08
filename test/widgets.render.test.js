@@ -95,18 +95,18 @@ test('paneo.text renders plain configured text', (t) => {
   assert.equal(el.querySelector('.w-text').textContent, 'Hello Paneo');
 });
 
-test('paneo.calendar.month dims past calendar days in 3-week view', (t) => {
-  // Early March — the 3-week strip includes late-February days (already past).
+test('paneo.calendar.month dims other-month date numbers in 3-week view', (t) => {
+  // Early March — the 3-week strip includes late-February days.
   t.mock.timers.enable({ now: new Date('2026-03-03T12:00:00') });
   const el = mount(t);
-  // 400×300px → 3-week view (height < CAL_MIN_MONTH_HEIGHT 380).
   el.getBoundingClientRect = () => ({
     width: 400, height: 300, top: 0, left: 0, right: 400, bottom: 300,
   });
   renderWidget(el, 'paneo.calendar.month', { icsUrls: [] }, { locale: 'ko-KR' });
   assert.ok(
-    el.querySelector('.cal-m-past-day'),
-    'expected past day cells to carry cal-m-past-day in 3-week view',
+    el.querySelector('.cal-m-other .cal-m-dnum'),
+    'expected other-month day numbers to be marked in 3-week view',
   );
+  assert.equal(el.querySelector('.cal-m-past-day'), null, 'whole-day past dimming should not be used');
   t.mock.timers.reset();
 });
