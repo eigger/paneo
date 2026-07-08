@@ -130,6 +130,9 @@ const groupNewBtn = document.getElementById('group-new-btn');
 const groupApplyBtn = document.getElementById('group-apply-btn');
 const cmdReloadBtn = document.getElementById('cmd-reload-btn');
 const cmdIdentifyBtn = document.getElementById('cmd-identify-btn');
+const notifyTestInput = document.getElementById('notify-test-message');
+const notifyTestBtn = document.getElementById('notify-test-btn');
+const notifyGroupTestBtn = document.getElementById('notify-group-test-btn');
 // §M4: companion-agent & power schedule
 const agentStatus = document.getElementById('agent-status');
 const cmdPowerOnBtn = document.getElementById('cmd-power-on-btn');
@@ -511,6 +514,9 @@ function initSelectors() {
   cmdReloadBtn.addEventListener('click', () => sendCommand('reload'));
   cmdIdentifyBtn.addEventListener('click', () => sendCommand('identify'));
 
+  notifyTestBtn?.addEventListener('click', () => sendNotify(false));
+  notifyGroupTestBtn?.addEventListener('click', () => sendNotify(true));
+
   // §M4: remote power commands
   if (cmdPowerOnBtn) cmdPowerOnBtn.addEventListener('click', () => sendPower(true));
   if (cmdPowerOffBtn) cmdPowerOffBtn.addEventListener('click', () => sendPower(false));
@@ -613,6 +619,17 @@ async function sendUpdate(mode) {
   if (res.agentPresent) startUpdateProgressPolling();
 }
 
+async function sendNotify(group = false) {
+  if (!device) return;
+  const message = notifyTestInput?.value?.trim() || 'test';
+  const path = group
+    ? `/api/devices/${device.id}/notify-group`
+    : `/api/devices/${device.id}/notify`;
+  const res = await api(path, { method: 'POST', body: JSON.stringify({ message }) });
+  if (group) toast(t('notifyGroupSent', res.notified));
+  else toast(t('notifySent'));
+}
+
 function populateGroupSelect() {
   groupSelect.innerHTML = '';
   const none = document.createElement('option');
@@ -664,6 +681,11 @@ function syncDeviceMetaUI() {
   const updateTitle = !hasAgent ? t('agentMissingTip') : updating ? t('updateInProgressTip') : alreadyLatest ? t('updateAlreadyLatestTip') : '';
   if (cmdUpdateAllBtn) { cmdUpdateAllBtn.disabled = updateDisabled; cmdUpdateAllBtn.title = updateTitle; }
   if (cmdUpdateServerBtn) { cmdUpdateServerBtn.disabled = updateDisabled; cmdUpdateServerBtn.title = updateTitle; }
+  if (notifyGroupTestBtn) {
+    const hasGroup = !!device.groupId;
+    notifyGroupTestBtn.disabled = !hasGroup;
+    notifyGroupTestBtn.title = hasGroup ? '' : t('notifyGroupNoneTip');
+  }
 }
 
 function saveResolution() {

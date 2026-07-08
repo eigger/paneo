@@ -12,6 +12,7 @@
   <div id="status" class="offline">연결 중…</div>
   <div id="identify-overlay" class="hidden"></div>
   <div id="update-status-banner"></div>
+  <div id="notify-stack" aria-live="polite"></div>
   <!-- §M3: service worker for offline shell cache (docs/design.md §13 M3) -->
   <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/display/sw.js');</script>
   <script type="module" src="/display/display.js"></script>

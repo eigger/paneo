@@ -400,9 +400,9 @@ Some sites block iframe embedding via `X-Frame-Options` or CSP — that is the s
 
 ### 8.6 Remote control REST API (automation)
 
-The editor's own toolbar buttons (Reload, Identify, Screen on/off, Restart kiosk, Update) are just thin wrappers around two REST endpoints. External automation — Home Assistant, a cron job, a script — can call the same endpoints directly.
+The editor's own toolbar buttons (Reload, Identify, Screen on/off, Restart kiosk, Update) are thin wrappers around REST endpoints. External automation — Home Assistant, a cron job, a script — can call the same endpoints directly.
 
-Since §12 the editor requires an admin login and `/api/*` is gated accordingly — but both endpoints below are an exception: the display's own **pairing token**, used in the URL in place of the internal device id, doubles as the credential (no separate API token, no `Authorization` header). Find it in the editor → ⚙ Settings → **This display's device token**. It only ever authorizes requests for *that one display* — it can't list other devices, edit layouts, or reach anything else under `/api/*`.
+Since §12 the editor requires an admin login and `/api/*` is gated accordingly — but the endpoints below are an exception: the display's own **pairing token**, used in the URL in place of the internal device id, doubles as the credential (no separate API token, no `Authorization` header). Find it in the editor → ⚙ Settings → **This display's device token**. It only ever authorizes requests for *that one display* — it can't list other devices, edit layouts, or reach anything else under `/api/*`.
 
 **Control** — `POST /api/devices/<device-token>/command`, JSON body `{"action": ...}`:
 
@@ -424,6 +424,36 @@ Every response is `{ "ok": true, "agentPresent": boolean }` (or just `{ "ok": tr
 
 `status` is `idle` (nothing in progress or no recent activity), `running`, `done`, or `failed`.
 
+**Notifications** — push a short-lived toast onto the display over the existing WebSocket (no companion agent needed). New toasts stack below any already-visible ones and auto-dismiss — there is no manual close button.
+
+`POST /api/devices/<device-token>/notify` — show on this display only:
+
+```json
+{
+  "message": "Front door opened",
+  "title": "Security",
+  "level": "info",
+  "duration": 5000,
+  "image": "https://example.com/snap.jpg"
+}
+```
+
+| Field | Required | Default | Notes |
+|---|---|---|---|
+| `message` | yes* | — | Main text shown in the toast |
+| `image` | yes* | — | `http://` or `https://` URL, or `data:image/(jpeg\|png\|gif\|webp);base64,...` (max ~512 KB) |
+| `title` | no | — | Optional bold line above `message` |
+| `level` | no | `"info"` | `"info"`, `"warn"`, or `"error"` (border colour) |
+| `duration` | no | `5000` | Milliseconds before auto-dismiss. Minimum **1000**. `0` or negative is treated as **1000** |
+
+\*At least one of `message` or `image` is required. Text+image shows a thumbnail beside the text; image-only fills the toast width.
+
+Response: `{ "ok": true }`. If the display is offline or disconnected, the notification is simply dropped — nothing is queued for later.
+
+`POST /api/devices/<device-token>/notify-group` — same JSON body, but broadcasts to every display that shares this device's group (§8.2). The device must belong to a group. Response: `{ "ok": true, "notified": 3 }`.
+
+The editor → ⚙ Settings → **Remote control** section has a text box (default `test`) and **Test notification** / **Notify whole group** buttons that call these endpoints.
+
 **Example** — Home Assistant `rest_command` in `configuration.yaml`:
 
 ```yaml
@@ -443,9 +473,14 @@ rest_command:
     method: POST
     content_type: "application/json"
     payload: '{"action": "restart-kiosk"}'
+  paneo_notify:
+    url: "http://<server-ip>:4321/api/devices/<device-token>/notify"
+    method: POST
+    content_type: "application/json"
+    payload: '{"message": "Motion detected at the front door", "level": "warn", "duration": 8000}'
 ```
 
-Call `rest_command.paneo_screen_on` / `paneo_screen_off` / `paneo_kiosk_restart` from any HA automation, script, or dashboard button — e.g. chain `paneo_screen_on` followed by a delay and `paneo_kiosk_restart` if a particular display's Wayland compositor occasionally comes back with the wrong layout after a power cycle.
+Call `rest_command.paneo_screen_on` / `paneo_screen_off` / `paneo_kiosk_restart` / `paneo_notify` from any HA automation, script, or dashboard button — e.g. chain `paneo_screen_on` followed by a delay and `paneo_kiosk_restart` if a particular display's Wayland compositor occasionally comes back with the wrong layout after a power cycle.
 
 ## 9. Version information
 

@@ -8,6 +8,7 @@ import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { BRAND } from './brand.js';
 import { COMPONENTS, getVersionManifest, checkForUpdate } from './version.js';
+import { parseNotifyBody, buildNotifyMessage } from './notify.js';
 import * as store from './store.js';
 import { registerDataProxy } from './dataproxy.js';
 import { setAgentPresent } from './store.js';
@@ -68,7 +69,7 @@ if (process.env.PANEO_ADMIN_PASSWORD) {
 // ...) still needs the admin session.
 const PUBLIC_API_ROUTES = ['/api/auth/status', '/api/auth/setup', '/api/auth/login', '/api/auth/logout'];
 const PUBLIC_API_PREFIXES = ['/api/proxy/', '/api/display/', '/api/brand', '/api/version', '/api/update-check', '/api/plugins'];
-const TOKEN_SCOPED_ROUTE = /^\/api\/devices\/([^/]+)\/(?:command|update-status)$/;
+const TOKEN_SCOPED_ROUTE = /^\/api\/devices\/([^/]+)\/(?:command|update-status|notify|notify-group)$/;
 app.addHook('onRequest', async (req, reply) => {
   if (!req.url.startsWith('/api/')) return;
   const path = req.url.split('?')[0];
@@ -556,6 +557,32 @@ app.post('/api/devices/:id/command', async (req, reply) => {
   }
   broadcast(d.id, { type: 'command', action, deviceName: d.name });
   return { ok: true };
+});
+
+function resolveDevice(idOrToken) {
+  return store.getDevice(idOrToken) || store.getDeviceByToken(idOrToken);
+}
+
+// --- display notifications: ephemeral toasts pushed over WebSocket ---
+app.post('/api/devices/:id/notify', async (req, reply) => {
+  const d = resolveDevice(req.params.id);
+  if (!d) return reply.code(404).send({ error: 'not found' });
+  const parsed = parseNotifyBody(req.body);
+  if (parsed.error) return reply.code(400).send({ error: parsed.error });
+  broadcast(d.id, buildNotifyMessage(parsed));
+  return { ok: true };
+});
+
+app.post('/api/devices/:id/notify-group', async (req, reply) => {
+  const d = resolveDevice(req.params.id);
+  if (!d) return reply.code(404).send({ error: 'not found' });
+  if (!d.groupId) return reply.code(400).send({ error: 'device has no group' });
+  const parsed = parseNotifyBody(req.body);
+  if (parsed.error) return reply.code(400).send({ error: parsed.error });
+  const targets = store.listDevicesByGroupId(d.groupId);
+  const msg = buildNotifyMessage(parsed);
+  for (const dev of targets) broadcast(dev.id, msg);
+  return { ok: true, notified: targets.length };
 });
 
 app.get('/api/devices/:id/update-status', async (req, reply) => {
