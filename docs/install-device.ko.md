@@ -395,31 +395,54 @@ cp *.jpg data/photos/
 
 일부 사이트는 `X-Frame-Options` 또는 CSP 때문에 iframe 표시를 막을 수 있습니다. 이 경우 Paneo 문제가 아니라 해당 사이트의 보안 정책입니다.
 
-### 8.6 홈어시스턴트에서 화면 전원 제어하기
+### 8.6 원격 제어 REST API (자동화)
 
-§8.3은 HA 데이터를 Paneo 위젯으로 가져오는 방향입니다. 반대로 HA 자동화에서 Paneo 디스플레이를 켜고 끄는 건 Paneo 쪽 코드 변경이 필요 없습니다 — 에디터의 "화면 켜기"/"화면 끄기" 버튼도 평범한 REST 엔드포인트를 호출할 뿐이라, HA가 `rest_command`로 같은 엔드포인트를 직접 호출하면 됩니다.
+에디터 툴바 버튼(새로고침, 화면 확인, 화면 켜기/끄기, 키오스크 재시작, 업데이트)은 사실 REST 엔드포인트 두 개를 얇게 감싼 것뿐입니다. 홈어시스턴트, cron, 스크립트 등 외부 자동화도 같은 엔드포인트를 직접 호출할 수 있습니다.
 
-§12부터 에디터는 관리자 로그인이 필요하고 `/api/*`도 그에 맞춰 보호됩니다 — 다만 `/api/devices/<토큰>/command`는 예외로, URL에 쓰는 화면의 **페어링 토큰** 자체가 인증 수단을 겸합니다 (별도 API 토큰이나 `Authorization` 헤더 불필요). 에디터 → ⚙ 설정 → **이 화면의 기기 토큰**에서 확인하세요.
+§12부터 에디터는 관리자 로그인이 필요하고 `/api/*`도 그에 맞춰 보호됩니다 — 다만 아래 두 엔드포인트는 예외로, URL에 device id 대신 쓰는 화면의 **페어링 토큰** 자체가 인증 수단을 겸합니다 (별도 API 토큰이나 `Authorization` 헤더 불필요). 에디터 → ⚙ 설정 → **이 화면의 기기 토큰**에서 확인하세요. 이 토큰은 오직 *그 화면 하나*의 요청만 허용합니다 — 기기 목록 조회, 레이아웃 편집 등 다른 `/api/*` 요청에는 사용할 수 없습니다.
 
-1. 홈어시스턴트 `configuration.yaml`에 `rest_command`를 추가합니다. device id 대신 기기 토큰을 URL에 넣습니다:
+**제어** — `POST /api/devices/<기기토큰>/command`, JSON 본문 `{"action": ...}`:
 
-   ```yaml
-   rest_command:
-     paneo_screen_on:
-       url: "http://<서버-IP>:4321/api/devices/<device-token>/command"
-       method: POST
-       content_type: "application/json"
-       payload: '{"action": "power", "on": true}'
-     paneo_screen_off:
-       url: "http://<서버-IP>:4321/api/devices/<device-token>/command"
-       method: POST
-       content_type: "application/json"
-       payload: '{"action": "power", "on": false}'
-   ```
+| `action` | 추가 필드 | 동작 | 컴패니언 에이전트 필요 |
+|---|---|---|---|
+| `reload` | — | 해당 화면의 브라우저 페이지 새로고침 | 아니오 (디스플레이에 직접 전송) |
+| `identify` | — | 화면에 잠시 표시 아이콘을 띄워 실제 위치 확인 | 아니오 |
+| `power` | `"on": true \| false` | 물리 화면 전원 켜기/끄기 (§9) | 예 |
+| `restart-kiosk` | — | 크로미움 키오스크 프로세스를 강제 종료 후 재실행 | 예 |
+| `update` | `"mode": "all" \| "server"` (기본값 `"all"`) | 원격 업데이트 트리거 — `all`=서버+에이전트+키오스크, `server`=도커 이미지만 | 예 |
 
-2. 이제 어떤 HA 자동화·스크립트·대시보드 버튼에서든 `rest_command.paneo_screen_on` / `rest_command.paneo_screen_off`를 호출하면 됩니다.
+응답은 항상 `{ "ok": true, "agentPresent": boolean }`(`reload`/`identify`는 에이전트가 필요 없어서 `{ "ok": true }`만). `agentPresent: false`면 명령은 전달됐지만 처리할 에이전트가 연결되어 있지 않다는 뜻입니다 — `power`/`restart-kiosk`/`update`를 쓰려면 먼저 컴패니언 에이전트를 설치·연결하세요(§6).
 
-해당 화면에 컴패니언 에이전트가 설치되어 연결되어 있어야 합니다(§6) — 에디터 자체의 전원 버튼과 완전히 같은 경로로 에이전트에 명령이 전달됩니다. 이 토큰은 오직 *이 화면 하나*의 명령만 허용합니다 — 기기 목록 조회, 레이아웃 편집 등 다른 `/api/*` 요청에는 사용할 수 없습니다.
+**상태 확인** — `GET /api/devices/<기기토큰>/update-status` — `update` 등 시간이 걸리는 명령을 보낸 뒤 진행 상황을 폴링할 때 사용합니다:
+
+```json
+{ "status": "running", "mode": "all", "progress": 40, "step": "install_codecs", "step_msg": "Installing chromium video codecs", "error": null }
+```
+
+`status`는 `idle`(진행 중인 작업 없음/최근 활동 없음), `running`, `done`, `failed` 중 하나입니다.
+
+**예시** — 홈어시스턴트 `configuration.yaml`의 `rest_command`:
+
+```yaml
+rest_command:
+  paneo_screen_on:
+    url: "http://<서버-IP>:4321/api/devices/<device-token>/command"
+    method: POST
+    content_type: "application/json"
+    payload: '{"action": "power", "on": true}'
+  paneo_screen_off:
+    url: "http://<서버-IP>:4321/api/devices/<device-token>/command"
+    method: POST
+    content_type: "application/json"
+    payload: '{"action": "power", "on": false}'
+  paneo_kiosk_restart:
+    url: "http://<서버-IP>:4321/api/devices/<device-token>/command"
+    method: POST
+    content_type: "application/json"
+    payload: '{"action": "restart-kiosk"}'
+```
+
+어떤 HA 자동화·스크립트·대시보드 버튼에서든 `rest_command.paneo_screen_on` / `paneo_screen_off` / `paneo_kiosk_restart`를 호출하면 됩니다 — 예를 들어 특정 화면이 전원을 켠 뒤 간헐적으로 Wayland 컴포지터 재연결 문제로 레이아웃이 어긋난다면, `paneo_screen_on` 호출 후 지연을 두고 `paneo_kiosk_restart`를 이어서 호출하도록 체인할 수 있습니다.
 
 ## 9. 버전 확인
 

@@ -398,31 +398,54 @@ The external page widget accepts `http/https` URLs only. Sandbox modes:
 
 Some sites block iframe embedding via `X-Frame-Options` or CSP — that is the site's policy, not a Paneo bug.
 
-### 8.6 Screen power control *from* Home Assistant
+### 8.6 Remote control REST API (automation)
 
-§8.3 covers pulling HA data *into* Paneo widgets. The reverse — letting an HA automation turn a Paneo display on/off — needs no Paneo-side changes: the editor's own "Screen on"/"Screen off" buttons already call a plain REST endpoint, and HA can call the same one directly via `rest_command`.
+The editor's own toolbar buttons (Reload, Identify, Screen on/off, Restart kiosk, Update) are just thin wrappers around two REST endpoints. External automation — Home Assistant, a cron job, a script — can call the same endpoints directly.
 
-Since §12 the editor requires an admin login and `/api/*` is gated accordingly — but `/api/devices/<token>/command` is an exception: the display's own **pairing token**, used in the URL, doubles as the credential (no separate API token, no `Authorization` header). Find it in the editor → ⚙ Settings → **This display's device token**.
+Since §12 the editor requires an admin login and `/api/*` is gated accordingly — but both endpoints below are an exception: the display's own **pairing token**, used in the URL in place of the internal device id, doubles as the credential (no separate API token, no `Authorization` header). Find it in the editor → ⚙ Settings → **This display's device token**. It only ever authorizes requests for *that one display* — it can't list other devices, edit layouts, or reach anything else under `/api/*`.
 
-1. Add a `rest_command` to Home Assistant's `configuration.yaml`, using the device token in place of a device id:
+**Control** — `POST /api/devices/<device-token>/command`, JSON body `{"action": ...}`:
 
-   ```yaml
-   rest_command:
-     paneo_screen_on:
-       url: "http://<server-ip>:4321/api/devices/<device-token>/command"
-       method: POST
-       content_type: "application/json"
-       payload: '{"action": "power", "on": true}'
-     paneo_screen_off:
-       url: "http://<server-ip>:4321/api/devices/<device-token>/command"
-       method: POST
-       content_type: "application/json"
-       payload: '{"action": "power", "on": false}'
-   ```
+| `action` | Extra fields | Effect | Needs companion agent |
+|---|---|---|---|
+| `reload` | — | Reloads the display's browser page | No (sent to the display directly) |
+| `identify` | — | Briefly flashes an on-screen indicator so you can spot the physical device | No |
+| `power` | `"on": true \| false` | Turns the physical screen on/off (§9) | Yes |
+| `restart-kiosk` | — | Force-quits and relaunches the Chromium kiosk process | Yes |
+| `update` | `"mode": "all" \| "server"` (default `"all"`) | Triggers a remote update — `all` = server+agent+kiosk, `server` = Docker image only | Yes |
 
-2. Call `rest_command.paneo_screen_on` / `rest_command.paneo_screen_off` from any HA automation, script, or dashboard button.
+Every response is `{ "ok": true, "agentPresent": boolean }` (or just `{ "ok": true }` for `reload`/`identify`, which don't need the agent). `agentPresent: false` means the command was queued but nothing is connected to act on it — for `power`/`restart-kiosk`/`update`, install and connect the companion agent (§6) first.
 
-This needs the companion agent installed and connected on that display (§6) — the request is relayed to the agent exactly the way the editor's own power buttons work. The token only ever authorizes commands for *this one display* — it can't list other devices, edit layouts, or reach anything else under `/api/*`.
+**Status** — `GET /api/devices/<device-token>/update-status` — poll this after an `update` (or any long-running) command to see whether it's still running:
+
+```json
+{ "status": "running", "mode": "all", "progress": 40, "step": "install_codecs", "step_msg": "Installing chromium video codecs", "error": null }
+```
+
+`status` is `idle` (nothing in progress or no recent activity), `running`, `done`, or `failed`.
+
+**Example** — Home Assistant `rest_command` in `configuration.yaml`:
+
+```yaml
+rest_command:
+  paneo_screen_on:
+    url: "http://<server-ip>:4321/api/devices/<device-token>/command"
+    method: POST
+    content_type: "application/json"
+    payload: '{"action": "power", "on": true}'
+  paneo_screen_off:
+    url: "http://<server-ip>:4321/api/devices/<device-token>/command"
+    method: POST
+    content_type: "application/json"
+    payload: '{"action": "power", "on": false}'
+  paneo_kiosk_restart:
+    url: "http://<server-ip>:4321/api/devices/<device-token>/command"
+    method: POST
+    content_type: "application/json"
+    payload: '{"action": "restart-kiosk"}'
+```
+
+Call `rest_command.paneo_screen_on` / `paneo_screen_off` / `paneo_kiosk_restart` from any HA automation, script, or dashboard button — e.g. chain `paneo_screen_on` followed by a delay and `paneo_kiosk_restart` if a particular display's Wayland compositor occasionally comes back with the wrong layout after a power cycle.
 
 ## 9. Version information
 

@@ -57,25 +57,25 @@ if (process.env.PANEO_ADMIN_PASSWORD) {
 // behind /api/auth/status until login succeeds, so gating only the API is
 // sufficient and avoids fighting fastify-static's routing for the login page.
 //
-// D69/D70: no separate API token — a device's own pairing token, already
-// used to identify *which* display in /api/devices/:idOrToken/command, also
-// *authorizes* that call when it's the token (not the internal id) in the
-// URL. One value does both jobs, so a Home Assistant rest_command needs
-// nothing beyond the pairing token already shown in editor Settings (same
-// one baked into that display's "Open display" URL). It only ever unlocks
-// that one device's /command endpoint — every other /api/* route (device
-// list, layout, backup/restore, HA settings, ...) still needs the admin
-// session.
+// D69/D70/D72: no separate API token — a device's own pairing token, already
+// used to identify *which* display in /api/devices/:idOrToken/command and
+// /update-status, also *authorizes* that call when it's the token (not the
+// internal id) in the URL. One value does both jobs, so a Home Assistant
+// rest_command needs nothing beyond the pairing token already shown in
+// editor Settings (same one baked into that display's "Open display" URL).
+// It only ever unlocks that one device's control/status endpoints — every
+// other /api/* route (device list, layout, backup/restore, HA settings,
+// ...) still needs the admin session.
 const PUBLIC_API_ROUTES = ['/api/auth/status', '/api/auth/setup', '/api/auth/login', '/api/auth/logout'];
 const PUBLIC_API_PREFIXES = ['/api/proxy/', '/api/display/', '/api/brand', '/api/version', '/api/update-check', '/api/plugins'];
-const COMMAND_ROUTE = /^\/api\/devices\/([^/]+)\/command$/;
+const TOKEN_SCOPED_ROUTE = /^\/api\/devices\/([^/]+)\/(?:command|update-status)$/;
 app.addHook('onRequest', async (req, reply) => {
   if (!req.url.startsWith('/api/')) return;
   const path = req.url.split('?')[0];
   if (PUBLIC_API_ROUTES.includes(path)) return;
   if (PUBLIC_API_PREFIXES.some((p) => path === p || path.startsWith(p))) return;
-  const commandMatch = path.match(COMMAND_ROUTE);
-  if (commandMatch && store.getDeviceByToken(commandMatch[1])) return;
+  const tokenMatch = path.match(TOKEN_SCOPED_ROUTE);
+  if (tokenMatch && store.getDeviceByToken(tokenMatch[1])) return;
   const cookies = auth.parseCookies(req.headers.cookie);
   if (!auth.isValidSession(cookies[auth.SESSION_COOKIE_NAME])) {
     reply.code(401).send({ error: 'unauthorized' });
@@ -559,7 +559,11 @@ app.post('/api/devices/:id/command', async (req, reply) => {
 });
 
 app.get('/api/devices/:id/update-status', async (req, reply) => {
-  const d = store.getDevice(req.params.id);
+  // Accepts either the internal id (browser/editor) or the pairing token
+  // (§D69/§D70/§D72 — self-authorizing, see the onRequest hook above), same
+  // as /command, so automation can poll whether a command it sent actually
+  // finished without needing a session either.
+  const d = store.getDevice(req.params.id) || store.getDeviceByToken(req.params.id);
   if (!d) return reply.code(404).send({ error: 'not found' });
   return getUpdateStatus(d.id);
 });
