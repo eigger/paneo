@@ -94,3 +94,19 @@ test('paneo.text renders plain configured text', (t) => {
   renderWidget(el, 'paneo.text', { text: 'Hello Paneo' }, {});
   assert.equal(el.querySelector('.w-text').textContent, 'Hello Paneo');
 });
+
+test('paneo.calendar.month dims past calendar days in 3-week view', (t) => {
+  // Early March — the 3-week strip includes late-February days (already past).
+  t.mock.timers.enable({ now: new Date('2026-03-03T12:00:00') });
+  const el = mount(t);
+  // 400×300px → 3-week view (height < CAL_MIN_MONTH_HEIGHT 380).
+  el.getBoundingClientRect = () => ({
+    width: 400, height: 300, top: 0, left: 0, right: 400, bottom: 300,
+  });
+  renderWidget(el, 'paneo.calendar.month', { icsUrls: [] }, { locale: 'ko-KR' });
+  assert.ok(
+    el.querySelector('.cal-m-past-day'),
+    'expected past day cells to carry cal-m-past-day in 3-week view',
+  );
+  t.mock.timers.reset();
+});
