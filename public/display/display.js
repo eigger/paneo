@@ -207,6 +207,69 @@ function showUpdateStatus(status, mode, progress, step, step_msg, error) {
   }
 }
 
+const notifyEntries = [];
+
+function dismissNotifyToast(el, id) {
+  const idx = notifyEntries.findIndex((e) => e.id === id);
+  if (idx >= 0) {
+    clearTimeout(notifyEntries[idx].timer);
+    notifyEntries.splice(idx, 1);
+  }
+  el.classList.remove('visible');
+  el.classList.add('leaving');
+  setTimeout(() => el.remove(), 250);
+}
+
+function showNotify({ id, message, title, image, level = 'info', duration = 5000 }) {
+  const stack = document.getElementById('notify-stack');
+  if (!stack || (!message && !image)) return;
+  const notifyId = id || `notify-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+  const el = document.createElement('div');
+  el.className = `notify-toast level-${level}`;
+  if (title) {
+    const titleEl = document.createElement('div');
+    titleEl.className = 'notify-toast-title';
+    titleEl.textContent = title;
+    el.appendChild(titleEl);
+  }
+
+  const hasText = !!(message || title);
+  if (image) {
+    const img = document.createElement('img');
+    img.className = hasText ? 'notify-toast-thumb' : 'notify-toast-image-only';
+    img.src = image;
+    img.alt = '';
+    img.decoding = 'async';
+    if (hasText) {
+      const body = document.createElement('div');
+      body.className = 'notify-toast-body';
+      body.appendChild(img);
+      if (message) {
+        const msgEl = document.createElement('div');
+        msgEl.className = 'notify-toast-message';
+        msgEl.textContent = message;
+        body.appendChild(msgEl);
+      }
+      el.appendChild(body);
+    } else {
+      el.appendChild(img);
+    }
+  } else if (message) {
+    const msgEl = document.createElement('div');
+    msgEl.className = 'notify-toast-message';
+    msgEl.textContent = message;
+    el.appendChild(msgEl);
+  }
+
+  stack.appendChild(el);
+
+  requestAnimationFrame(() => el.classList.add('visible'));
+
+  const timer = setTimeout(() => dismissNotifyToast(el, notifyId), duration);
+  notifyEntries.push({ id: notifyId, el, timer });
+}
+
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${location.host}/ws?role=display&token=${encodeURIComponent(token)}`);
@@ -225,6 +288,8 @@ function connect() {
       showIdentify(msg.deviceName);
     } else if (msg.type === 'update.status') {
       showUpdateStatus(msg.status, msg.mode, msg.progress, msg.step, msg.step_msg, msg.error);
+    } else if (msg.type === 'notify') {
+      showNotify(msg);
     }
   };
   ws.onclose = () => { setStatus(dt('reconnecting'), 'offline', false); setTimeout(connect, 2000); };

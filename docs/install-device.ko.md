@@ -397,9 +397,9 @@ cp *.jpg data/photos/
 
 ### 8.6 원격 제어 REST API (자동화)
 
-에디터 툴바 버튼(새로고침, 화면 확인, 화면 켜기/끄기, 키오스크 재시작, 업데이트)은 사실 REST 엔드포인트 두 개를 얇게 감싼 것뿐입니다. 홈어시스턴트, cron, 스크립트 등 외부 자동화도 같은 엔드포인트를 직접 호출할 수 있습니다.
+에디터 툴바 버튼(새로고침, 화면 확인, 화면 켜기/끄기, 키오스크 재시작, 업데이트)은 REST 엔드포인트를 얇게 감싼 것뿐입니다. 홈어시스턴트, cron, 스크립트 등 외부 자동화도 같은 엔드포인트를 직접 호출할 수 있습니다.
 
-§12부터 에디터는 관리자 로그인이 필요하고 `/api/*`도 그에 맞춰 보호됩니다 — 다만 아래 두 엔드포인트는 예외로, URL에 device id 대신 쓰는 화면의 **페어링 토큰** 자체가 인증 수단을 겸합니다 (별도 API 토큰이나 `Authorization` 헤더 불필요). 에디터 → ⚙ 설정 → **이 화면의 기기 토큰**에서 확인하세요. 이 토큰은 오직 *그 화면 하나*의 요청만 허용합니다 — 기기 목록 조회, 레이아웃 편집 등 다른 `/api/*` 요청에는 사용할 수 없습니다.
+§12부터 에디터는 관리자 로그인이 필요하고 `/api/*`도 그에 맞춰 보호됩니다 — 다만 아래 엔드포인트는 예외로, URL에 device id 대신 쓰는 화면의 **페어링 토큰** 자체가 인증 수단을 겸합니다 (별도 API 토큰이나 `Authorization` 헤더 불필요). 에디터 → ⚙ 설정 → **이 화면의 기기 토큰**에서 확인하세요. 이 토큰은 오직 *그 화면 하나*의 요청만 허용합니다 — 기기 목록 조회, 레이아웃 편집 등 다른 `/api/*` 요청에는 사용할 수 없습니다.
 
 **제어** — `POST /api/devices/<기기토큰>/command`, JSON 본문 `{"action": ...}`:
 
@@ -421,6 +421,36 @@ cp *.jpg data/photos/
 
 `status`는 `idle`(진행 중인 작업 없음/최근 활동 없음), `running`, `done`, `failed` 중 하나입니다.
 
+**알림** — 기존 WebSocket으로 디스플레이에 짧은 토스트를 띄웁니다 (컴패니언 에이전트 불필요). 새 알림은 이미 떠 있는 알림 **아래에 쌓이고**, 지정 시간이 지나면 자동으로 사라집니다. 수동 닫기 버튼은 없습니다.
+
+`POST /api/devices/<기기토큰>/notify` — 이 화면에만 표시:
+
+```json
+{
+  "message": "현관문이 열렸습니다",
+  "title": "보안",
+  "level": "info",
+  "duration": 5000,
+  "image": "https://example.com/snap.jpg"
+}
+```
+
+| 필드 | 필수 | 기본값 | 설명 |
+|---|---|---|---|
+| `message` | 예* | — | 토스트 본문 |
+| `image` | 예* | — | `http://` 또는 `https://` URL, 또는 `data:image/(jpeg\|png\|gif\|webp);base64,...` (최대 약 512 KB) |
+| `title` | 아니오 | — | 본문 위에 굵게 표시할 제목(선택) |
+| `level` | 아니오 | `"info"` | `"info"`, `"warn"`, `"error"` (테두리 색) |
+| `duration` | 아니오 | `5000` | 자동 사라짐까지 밀리초. 최소 **1000**. `0` 이하이면 **1000**으로 처리 |
+
+\*`message`와 `image` 중 **하나 이상** 필수. 텍스트+이미지는 썸네일을 옆에, 이미지만내면 토스트 너비에 맞게 표시합니다.
+
+응답: `{ "ok": true }`. 디스플레이가 오프라인이거나 연결이 끊긴 상태면 알림은 **버려집니다** — 나중에 재전송하지 않습니다.
+
+`POST /api/devices/<기기토큰>/notify-group` — 동일한 JSON 본문으로, 이 기기와 같은 그룹(§8.2)에 속한 **모든** 화면에 전송합니다. 기기에 그룹이 설정되어 있어야 합니다. 응답: `{ "ok": true, "notified": 3 }`.
+
+에디터 → ⚙ 설정 → **원격 제어**에 텍스트 입력란(기본값 `test`)과 **테스트 알림** / **그룹 전체 알림** 버튼이 있습니다.
+
 **예시** — 홈어시스턴트 `configuration.yaml`의 `rest_command`:
 
 ```yaml
@@ -440,9 +470,14 @@ rest_command:
     method: POST
     content_type: "application/json"
     payload: '{"action": "restart-kiosk"}'
+  paneo_notify:
+    url: "http://<서버-IP>:4321/api/devices/<device-token>/notify"
+    method: POST
+    content_type: "application/json"
+    payload: '{"message": "현관에서 움직임이 감지되었습니다", "level": "warn", "duration": 8000}'
 ```
 
-어떤 HA 자동화·스크립트·대시보드 버튼에서든 `rest_command.paneo_screen_on` / `paneo_screen_off` / `paneo_kiosk_restart`를 호출하면 됩니다 — 예를 들어 특정 화면이 전원을 켠 뒤 간헐적으로 Wayland 컴포지터 재연결 문제로 레이아웃이 어긋난다면, `paneo_screen_on` 호출 후 지연을 두고 `paneo_kiosk_restart`를 이어서 호출하도록 체인할 수 있습니다.
+어떤 HA 자동화·스크립트·대시보드 버튼에서든 `rest_command.paneo_screen_on` / `paneo_screen_off` / `paneo_kiosk_restart` / `paneo_notify`를 호출하면 됩니다 — 예를 들어 특정 화면이 전원을 켠 뒤 간헐적으로 Wayland 컴포지터 재연결 문제로 레이아웃이 어긋난다면, `paneo_screen_on` 호출 후 지연을 두고 `paneo_kiosk_restart`를 이어서 호출하도록 체인할 수 있습니다.
 
 ## 9. 버전 확인
 

@@ -180,6 +180,11 @@ export function listDevices() {
   return stmt.all.all().map(rowToDevice);
 }
 
+export function listDevicesByGroupId(groupId) {
+  if (!groupId) return [];
+  return stmt.byGroup.all(groupId).map(rowToDevice);
+}
+
 export function getDevice(id) {
   return rowToDevice(stmt.byId.get(id));
 }

@@ -22,7 +22,7 @@ test.after(() => {
 });
 
 test('display.js: renders cached layout on startup', async (t) => {
-  const dom = new JSDOM('<!doctype html><html><body><div id="stage"></div><div id="status"></div><div id="identify-overlay" class="hidden"></div><div id="update-status-banner"></div></body></html>');
+  const dom = new JSDOM('<!doctype html><html><body><div id="stage"></div><div id="status"></div><div id="identify-overlay" class="hidden"></div><div id="update-status-banner"></div><div id="notify-stack"></div></body></html>');
 
   Object.defineProperty(globalThis, 'window', { value: dom.window, configurable: true, writable: true });
   Object.defineProperty(globalThis, 'document', { value: dom.window.document, configurable: true, writable: true });
@@ -54,6 +54,8 @@ test('display.js: renders cached layout on startup', async (t) => {
     observe() {}
     disconnect() {}
   };
+
+  globalThis.requestAnimationFrame = (cb) => { cb(); };
 
   globalThis.fetch = async (url) => {
     if (url === '/api/version') {
@@ -88,7 +90,7 @@ test('display.js: renders cached layout on startup', async (t) => {
 });
 
 test('display.js: handles WebSocket messages and page switching', async (t) => {
-  const dom = new JSDOM('<!doctype html><html><body><div id="stage"></div><div id="status"></div><div id="identify-overlay" class="hidden"></div><div id="update-status-banner"></div></body></html>');
+  const dom = new JSDOM('<!doctype html><html><body><div id="stage"></div><div id="status"></div><div id="identify-overlay" class="hidden"></div><div id="update-status-banner"></div><div id="notify-stack"></div></body></html>');
 
   Object.defineProperty(globalThis, 'window', { value: dom.window, configurable: true, writable: true });
   Object.defineProperty(globalThis, 'document', { value: dom.window.document, configurable: true, writable: true });
@@ -111,6 +113,8 @@ test('display.js: handles WebSocket messages and page switching', async (t) => {
     observe() {}
     disconnect() {}
   };
+
+  globalThis.requestAnimationFrame = (cb) => { cb(); };
 
   globalThis.fetch = async (url) => {
     return { json: async () => ({}) };
@@ -188,4 +192,28 @@ test('display.js: handles WebSocket messages and page switching', async (t) => {
   assert.ok(updateBanner.classList.contains('visible'));
   assert.ok(updateBanner.textContent.includes('75%'));
   assert.ok(updateBanner.textContent.includes('폰트'));
+
+  const notifyStack = dom.window.document.getElementById('notify-stack');
+  wsInstance.onmessage({
+    data: JSON.stringify({ type: 'notify', id: 'n1', message: 'First alert', duration: 5000 }),
+  });
+  wsInstance.onmessage({
+    data: JSON.stringify({ type: 'notify', id: 'n2', message: 'Second alert', duration: 5000 }),
+  });
+  assert.equal(notifyStack.children.length, 2);
+  assert.equal(notifyStack.children[0].querySelector('.notify-toast-message').textContent, 'First alert');
+  assert.equal(notifyStack.children[1].querySelector('.notify-toast-message').textContent, 'Second alert');
+
+  wsInstance.onmessage({
+    data: JSON.stringify({
+      type: 'notify',
+      id: 'n3',
+      message: 'With image',
+      image: 'https://example.com/snap.jpg',
+      duration: 5000,
+    }),
+  });
+  const imgToast = notifyStack.children[2];
+  assert.equal(imgToast.querySelector('.notify-toast-message').textContent, 'With image');
+  assert.equal(imgToast.querySelector('.notify-toast-thumb').getAttribute('src'), 'https://example.com/snap.jpg');
 });

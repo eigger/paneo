@@ -439,7 +439,8 @@ main { flex: 1; display: flex; min-height: 0; }
 .update-progress-status.visible { opacity: 1; height: auto; }
 .update-progress-status.running { color: #60a5fa; }
 .update-progress-status.done { color: #4ade80; }
-.update-progress-status.failed { color: #f87171; }
+.notify-test-row { display: flex; gap: 6px; margin-top: 4px; }
+.notify-test-row input { flex: 1; min-width: 0; }
 
 /* §M4: power on/off buttons */
 .button-row button.power-on  { color: #4ade80; border-color: #14532d; }

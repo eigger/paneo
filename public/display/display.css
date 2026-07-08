@@ -146,6 +146,26 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
 #update-status-banner.done { color: #7cffb2; }
 #update-status-banner.failed { color: #ff9aa7; }
 
+/* Ephemeral notification toasts — stacked below the update banner, newest at bottom. */
+#notify-stack { position: fixed; top: 48px; right: 12px; z-index: 997;
+  display: flex; flex-direction: column; gap: 8px;
+  max-width: min(360px, calc(100vw - 24px)); pointer-events: none; }
+.notify-toast { padding: 10px 14px; border-radius: 10px;
+  background: rgba(15, 18, 26, 0.88); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.08); border-left: 3px solid #60a5fa;
+  font-size: 14px; line-height: 1.4; color: #e8edf6;
+  opacity: 0; transform: translateX(12px);
+  transition: opacity 0.25s ease, transform 0.25s ease; }
+.notify-toast.visible { opacity: 1; transform: translateX(0); }
+.notify-toast.leaving { opacity: 0; transform: translateX(12px); }
+.notify-toast.level-warn { border-left-color: #fbbf24; }
+.notify-toast.level-error { border-left-color: #f87171; }
+.notify-toast-title { font-weight: 700; margin-bottom: 2px; }
+.notify-toast-body { display: flex; gap: 10px; align-items: flex-start; }
+.notify-toast-thumb { flex-shrink: 0; width: 56px; height: 56px; object-fit: cover; border-radius: 6px; }
+.notify-toast-image-only { display: block; width: 100%; max-height: 140px; object-fit: cover; border-radius: 6px; }
+.notify-toast-message { word-break: break-word; flex: 1; min-width: 0; }
+
 .w-image.no-transition { transition: none; }
 
 /* ---- §M3: Monthly calendar grid (paneo.calendar.month) ---- */
