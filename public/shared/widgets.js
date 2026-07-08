@@ -1114,6 +1114,8 @@ export const widgets = {
 
       function renderGridView(view, now, cells, eventsByDate, showEventTime) {
         const todayStr = isoDate(now);
+        const curYear = now.getFullYear();
+        const curMonth = now.getMonth();
         const showWN = !!config.showWeekNumber;
         const cols = showWN ? 8 : 7;
         const weekRows = Math.ceil(cells.length / 7);
@@ -1144,19 +1146,19 @@ export const widgets = {
             if (!d) { bodyRows += `<div class="cal-m-cell"></div>`; continue; }
             const ds = isoDate(d);
             const isToday = ds === todayStr;
-            const isPastDay = ds < todayStr;
+            const isOtherMonth = d.getFullYear() !== curYear || d.getMonth() !== curMonth;
             const isSat = config.startOnSunday ? col === 6 : col === 5;
             const isSun = config.startOnSunday ? col === 0 : col === 6;
             let cls = 'cal-m-cell cal-m-day';
             if (isToday) cls += ' cal-m-today';
-            if (isPastDay) cls += ' cal-m-past-day';
+            if (isOtherMonth) cls += ' cal-m-other';
             if (isSat) cls += ' cal-m-sat';
             if (isSun) cls += ' cal-m-sun';
 
             const events = (eventsByDate[ds] || []);
             const eventHtml = events.slice(0, 3).map((e) => {
               const showTime = showEventTime && !e.allDay;
-              const past = isPastDay || isCalendarEventPast(e, now, todayStr, tz);
+              const past = isCalendarEventPast(e, now, todayStr, tz);
               // A little more title budget when there's no time prefix eating
               // into the same line's width.
               const title = String(e.summary || '').slice(0, showTime ? 12 : 14);
