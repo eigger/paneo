@@ -219,6 +219,21 @@ function isoDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// Local calendar date for an iCal event (respects device timezone when set).
+function eventLocalDateStr(e, tz) {
+  const d = new Date(e.start);
+  return tz
+    ? new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: tz }).format(d)
+    : isoDate(d);
+}
+
+// True once the event is over — all-day events go past at the next local midnight.
+function isCalendarEventPast(e, now, todayStr, tz) {
+  if (e.allDay) return eventLocalDateStr(e, tz) < todayStr;
+  const endMs = e.end ? new Date(e.end).getTime() : new Date(e.start).getTime();
+  return endMs <= now.getTime();
+}
+
 // N full Monday/Sunday-start weeks centered on `date`'s own week — weeksBefore=0,
 // weeksAfter=0 gives exactly this week (7 cells); 1/1 gives prev+this+next
 // (21 cells). Used by paneo.calendar.month's week/3-week auto views; the
@@ -891,11 +906,14 @@ export const widgets = {
       let latestEvents = null;
 
       function renderList(events, expanded) {
+        const now = new Date();
+        const todayStr = isoDate(now);
         const items = events.map((e) => {
+          const past = isCalendarEventPast(e, now, todayStr, tz);
           const color = urlColors[e.source] || '';
           const style = color ? `style="border-left:3px solid ${color}; padding-left:6px; margin-left:0"` : '';
           const timeHtml = (expanded && !e.allDay) ? `<span class="cal-time">${timeFmt.format(new Date(e.start))}</span>` : '';
-          return `<li ${style}><span class="cal-date">${dateFmt.format(new Date(e.start))}</span>${timeHtml}<span class="cal-summary">${escapeHtml(e.summary)}</span></li>`;
+          return `<li class="${past ? 'cal-past' : ''}" ${style}><span class="cal-date">${dateFmt.format(new Date(e.start))}</span>${timeHtml}<span class="cal-summary">${escapeHtml(e.summary)}</span></li>`;
         }).join('');
         const legendHtml = (expanded && hasColors)
           ? `<div class="cal-legend">${parsedUrls.filter((u) => urlColors[u]).map((u) => {
@@ -1078,10 +1096,11 @@ export const widgets = {
         const events = (eventsByDate[ds] || []).slice().sort((a, b) => new Date(a.start) - new Date(b.start));
         const rows = events.length
           ? events.map((e) => {
+              const past = isCalendarEventPast(e, now, ds, tz);
               const color = urlColors[e.source] || '';
               const style = color ? `style="border-left:3px solid ${color}"` : '';
               const timeHtml = e.allDay ? '' : `<span class="cal-d-time">${timeFmt.format(new Date(e.start))}</span>`;
-              return `<div class="cal-d-item" ${style}>
+              return `<div class="cal-d-item${past ? ' cal-d-past' : ''}" ${style}>
                 ${timeHtml}
                 <span class="cal-d-summary">${escapeHtml(e.summary)}</span>
               </div>`;
@@ -1095,8 +1114,6 @@ export const widgets = {
 
       function renderGridView(view, now, cells, eventsByDate, showEventTime) {
         const todayStr = isoDate(now);
-        const curMonth = now.getMonth();
-        const dimOtherMonth = view === 'month'; // week/3-week cells are all "real" days, not padding
         const showWN = !!config.showWeekNumber;
         const cols = showWN ? 8 : 7;
         const weekRows = Math.ceil(cells.length / 7);
@@ -1127,25 +1144,26 @@ export const widgets = {
             if (!d) { bodyRows += `<div class="cal-m-cell"></div>`; continue; }
             const ds = isoDate(d);
             const isToday = ds === todayStr;
-            const isOtherMonth = dimOtherMonth && d.getMonth() !== curMonth;
+            const isPastDay = ds < todayStr;
             const isSat = config.startOnSunday ? col === 6 : col === 5;
             const isSun = config.startOnSunday ? col === 0 : col === 6;
             let cls = 'cal-m-cell cal-m-day';
             if (isToday) cls += ' cal-m-today';
-            if (isOtherMonth) cls += ' cal-m-other';
+            if (isPastDay) cls += ' cal-m-past-day';
             if (isSat) cls += ' cal-m-sat';
             if (isSun) cls += ' cal-m-sun';
 
             const events = (eventsByDate[ds] || []);
             const eventHtml = events.slice(0, 3).map((e) => {
               const showTime = showEventTime && !e.allDay;
+              const past = isPastDay || isCalendarEventPast(e, now, todayStr, tz);
               // A little more title budget when there's no time prefix eating
               // into the same line's width.
               const title = String(e.summary || '').slice(0, showTime ? 12 : 14);
               const color = urlColors[e.source] || '';
               const style = color ? `style="background:${color}33; border-left:2px solid ${color}; padding-left:2px"` : '';
               const timeHtml = showTime ? `<span class="cal-m-event-time">${timeFmt.format(new Date(e.start))}</span>` : '';
-              return `<div class="cal-m-event" ${style} title="${escapeAttr(e.summary)}">${timeHtml}${escapeHtml(title)}</div>`;
+              return `<div class="cal-m-event${past ? ' cal-m-event-past' : ''}" ${style} title="${escapeAttr(e.summary)}">${timeHtml}${escapeHtml(title)}</div>`;
             }).join('');
             const moreCount = events.length > 3 ? `<div class="cal-m-more">+${events.length - 3}</div>` : '';
 

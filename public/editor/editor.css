@@ -219,6 +219,7 @@ main { flex: 1; display: flex; min-height: 0; }
 
 .w-cal-list { width: 100%; height: 100%; display: flex; flex-direction: column; box-sizing: border-box; }
 .w-cal-list .w-calendar { flex: 1; min-height: 0; padding: 8px 8px 0; }
+.w-calendar li.cal-past { opacity: 0.42; }
 .cal-legend { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 8px 8px; font-size: clamp(9px, 6cqmin, 18px); opacity: 0.7; }
 .cal-legend-item { display: flex; align-items: center; gap: 3px; }
 .cal-legend-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
@@ -233,11 +234,12 @@ main { flex: 1; display: flex; min-height: 0; }
 .cal-m-cell { min-width: 0; min-height: 0; overflow: hidden; font-size: clamp(8px, 3.6cqh, 13px); }
 .cal-m-day-hdr { text-align: center; opacity: 0.45; font-size: clamp(8px, 2.7cqh, 11px); font-weight: 600; padding: 2px 0; }
 .cal-m-wn-hdr, .cal-m-wn { text-align: center; opacity: 0.25; font-size: clamp(7px, 2.2cqh, 10px); }
-.cal-m-day { background: rgba(255,255,255,0.03); border-radius: 4px; padding: 2px 3px; display: flex; flex-direction: column; gap: 1px; cursor: default; }
+.cal-m-day { background: rgba(255,255,255,0.03); border-radius: 4px; padding: 2px 3px; display: flex; flex-direction: column; gap: 1px; cursor: default; border: 1px solid transparent; }
 .cal-m-day:hover { background: rgba(255,255,255,0.07); }
-.cal-m-today { background: rgba(96,165,250,0.18); border: 1px solid rgba(96,165,250,0.45); }
+.cal-m-today { background: rgba(255,255,255,0.03); border: 2px solid rgba(96,165,250,0.75); box-shadow: inset 0 0 0 1px rgba(96,165,250,0.12); }
 .cal-m-today .cal-m-dnum { color: #60a5fa; font-weight: 700; }
-.cal-m-other { opacity: 0.3; }
+.cal-m-past-day { opacity: 0.42; }
+.cal-m-event.cal-m-event-past { opacity: 0.38; }
 .cal-m-sat .cal-m-dnum { color: #7dd3fc; }
 .cal-m-sun .cal-m-dnum { color: #f87171; }
 .cal-m-dnum { font-size: clamp(8px, 3.2cqh, 13px); font-weight: 500; line-height: 1.2; }
@@ -251,6 +253,7 @@ main { flex: 1; display: flex; min-height: 0; }
 .cal-d-header { font-size: clamp(11px, 5.5cqh, 18px); font-weight: 600; opacity: 0.9; text-align: center; }
 .cal-d-list { flex: 1; overflow: hidden auto; display: flex; flex-direction: column; gap: 3px; }
 .cal-d-item { display: flex; align-items: baseline; gap: 6px; padding: 2px 5px; border-radius: 4px; background: rgba(255,255,255,0.04); font-size: clamp(9px, 4cqh, 14px); }
+.cal-d-item.cal-d-past { opacity: 0.42; }
 .cal-d-time { opacity: 0.6; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .cal-d-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cal-d-empty { opacity: 0.4; text-align: center; padding: 10px 0; font-size: clamp(9px, 3.5cqh, 12px); }
