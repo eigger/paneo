@@ -132,9 +132,15 @@ test.after(() => paramSummaryServer.close());
 // that actually have one — an all-day VEVENT (DTSTART;VALUE=DATE, no time
 // component) must be flagged so the widget doesn't invent a misleading
 // midnight timestamp for it.
+// A VALUE=DATE start is YYYYMMDD with no time component — computed relative
+// to the real current date (not a hardcoded literal) so this doesn't fall
+// outside the query range and silently vanish once "now" moves past it.
+const ymd = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+const alldayStart = new Date(now + 3 * DAY);
+const alldayEnd = new Date(now + 4 * DAY);
 const ALLDAY_ICS_BODY = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Paneo//Test//EN\r\n` +
   `BEGIN:VEVENT\r\nUID:allday\r\nDTSTAMP:${icsTimestamp(offsets.future1h)}\r\n` +
-  `DTSTART;VALUE=DATE:20260710\r\nDTEND;VALUE=DATE:20260711\r\nSUMMARY:allday\r\nEND:VEVENT\r\n` +
+  `DTSTART;VALUE=DATE:${ymd(alldayStart)}\r\nDTEND;VALUE=DATE:${ymd(alldayEnd)}\r\nSUMMARY:allday\r\nEND:VEVENT\r\n` +
   vevent('timed', offsets.future1h) +
   `END:VCALENDAR\r\n`;
 
