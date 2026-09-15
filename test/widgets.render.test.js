@@ -110,3 +110,32 @@ test('paneo.calendar.month dims other-month date numbers in 3-week view', (t) =>
   assert.equal(el.querySelector('.cal-m-past-day'), null, 'whole-day past dimming should not be used');
   t.mock.timers.reset();
 });
+
+test('paneo.calendar.month moves the today highlight (and grid) across local midnight without a re-render', (t) => {
+  // 30s before a month boundary, so the rollover has to move both the
+  // "today" cell and the surrounding week strip — not just the highlight.
+  // (3-week view, same box as the test above: the month view's event-time
+  // heuristic measures canvas text, which jsdom doesn't have.)
+  t.mock.timers.enable({ now: new Date('2026-03-31T23:59:30') });
+  const el = mount(t);
+  el.getBoundingClientRect = () => ({
+    width: 400, height: 300, top: 0, left: 0, right: 400, bottom: 300,
+  });
+  renderWidget(el, 'paneo.calendar.month', { icsUrls: [] }, { locale: 'en-US' });
+  const today = () => el.querySelector('.cal-m-today');
+  assert.equal(today()?.querySelector('.cal-m-dnum').textContent, '31');
+  assert.ok(!today().classList.contains('cal-m-other'), 'Mar 31 is in the current month');
+
+  // One minute later it's 00:00:30 on April 1st — the minute-boundary tick
+  // at 00:00:00 must have repainted from the new date. Previously nothing
+  // ever re-read the clock, so the kiosk kept yesterday highlighted until
+  // the widget happened to be re-rendered (editor refresh / resize).
+  t.mock.timers.tick(60_000);
+  assert.equal(today()?.querySelector('.cal-m-dnum').textContent, '1');
+  assert.ok(!today().classList.contains('cal-m-other'), 'grid re-based on April, so Apr 1 is no longer other-month');
+
+  // Same day → stays put.
+  t.mock.timers.tick(60_000);
+  assert.equal(today()?.querySelector('.cal-m-dnum').textContent, '1');
+  t.mock.timers.reset();
+});

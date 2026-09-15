@@ -1187,9 +1187,19 @@ export const widgets = {
       let currentView = null;
       let showEventTime = false;
       let ro = null;
+      let pollCleanup = null; // pollJson's interval/abort teardown for the current paint
+      let paintedDay = null; // isoDate of the `now` the current paint was built from
+      let cancelDayTick = null;
+      const teardown = () => { pollCleanup?.(); ro?.disconnect(); cancelDayTick?.(); };
 
       function paintAndFetch() {
+        // Drop the previous paint's poll first — its onData closes over that
+        // paint's `now`/`cells`/view, so leaving it running would let it
+        // overwrite this paint with a stale day or view on its next tick.
+        pollCleanup?.();
+        pollCleanup = null;
         const now = new Date();
+        paintedDay = isoDate(now);
         const cells = cellsForView(currentView, now);
 
         function renderAll(eventsByDate = {}) {
@@ -1235,10 +1245,10 @@ export const widgets = {
           },
         );
         // pollJson just overwrote el._cleanup with its own poll-interval
-        // cleanup — wrap it so the ResizeObserver still gets disconnected
-        // when the widget is torn down or re-rendered.
-        const pollCleanup = el._cleanup;
-        el._cleanup = () => { pollCleanup?.(); ro?.disconnect(); };
+        // cleanup — take it back so both the next repaint and the widget's
+        // teardown can stop it, and keep the ResizeObserver/day-tick cleanup.
+        pollCleanup = el._cleanup;
+        el._cleanup = teardown;
       }
 
       ro = new ResizeObserver((entries) => {
@@ -1252,7 +1262,20 @@ export const widgets = {
         }
       });
       ro.observe(el);
-      el._cleanup = () => ro.disconnect(); // covers the no-ICS-configured case, where paintAndFetch() never reaches pollJson
+      el._cleanup = teardown; // covers the no-ICS-configured case, where paintAndFetch() never reaches pollJson
+
+      // Day rollover. `now` and `cells` are snapshotted per paintAndFetch()
+      // call and pollJson's periodic refresh re-renders from that same
+      // snapshot, so without this the "today" highlight (and the month/week
+      // span itself) stayed on whatever day the widget was first rendered
+      // until something happened to re-render it — an editor refresh, or a
+      // resize-driven view switch. Minute-boundary aligned like paneo.date /
+      // paneo.dday so the rollover shows within a second of local midnight,
+      // but only repaints when the local date actually changed, so it
+      // doesn't restart the ICS poll every minute.
+      cancelDayTick = scheduleBoundaryTick(60000, () => {
+        if (isoDate(new Date()) !== paintedDay) paintAndFetch();
+      });
 
       // Initial paint uses the current box size synchronously — ResizeObserver's
       // first callback fires on the next frame, and waiting for it would flash
