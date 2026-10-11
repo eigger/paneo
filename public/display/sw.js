@@ -6,7 +6,7 @@
 // the activate handler deletes all older caches automatically.
 
 // Bump when any cached shell file changes shape.
-const CACHE_VER = 'paneo-display-v9';
+const CACHE_VER = 'paneo-display-v10';
 
 const SHELL_FILES = [
   '/display/index.html',
