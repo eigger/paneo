@@ -100,7 +100,8 @@ test('display.js: handles WebSocket messages and page switching', async (t) => {
   const storage = {};
   globalThis.localStorage = {
     getItem: (key) => storage[key] || null,
-    setItem: (key, val) => { storage[key] = val; }
+    setItem: (key, val) => { storage[key] = val; },
+    removeItem: (key) => { delete storage[key]; },
   };
 
   globalThis.location = {
@@ -216,4 +217,11 @@ test('display.js: handles WebSocket messages and page switching', async (t) => {
   const imgToast = notifyStack.children[2];
   assert.equal(imgToast.querySelector('.notify-toast-message').textContent, 'With image');
   assert.equal(imgToast.querySelector('.notify-toast-thumb').getAttribute('src'), 'https://example.com/snap.jpg');
+
+  wsInstance.onclose({ code: 4001 });
+  assert.equal(storage['paneo:layout:test-token2'], undefined);
+  assert.equal(dom.window.document.getElementById('page-indicator'), null);
+  assert.equal(stage.querySelector('.widget'), null);
+  assert.match(stage.querySelector('.pairing-required')?.textContent || '', /새 디스플레이 URL/);
+  assert.match(dom.window.document.getElementById('status').textContent, /기기 토큰이 변경/);
 });

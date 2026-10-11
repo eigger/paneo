@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { deviceAllowsEntity, homeAssistantPayload } from '../src/ha-proxy.js';
 
 process.env.PANEO_DATA_DIR = mkdtempSync(path.join(tmpdir(), 'paneo-test-'));
 
@@ -59,4 +60,28 @@ test('isRateLimited allows a normal login attempt rate and blocks a rapid-fire l
     assert.equal(auth.isRateLimited(ip), false, `attempt ${i + 1} should not be limited yet`);
   }
   assert.equal(auth.isRateLimited(ip), true, '11th attempt within the window should be blocked');
+});
+
+test('HA entity authorization supports legacy flat published layouts and toggle opt-in', () => {
+  const device = { published: { widgets: [{ type: 'paneo.homeassistant', config: { entityId: ' light.desk ', showToggle: true } }] } };
+  assert.equal(deviceAllowsEntity(device, 'light.desk'), true);
+  assert.equal(deviceAllowsEntity(device, 'light.desk', { toggle: true }), true);
+  assert.equal(deviceAllowsEntity(device, 'light.other'), false);
+  device.published.widgets[0].config.entityId = ' sensor.desk ';
+  assert.equal(deviceAllowsEntity(device, 'sensor.desk'), true);
+  assert.equal(deviceAllowsEntity(device, 'sensor.desk', { toggle: true }), false);
+  device.published.widgets[0].config.entityId = ' input_boolean.focus ';
+  assert.equal(deviceAllowsEntity(device, 'input_boolean.focus', { toggle: true }), true);
+  device.published.widgets[0].config.showToggle = false;
+  assert.equal(deviceAllowsEntity(device, 'input_boolean.focus', { toggle: true }), false);
+});
+
+test('HA service payloads forward only explicitly supported fields', () => {
+  assert.deepEqual(homeAssistantPayload('homeassistant', 'toggle', {
+    entity_id: 'light.desk', device_token: 'secret', target: { entity_id: ['light.other'] }, area_id: 'bedroom',
+  }), { entity_id: 'light.desk' });
+  assert.deepEqual(homeAssistantPayload('weather', 'get_forecasts', {
+    entity_id: 'weather.home', type: 'daily', device_token: 'secret', target: { entity_id: 'weather.other' },
+  }), { entity_id: 'weather.home', type: 'daily' });
+  assert.equal(homeAssistantPayload('lock', 'unlock', { entity_id: 'lock.front' }), null);
 });

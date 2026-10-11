@@ -15,7 +15,7 @@ function loadingBox(el, text) {
   el.innerHTML = `<div class="w-loading">${text}</div>`;
 }
 function errorBox(el, text) {
-  el.innerHTML = `<div class="w-error">${text}</div>`;
+  el.innerHTML = `<div class="w-error">${escapeHtml(text)}</div>`;
 }
 
 // Shrinks an element's font size (in px) until its content actually fits its
@@ -96,14 +96,22 @@ function scheduleSecondTick(fn) {
 }
 
 function escapeAttr(s) {
-  return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 // For text interpolated into innerHTML (event summaries, RSS titles, ...) —
 // these come from third-party calendars/feeds a user subscribes to, so a
 // hostile source could otherwise inject markup/scripts into the kiosk/editor.
 function escapeHtml(s) {
-  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function finiteNumber(value) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function escapeStyleUrl(s) {
@@ -132,8 +140,20 @@ function sandboxTokens(mode) {
 function cleanUrlList(v) {
   return (Array.isArray(v) ? v : []).map((s) => String(s || '').trim()).filter(Boolean);
 }
-function multiUrlQuery(urls) {
-  return urls.map((u) => `url=${encodeURIComponent(u)}`).join('&');
+function photoFilenameFromUrl(value) {
+  try {
+    let parsed;
+    try { parsed = new URL(String(value), window.location.href); }
+    catch { parsed = new URL(String(value), 'http://localhost/'); }
+    const pathname = parsed.pathname;
+    return decodeURIComponent(pathname.slice(pathname.lastIndexOf('/') + 1));
+  } catch {
+    return '';
+  }
+}
+function multiUrlQuery(urls, deviceToken) {
+  const query = urls.map((u) => `url=${encodeURIComponent(u)}`).join('&');
+  return deviceToken ? `${query}&device_token=${encodeURIComponent(deviceToken)}` : query;
 }
 
 // paneo.photo: distinguish video files from images by extension (query strings ignored).
@@ -675,11 +695,14 @@ export const widgets = {
         // filenames this specific widget instance should show. Empty/unset -> show
         // every file in the shared pool, same as before this option existed.
         const selected = Array.isArray(config.localSelectedFiles) ? config.localSelectedFiles : [];
-        fetch('/api/proxy/photos/local')
+        const tokenQuery = ctx.deviceToken
+          ? `?device_token=${encodeURIComponent(ctx.deviceToken)}`
+          : '';
+        fetch(`/api/proxy/photos/local${tokenQuery}`)
           .then(res => res.json())
           .then(list => {
             items = selected.length
-              ? list.filter((url) => selected.includes(decodeURIComponent(url.split('/').pop())))
+              ? list.filter((url) => selected.includes(photoFilenameFromUrl(url)))
               : list;
             paint();
           })
@@ -698,7 +721,7 @@ export const widgets = {
           errorBox(el, ctx.locale?.startsWith('ko') ? 'Immich 설정을 완료하세요' : 'Configure Immich setting');
           return;
         }
-        fetch(`/api/proxy/photos/immich?url=${url}&apiKey=${apiKey}&albumId=${albumId}`)
+        fetch(`/api/proxy/photos/immich?url=${url}&apiKey=${apiKey}&albumId=${albumId}&device_token=${encodeURIComponent(ctx.deviceToken || '')}`)
           .then(res => res.json())
           .then(list => {
             items = list;
@@ -938,7 +961,7 @@ export const widgets = {
       ro.observe(el);
 
       pollJson(
-        el, `/api/proxy/ical?${multiUrlQuery(parsedUrls)}`, pollInterval(15 * 60_000, ctx),
+        el, `/api/proxy/ical?${multiUrlQuery(parsedUrls, ctx.deviceToken)}`, pollInterval(15 * 60_000, ctx),
         (data) => {
           latestEvents = data.events || [];
           const rect = el.getBoundingClientRect();
@@ -1221,7 +1244,7 @@ export const widgets = {
         const rangeQuery = `&from=${encodeURIComponent(rangeFrom.toISOString())}&to=${encodeURIComponent(rangeTo.toISOString())}`;
 
         pollJson(
-          el, `/api/proxy/ical?${multiUrlQuery(parsedUrls)}${rangeQuery}`, pollInterval(30 * 60_000, ctx),
+          el, `/api/proxy/ical?${multiUrlQuery(parsedUrls, ctx.deviceToken)}${rangeQuery}`, pollInterval(30 * 60_000, ctx),
           (data) => {
             // Index events by their local date string
             const byDate = {};
@@ -1446,7 +1469,7 @@ export const widgets = {
       ro.observe(el);
 
       pollJson(
-        el, `/api/proxy/rss?${multiUrlQuery(urls)}`, pollInterval(15 * 60_000, ctx),
+        el, `/api/proxy/rss?${multiUrlQuery(urls, ctx.deviceToken)}`, pollInterval(15 * 60_000, ctx),
         (data) => {
           const items = data.items || [];
           latestItems = items;
@@ -1665,7 +1688,7 @@ export const widgets = {
           const res = await fetch(`/api/proxy/ha/services/weather/get_forecasts?return_response`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity_id: entityId, type: 'daily' }),
+            body: JSON.stringify({ entity_id: entityId, type: 'daily', device_token: ctx.deviceToken }),
           });
           if (!res.ok) return null;
           const json = await res.json();
@@ -1683,21 +1706,23 @@ export const widgets = {
         lastFcDays = fcDays;
         const state = data.state;
         const attrs = data.attributes || {};
-        const friendlyName = config.title || attrs.friendly_name || entityId;
-        const conditionIcon = HA_WEATHER_ICONS[state] || '🌡️';
-        const conditionText = translate('paneo.ha.weather.' + state, locale, state);
-        const temp = attrs.temperature;
-        const tempUnit = attrs.temperature_unit || '°C';
-        const humidity = attrs.humidity;
-        const windSpeed = attrs.wind_speed;
-        const windUnit = attrs.wind_speed_unit || '';
+        const friendlyName = escapeHtml(config.title || attrs.friendly_name || entityId);
+        const conditionIcon = escapeHtml(HA_WEATHER_ICONS[state] || '🌡️');
+        const conditionText = escapeHtml(translate('paneo.ha.weather.' + state, locale, state));
+        const temp = finiteNumber(attrs.temperature);
+        const tempUnit = escapeHtml(attrs.temperature_unit || '°C');
+        const humidity = finiteNumber(attrs.humidity);
+        const windSpeed = finiteNumber(attrs.wind_speed);
+        const windUnit = escapeHtml(attrs.wind_speed_unit || '');
 
         const forecastHtml = (fcDays > 0 && forecast?.length)
           ? `<div class="ha-weather-forecast${fcDays === 3 ? ' fc-3' : ''}">${forecast.slice(0, fcDays).map((f) => {
               const wd = new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: tz }).format(new Date(f.datetime));
               const icon = HA_WEATHER_ICONS[f.condition] || '🌡️';
-              const hi = f.temperature != null ? `${Math.round(f.temperature)}°` : '-';
-              const lo = f.templow != null ? `/${Math.round(f.templow)}°` : '';
+              const high = finiteNumber(f.temperature);
+              const low = finiteNumber(f.templow);
+              const hi = high != null ? `${Math.round(high)}°` : '-';
+              const lo = low != null ? `/${Math.round(low)}°` : '';
               return `<div class="ha-fc-day">
                 <div class="ha-fc-wd">${wd}</div>
                 <div class="ha-fc-icon">${icon}</div>
@@ -1744,19 +1769,19 @@ export const widgets = {
           return;
         }
 
-        const friendlyName = config.title || attrs.friendly_name || entityId;
-        const emojiIcon = config.icon || (entityId.startsWith('light') ? '💡' : entityId.startsWith('switch') ? '🔌' : entityId.startsWith('sensor') ? '🌡️' : '⚙️');
-        const unit = attrs.unit_of_measurement || '';
+        const friendlyName = escapeHtml(config.title || attrs.friendly_name || entityId);
+        const emojiIcon = escapeHtml(config.icon || (entityId.startsWith('light') ? '💡' : entityId.startsWith('switch') ? '🔌' : entityId.startsWith('sensor') ? '🌡️' : '⚙️'));
+        const unit = escapeHtml(attrs.unit_of_measurement || '');
 
-        let displayState = state;
+        let displayState = String(state ?? '');
         if (state === 'on') displayState = translate('paneo.homeassistant.on', locale, 'ON');
         else if (state === 'off') displayState = translate('paneo.homeassistant.off', locale, 'OFF');
         else if (state === 'unavailable') displayState = translate('paneo.homeassistant.unavailable', locale, 'Unavailable');
 
         const isControl = config.showToggle && (entityId.startsWith('switch') || entityId.startsWith('light') || entityId.startsWith('input_boolean'));
         const controlBtnHtml = isControl
-          ? `<button class="ha-toggle-btn" data-entity-id="${entityId}">${displayState}</button>`
-          : `<div class="ha-state-val">${displayState}${unit}</div>`;
+          ? `<button class="ha-toggle-btn" data-entity-id="${escapeAttr(entityId)}">${escapeHtml(displayState)}</button>`
+          : `<div class="ha-state-val">${escapeHtml(displayState)}${unit}</div>`;
 
         el.innerHTML = `
           <div class="w-ha">
@@ -1777,6 +1802,11 @@ export const widgets = {
 
         if (isControl) {
           const btn = el.querySelector('.ha-toggle-btn');
+          if (ctx.preview) {
+            btn.disabled = true;
+            btn.title = translate('paneo.homeassistant.previewReadOnly', locale, 'Controls are disabled in preview');
+            return;
+          }
           btn.addEventListener('click', async (e) => {
             e.stopPropagation();
             btn.disabled = true;
@@ -1785,12 +1815,12 @@ export const widgets = {
               const res = await fetch(`/api/proxy/ha/services/homeassistant/toggle`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entity_id: entityId })
+                body: JSON.stringify({ entity_id: entityId, device_token: ctx.deviceToken })
               });
               if (!res.ok) throw new Error();
 
               // 제어 후 즉시 상태 재조회
-              const stateRes = await fetch(`/api/proxy/ha/states/${entityId}`);
+              const stateRes = await fetch(`/api/proxy/ha/states/${encodeURIComponent(entityId)}?device_token=${encodeURIComponent(ctx.deviceToken || '')}`);
               const newState = await stateRes.json();
               renderData(newState);
             } catch {
@@ -1823,7 +1853,7 @@ export const widgets = {
       }
 
       pollJson(
-        el, `/api/proxy/ha/states/${entityId}`, pollInterval(30_000, ctx),
+        el, `/api/proxy/ha/states/${encodeURIComponent(entityId)}?device_token=${encodeURIComponent(ctx.deviceToken || '')}`, pollInterval(30_000, ctx),
         renderData,
         (err) => errorBox(el, err.message)
       );
@@ -1979,7 +2009,7 @@ export const widgets = {
       const rows = entries.map(({ done, text, index }) =>
         `<div class="todo-row ${done ? 'todo-done' : ''}" data-todo-index="${index}">
           <span class="todo-check">${done ? '✔' : '○'}</span>
-          <span class="todo-text">${text}</span>
+          <span class="todo-text">${escapeHtml(text)}</span>
           ${interactive ? '<button type="button" class="todo-delete" aria-label="delete">×</button>' : ''}
         </div>`
       ).join('');

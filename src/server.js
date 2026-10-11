@@ -14,6 +14,12 @@ import { registerDataProxy } from './dataproxy.js';
 import { setAgentPresent } from './store.js';
 import * as plugins from './plugins.js';
 import * as auth from './auth.js';
+import { deviceAllowsEntity, homeAssistantPayload } from './ha-proxy.js';
+import { deviceAllowsFeedUrls, deviceAllowsImmich, deviceAllowsLocalPhoto, filterLocalPhotoFiles } from './proxy-auth.js';
+import { albumContainsAsset, rememberAlbumAssets } from './immich-albums.js';
+import { fetchSameOrigin } from './safe-fetch.js';
+import { isTokenAttemptBlocked, recordInvalidTokenAttempt } from './token-guard.js';
+import { parseTrustedProxies } from './proxy-config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -27,7 +33,8 @@ const PORT = Number(process.env.PORT || 4321);
 // systemd unit runs `docker run --rm`) silently wipes anything stored there.
 const DATA_DIR = process.env.PANEO_DATA_DIR || path.join(process.cwd(), 'data');
 
-const app = Fastify({ logger: { level: 'info', transport: undefined } });
+const trustedProxies = parseTrustedProxies(process.env.PANEO_TRUST_PROXY);
+const app = Fastify({ logger: { level: 'info', transport: undefined }, trustProxy: trustedProxies });
 
 await app.register(fastifyWebsocket);
 await app.register(fastifyStatic, { root: PUBLIC, prefix: '/' });
@@ -68,12 +75,76 @@ if (process.env.PANEO_ADMIN_PASSWORD) {
 // other /api/* route (device list, layout, backup/restore, HA settings,
 // ...) still needs the admin session.
 const PUBLIC_API_ROUTES = ['/api/auth/status', '/api/auth/setup', '/api/auth/login', '/api/auth/logout'];
-const PUBLIC_API_PREFIXES = ['/api/proxy/', '/api/display/', '/api/brand', '/api/version', '/api/update-check', '/api/plugins'];
+const PUBLIC_API_PREFIXES = ['/api/display/', '/api/brand', '/api/version', '/api/update-check', '/api/plugins'];
 const TOKEN_SCOPED_ROUTE = /^\/api\/devices\/([^/]+)\/(?:command|update-status|notify|notify-group)$/;
+function guardTokenAttempt(req, reply, token) {
+  if (!token) return false;
+  if (isTokenAttemptBlocked(req.ip)) {
+    reply.code(429).send({ error: 'Too many invalid device tokens' });
+    return true;
+  }
+  if (!store.getDeviceByToken(token)) recordInvalidTokenAttempt(req.ip);
+  return false;
+}
+
 app.addHook('onRequest', async (req, reply) => {
-  if (!req.url.startsWith('/api/')) return;
   const path = req.url.split('?')[0];
+  if (path === '/ws' || path === '/ws/agent') {
+    const token = String(req.query?.token || '');
+    if (guardTokenAttempt(req, reply, token)) return;
+  }
+  const displayPageMatch = path.match(/^\/d\/([^/]+)$/);
+  if (displayPageMatch) {
+    let token = displayPageMatch[1];
+    try { token = decodeURIComponent(token); } catch { /* malformed token remains invalid */ }
+    if (guardTokenAttempt(req, reply, token)) return;
+  }
+  if (!path.startsWith('/api/')) return;
+  const queryToken = String(req.query?.device_token || '');
+  if (guardTokenAttempt(req, reply, queryToken)) return;
+  const displayTokenMatch = path.match(/^\/api\/display\/([^/]+)\//);
+  if (displayTokenMatch) {
+    if (guardTokenAttempt(req, reply, displayTokenMatch[1])) return;
+  }
+  const scopedTokenMatch = path.match(TOKEN_SCOPED_ROUTE);
+  if (scopedTokenMatch && /^(?:[a-f\d]{8}|[a-f\d]{64})$/i.test(scopedTokenMatch[1])) {
+    if (guardTokenAttempt(req, reply, scopedTokenMatch[1])) return;
+  }
+  const protectedPhotoRead = path === '/api/proxy/photos/local' || path.startsWith('/api/proxy/photos/local/file/');
+  const protectedProxyRead = ['/api/proxy/rss', '/api/proxy/ical', '/api/proxy/photos/immich', '/api/proxy/photos/immich/file'].includes(path);
+  if (req.method === 'GET' && (protectedProxyRead || protectedPhotoRead)) {
+    const sessionId = auth.parseCookies(req.headers.cookie)[auth.SESSION_COOKIE_NAME];
+    if (auth.isValidSession(sessionId)) return;
+    const token = String(req.query?.device_token || '');
+    const device = token ? store.getDeviceByToken(token) : null;
+    let allowed = false;
+    if (path === '/api/proxy/rss' || path === '/api/proxy/ical') {
+      const rawUrls = req.query?.url;
+      const urls = Array.isArray(rawUrls) ? rawUrls : rawUrls ? [rawUrls] : [];
+      allowed = deviceAllowsFeedUrls(device, path.endsWith('/rss') ? 'rss' : 'ical', urls);
+    } else if (path === '/api/proxy/photos/local' || path.startsWith('/api/proxy/photos/local/file/')) {
+      let filename;
+      if (path.startsWith('/api/proxy/photos/local/file/')) {
+        try { filename = decodeURIComponent(path.slice('/api/proxy/photos/local/file/'.length)); }
+        catch { filename = ''; }
+      }
+      allowed = deviceAllowsLocalPhoto(device, filename);
+    } else {
+      allowed = deviceAllowsImmich(device, req.query?.url, req.query?.apiKey, req.query?.albumId);
+    }
+    if (!allowed) return reply.code(token ? 403 : 401).send({ error: 'Not authorized for this proxy URL' });
+  }
   if (PUBLIC_API_ROUTES.includes(path)) return;
+  // The display needs read-only data proxies, while photo mutations belong to
+  // the authenticated editor. Keep the public exception method/path specific.
+  if (req.method === 'GET' && path.startsWith('/api/proxy/')) return;
+  if ((req.method === 'POST' || req.method === 'DELETE') && path.startsWith('/api/proxy/ha/services/')) {
+    // Display controls use only toggle; all other services require an editor
+    // session. The toggle route additionally checks device token + published layout.
+    const servicePath = path.slice('/api/proxy/ha/services/'.length).split('/');
+    if ((servicePath[0] === 'homeassistant' && servicePath[1] === 'toggle') ||
+        (servicePath[0] === 'weather' && servicePath[1] === 'get_forecasts')) return;
+  }
   if (PUBLIC_API_PREFIXES.some((p) => path === p || path.startsWith(p))) return;
   const tokenMatch = path.match(TOKEN_SCOPED_ROUTE);
   if (tokenMatch && store.getDeviceByToken(tokenMatch[1])) return;
@@ -81,6 +152,11 @@ app.addHook('onRequest', async (req, reply) => {
   if (!auth.isValidSession(cookies[auth.SESSION_COOKIE_NAME])) {
     reply.code(401).send({ error: 'unauthorized' });
   }
+});
+
+app.addHook('preValidation', async (req, reply) => {
+  const token = String(req.body?.device_token || '');
+  if (guardTokenAttempt(req, reply, token)) return;
 });
 
 app.get('/api/auth/status', async (req) => {
@@ -229,6 +305,7 @@ app.get('/ws/agent', { websocket: true }, (socket, req) => {
   socket.send(JSON.stringify({ type: 'agent.config', performanceProfile: device.performanceProfile || 'high' }));
 
   socket.on('message', (raw) => {
+    if (agents.get(device.id) !== socket) return;
     try {
       const msg = JSON.parse(raw);
       if (msg.type === 'agent.hello' || msg.type === 'agent.heartbeat') {
@@ -246,6 +323,8 @@ app.get('/ws/agent', { websocket: true }, (socket, req) => {
   });
 
   const cleanup = () => {
+    // An old socket can close after a replacement has already registered.
+    if (agents.get(device.id) !== socket) return;
     agents.delete(device.id);
     agentVersions.delete(device.id);
     setAgentPresent(device.id, false);
@@ -270,6 +349,23 @@ app.get('/api/plugins', async () => plugins.listPlugins());
 app.get('/api/devices', async () => store.listDevices().map(publicDevice));
 
 app.post('/api/devices', async (req) => publicDevice(await store.createDevice(req.body?.name)));
+
+app.post('/api/devices/:id/rotate-token', async (req, reply) => {
+  const d = await store.rotateDeviceToken(req.params.id);
+  if (!d) return reply.code(404).send({ error: 'not found' });
+  for (const socket of displays.get(d.id) ?? []) {
+    try { socket.close(4001, 'device token rotated'); } catch { /* already closed */ }
+  }
+  displays.delete(d.id);
+  const agent = agents.get(d.id);
+  if (agent) {
+    agents.delete(d.id);
+    try { agent.close(4001, 'device token rotated'); } catch { /* already closed */ }
+  }
+  agentVersions.delete(d.id);
+  setAgentPresent(d.id, false);
+  return publicDevice(d);
+});
 
 app.patch('/api/devices/:id', async (req, reply) => {
   const d = await store.updateDevice(req.params.id, req.body || {});
@@ -337,6 +433,11 @@ app.get('/api/proxy/ha/states/:entityId', async (req, reply) => {
   }
   const cleanUrl = url.replace(/\/$/, '');
   const { entityId } = req.params;
+  const sessionId = auth.parseCookies(req.headers.cookie)[auth.SESSION_COOKIE_NAME];
+  const isEditor = auth.isValidSession(sessionId);
+  const device = req.query?.device_token ? store.getDeviceByToken(String(req.query.device_token)) : null;
+  const allowed = deviceAllowsEntity(device, entityId);
+  if (!isEditor && !allowed) return reply.code(403).send({ error: 'Device is not authorized to read this entity' });
   try {
     const res = await fetch(`${cleanUrl}/api/states/${entityId}`, {
       headers: {
@@ -360,11 +461,33 @@ app.post('/api/proxy/ha/services/:domain/:service', async (req, reply) => {
   }
   const cleanUrl = url.replace(/\/$/, '');
   const { domain, service } = req.params;
+  if (!(domain === 'weather' && service === 'get_forecasts') && !(domain === 'homeassistant' && service === 'toggle')) {
+    return reply.code(403).send({ error: 'Service is not available through the display proxy' });
+  }
+  const outboundBody = homeAssistantPayload(domain, service, req.body || {});
+  if (domain === 'homeassistant') {
+    const token = String(req.body?.device_token || '');
+    const device = token ? store.getDeviceByToken(token) : null;
+    const entityId = String(req.body?.entity_id || '');
+    const allowed = deviceAllowsEntity(device, entityId, { toggle: true });
+    if (!allowed) return reply.code(403).send({ error: 'Device is not authorized to control this entity' });
+  } else {
+    const sessionId = auth.parseCookies(req.headers.cookie)[auth.SESSION_COOKIE_NAME];
+    if (auth.isValidSession(sessionId)) {
+      // An authenticated editor may preview weather cards without a display token.
+    } else {
+    const token = String(req.body?.device_token || '');
+    const device = token ? store.getDeviceByToken(token) : null;
+    const entityId = String(req.body?.entity_id || '');
+    const allowed = entityId.startsWith('weather.') && deviceAllowsEntity(device, entityId);
+    if (!allowed) return reply.code(403).send({ error: 'Device is not authorized to read this forecast' });
+    }
+  }
   // Forwarded as-is — e.g. paneo.homeassistant's weather forecast card needs
   // `?return_response` on weather/get_forecasts (HA's response-returning
   // services convention); nothing else currently uses query params here, but
   // there's no reason to hardcode just that one case into a generic proxy.
-  const qs = new URLSearchParams(req.query || {}).toString();
+  const qs = domain === 'weather' && Object.hasOwn(req.query || {}, 'return_response') ? 'return_response=' : '';
   try {
     const res = await fetch(`${cleanUrl}/api/services/${domain}/${service}${qs ? `?${qs}` : ''}`, {
       method: 'POST',
@@ -372,7 +495,7 @@ app.post('/api/proxy/ha/services/:domain/:service', async (req, reply) => {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(req.body || {})
+      body: JSON.stringify(outboundBody)
     });
     if (!res.ok) throw new Error(`HA returned ${res.status}`);
     const data = await res.json();
@@ -393,7 +516,13 @@ app.get('/api/proxy/photos/local', async (req, reply) => {
   try {
     const files = fs.readdirSync(PHOTOS_DIR)
       .filter(f => MEDIA_EXT_RE.test(f));
-    return files.map(f => `/api/proxy/photos/local/file/${encodeURIComponent(f)}`);
+    const token = String(req.query?.device_token || '');
+    const device = token ? store.getDeviceByToken(token) : null;
+    const visibleFiles = device ? filterLocalPhotoFiles(device, files) : files;
+    return visibleFiles.map((f) => {
+      const path = `/api/proxy/photos/local/file/${encodeURIComponent(f)}`;
+      return token ? `${path}?device_token=${encodeURIComponent(token)}` : path;
+    });
   } catch (err) {
     return [];
   }
@@ -472,13 +601,19 @@ app.get('/api/proxy/photos/immich', async (req, reply) => {
       ? `${cleanUrl}/api/albums/${albumId}`
       : `${cleanUrl}/api/assets`;
     const headers = { 'x-api-key': apiKey };
-    const res = await fetch(targetUrl, { headers });
+    const res = await fetchSameOrigin(targetUrl, { headers });
     if (!res.ok) throw new Error(`Immich returned ${res.status}`);
     const data = await res.json();
     const assets = albumId ? (data.assets || []) : (Array.isArray(data) ? data : []);
+    if (albumId) rememberAlbumAssets(cleanUrl, apiKey, String(albumId), assets);
     const list = assets
       .filter(a => a.type === 'IMAGE')
-      .map(a => `/api/proxy/photos/immich/file?url=${encodeURIComponent(cleanUrl)}&apiKey=${encodeURIComponent(apiKey)}&id=${a.id}`);
+      .map((a) => {
+        const params = new URLSearchParams({ url: cleanUrl, apiKey, id: String(a.id) });
+        if (albumId) params.set('albumId', String(albumId));
+        if (req.query?.device_token) params.set('device_token', String(req.query.device_token));
+        return `/api/proxy/photos/immich/file?${params}`;
+      });
     return list;
   } catch (err) {
     return reply.code(502).send({ error: `Immich fetch failed: ${err.message}` });
@@ -486,12 +621,26 @@ app.get('/api/proxy/photos/immich', async (req, reply) => {
 });
 
 app.get('/api/proxy/photos/immich/file', async (req, reply) => {
-  const { url, apiKey, id } = req.query || {};
+  const { url, apiKey, id, albumId } = req.query || {};
   if (!url || !apiKey || !id) {
     return reply.code(400).send({ error: 'Missing parameters' });
   }
   try {
-    const res = await fetch(`${url}/api/assets/${id}/thumbnail?size=large`, {
+    if (albumId) {
+      let belongs = albumContainsAsset(url, apiKey, String(albumId), id);
+      if (belongs === null) {
+        const albumRes = await fetchSameOrigin(`${String(url).replace(/\/$/, '')}/api/albums/${encodeURIComponent(albumId)}`, {
+          headers: { 'x-api-key': apiKey }
+        });
+        if (!albumRes.ok) return reply.code(502).send({ error: `Immich album fetch returned ${albumRes.status}` });
+        const album = await albumRes.json();
+        const assets = Array.isArray(album.assets) ? album.assets : [];
+        rememberAlbumAssets(url, apiKey, String(albumId), assets);
+        belongs = albumContainsAsset(url, apiKey, String(albumId), id);
+      }
+      if (!belongs) return reply.code(403).send({ error: 'Asset is not in the configured Immich album' });
+    }
+    const res = await fetchSameOrigin(`${url}/api/assets/${encodeURIComponent(id)}/thumbnail?size=large`, {
       headers: { 'x-api-key': apiKey }
     });
     if (!res.ok) throw new Error(`Immich file fetch returned ${res.status}`);

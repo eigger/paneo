@@ -4,6 +4,7 @@
 import Parser from 'rss-parser';
 import ical from 'node-ical'; // CJS module: async/sync live under the default export
 import QRCode from 'qrcode';
+import { fetchSameOrigin } from './safe-fetch.js';
 
 const rssParser = new Parser();
 
@@ -175,7 +176,14 @@ function icalTextValue(v) {
 }
 
 export async function fetchCalendarSource(url, range) {
-  const events = await ical.async.fromURL(url);
+  const original = new URL(url);
+  const events = await ical.async.fromURL(url, {
+    maxRedirects: 5,
+    beforeRedirect: (_options, responseDetails) => {
+      const next = new URL(responseDetails.headers.location, original);
+      if (next.origin !== original.origin) throw new Error('Cross-origin redirects are not allowed');
+    },
+  });
   const now = Date.now();
   // Node-ical only reports a recurring VEVENT's *first-ever* occurrence as
   // `e.start` — e.g. Apple's holiday calendars store each holiday once with
@@ -243,7 +251,9 @@ export async function fetchCalendarSource(url, range) {
 }
 
 async function fetchRssSource(url) {
-  const feed = await rssParser.parseURL(url);
+  const response = await fetchSameOrigin(url);
+  if (!response.ok) throw new Error(`RSS returned ${response.status}`);
+  const feed = await rssParser.parseString(await response.text());
   return (feed.items || []).slice(0, 10).map((it) => ({
     title: it.title || '(제목 없음)',
     link: it.link,

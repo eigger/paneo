@@ -11,6 +11,9 @@ await ensureAuthenticated();
 let device = null;
 let layout = null;
 let cachedPhotos = null;
+let deviceSelectionVersion = 0;
+let deviceTransition = Promise.resolve();
+let switchingDevice = false;
 // Multi-page layout structure
 // layout = { pages: [{ id: string, widgets: [], grid?, background? }], currentPageIndex: number }
 
@@ -105,6 +108,7 @@ function renderPageSelector() {
 
 let selectedId = null;
 let saveTimer = null;
+let saveInFlight = Promise.resolve();
 
 const canvas = document.getElementById('canvas');
 
@@ -742,18 +746,55 @@ async function loadDevices(preferredId) {
 }
 
 async function selectDevice(id) {
-  device = await api(`/api/devices/${id}`);
-  layout = migrateToPages(device.draft);
-  selectedId = null;
-  deviceSelect.value = id;
-  localeSelect.value = device.locale || 'ko-KR';
-  syncResolutionUI();
-  applyCanvasAspectRatio();
-  syncDeviceMetaUI();
-  openDisplay.href = `/d/${device.token}`;
-  applyVersionUI();
-  render();
-  renderInspector();
+  const requestVersion = ++deviceSelectionVersion;
+  deviceTransition = deviceTransition.catch(() => {}).then(async () => {
+    if (requestVersion !== deviceSelectionVersion) return;
+    if (device?.id === id) {
+      if (switchingDevice) {
+        switchingDevice = false;
+        document.querySelector('header')?.removeAttribute('inert');
+        document.querySelector('main')?.removeAttribute('inert');
+        document.getElementById('settings-overlay')?.removeAttribute('inert');
+      }
+      return;
+    }
+    switchingDevice = true;
+    document.querySelector('header')?.setAttribute('inert', '');
+    document.querySelector('main')?.setAttribute('inert', '');
+    document.getElementById('settings-overlay')?.setAttribute('inert', '');
+    clearTimeout(saveTimer);
+    try {
+      if (device) await saveDraft(device.id, structuredClone(layout));
+      if (requestVersion !== deviceSelectionVersion) return;
+      const nextDevice = await api(`/api/devices/${id}`);
+      if (requestVersion !== deviceSelectionVersion) return;
+      device = nextDevice;
+      layout = migrateToPages(device.draft);
+      selectedId = null;
+      deviceSelect.value = id;
+      localeSelect.value = device.locale || 'ko-KR';
+      syncResolutionUI();
+      applyCanvasAspectRatio();
+      syncDeviceMetaUI();
+      openDisplay.href = `/d/${device.token}`;
+      applyVersionUI();
+      render();
+      renderInspector();
+    } catch (err) {
+      if (requestVersion === deviceSelectionVersion) {
+        toast(t('switchSaveFailed'));
+        if (device) deviceSelect.value = device.id;
+      }
+    } finally {
+      if (requestVersion === deviceSelectionVersion) {
+        switchingDevice = false;
+        document.querySelector('header')?.removeAttribute('inert');
+        document.querySelector('main')?.removeAttribute('inert');
+        document.getElementById('settings-overlay')?.removeAttribute('inert');
+      }
+    }
+  });
+  return deviceTransition;
 }
 
 // ---- canvas render ----
@@ -1501,19 +1542,35 @@ function addWidget(type) {
 
 // ---- persistence ----
 function scheduleSave() {
+  if (switchingDevice) return;
   saveState.textContent = t('saving');
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveDraft, 400);
+  saveTimer = setTimeout(() => {
+    saveDraft().catch(() => {
+      saveState.textContent = t('saveFailed');
+    });
+  }, 400);
 }
-async function saveDraft() {
-  if (!device) return;
-  await api(`/api/devices/${device.id}/draft`, { method: 'PUT', body: JSON.stringify({ layout }) });
-  saveState.textContent = t('saved');
+async function saveDraft(targetId = device?.id, snapshot = layout && structuredClone(layout)) {
+  if (!targetId || !snapshot || switchingDevice && targetId !== device?.id) return;
+  saveState.textContent = t('saving');
+  try {
+    const request = saveInFlight.catch(() => {}).then(() => api(`/api/devices/${targetId}/draft`, { method: 'PUT', body: JSON.stringify({ layout: snapshot }) }));
+    saveInFlight = request;
+    await request;
+    if (device?.id === targetId) saveState.textContent = t('saved');
+  } catch (err) {
+    if (device?.id === targetId) saveState.textContent = t('saveFailed');
+    throw err;
+  }
 }
 
 async function apply() {
-  await saveDraft();
-  await api(`/api/devices/${device.id}/publish`, { method: 'POST' });
+  if (!device || switchingDevice) return;
+  const targetId = device.id;
+  const snapshot = structuredClone(layout);
+  await saveDraft(targetId, snapshot);
+  await api(`/api/devices/${targetId}/publish`, { method: 'POST' });
   toast(t('applied'));
 }
 
@@ -1595,6 +1652,30 @@ if (deviceTokenCopyBtn) {
       toast(t('tokenCopied'));
     } catch {
       input.select();
+    }
+  });
+}
+
+const deviceTokenRotateBtn = document.getElementById('device-token-rotate-btn');
+if (deviceTokenRotateBtn) {
+  deviceTokenRotateBtn.addEventListener('click', async () => {
+    if (!device || !confirm(t('tokenRotateConfirm'))) return;
+    const targetDeviceId = device.id;
+    deviceTokenRotateBtn.disabled = true;
+    try {
+      const rotated = await api(`/api/devices/${targetDeviceId}/rotate-token`, { method: 'POST' });
+      // The user may have switched devices while the request was pending. Never
+      // apply the old device's new token to whichever device is selected now.
+      if (device?.id !== targetDeviceId) return;
+      device.token = rotated.token;
+      loadDeviceToken();
+      openDisplay.href = `/d/${device.token}`;
+      syncDeviceMetaUI();
+      toast(t('tokenRotated'));
+    } catch (err) {
+      toast(`${t('authErrorGeneric')} ${err.message}`);
+    } finally {
+      deviceTokenRotateBtn.disabled = false;
     }
   });
 }
@@ -1726,7 +1807,7 @@ await loadPlugins().catch((err) => console.error('[plugins] load failed', err));
 initSelectors();
 applyI18n();
 deviceSelect.addEventListener('change', () => selectDevice(deviceSelect.value));
-document.getElementById('apply').addEventListener('click', apply);
+document.getElementById('apply').addEventListener('click', () => apply().catch((err) => toast(`${t('applyFailed')}: ${err.message}`)));
 canvas.addEventListener('pointerdown', (e) => {
   if (e.target === canvas) { selectedId = null; render(); renderInspector(); }
 });
