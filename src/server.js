@@ -14,6 +14,7 @@ import { registerDataProxy } from './dataproxy.js';
 import { setAgentPresent } from './store.js';
 import * as plugins from './plugins.js';
 import * as auth from './auth.js';
+import { deviceAllowsEntity, homeAssistantPayload } from './ha-proxy.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -68,12 +69,22 @@ if (process.env.PANEO_ADMIN_PASSWORD) {
 // other /api/* route (device list, layout, backup/restore, HA settings,
 // ...) still needs the admin session.
 const PUBLIC_API_ROUTES = ['/api/auth/status', '/api/auth/setup', '/api/auth/login', '/api/auth/logout'];
-const PUBLIC_API_PREFIXES = ['/api/proxy/', '/api/display/', '/api/brand', '/api/version', '/api/update-check', '/api/plugins'];
+const PUBLIC_API_PREFIXES = ['/api/display/', '/api/brand', '/api/version', '/api/update-check', '/api/plugins'];
 const TOKEN_SCOPED_ROUTE = /^\/api\/devices\/([^/]+)\/(?:command|update-status|notify|notify-group)$/;
 app.addHook('onRequest', async (req, reply) => {
   if (!req.url.startsWith('/api/')) return;
   const path = req.url.split('?')[0];
   if (PUBLIC_API_ROUTES.includes(path)) return;
+  // The display needs read-only data proxies, while photo mutations belong to
+  // the authenticated editor. Keep the public exception method/path specific.
+  if (req.method === 'GET' && path.startsWith('/api/proxy/')) return;
+  if ((req.method === 'POST' || req.method === 'DELETE') && path.startsWith('/api/proxy/ha/services/')) {
+    // Display controls use only toggle; all other services require an editor
+    // session. The toggle route additionally checks device token + published layout.
+    const servicePath = path.slice('/api/proxy/ha/services/'.length).split('/');
+    if ((servicePath[0] === 'homeassistant' && servicePath[1] === 'toggle') ||
+        (servicePath[0] === 'weather' && servicePath[1] === 'get_forecasts')) return;
+  }
   if (PUBLIC_API_PREFIXES.some((p) => path === p || path.startsWith(p))) return;
   const tokenMatch = path.match(TOKEN_SCOPED_ROUTE);
   if (tokenMatch && store.getDeviceByToken(tokenMatch[1])) return;
@@ -229,6 +240,7 @@ app.get('/ws/agent', { websocket: true }, (socket, req) => {
   socket.send(JSON.stringify({ type: 'agent.config', performanceProfile: device.performanceProfile || 'high' }));
 
   socket.on('message', (raw) => {
+    if (agents.get(device.id) !== socket) return;
     try {
       const msg = JSON.parse(raw);
       if (msg.type === 'agent.hello' || msg.type === 'agent.heartbeat') {
@@ -246,6 +258,8 @@ app.get('/ws/agent', { websocket: true }, (socket, req) => {
   });
 
   const cleanup = () => {
+    // An old socket can close after a replacement has already registered.
+    if (agents.get(device.id) !== socket) return;
     agents.delete(device.id);
     agentVersions.delete(device.id);
     setAgentPresent(device.id, false);
@@ -337,6 +351,11 @@ app.get('/api/proxy/ha/states/:entityId', async (req, reply) => {
   }
   const cleanUrl = url.replace(/\/$/, '');
   const { entityId } = req.params;
+  const sessionId = auth.parseCookies(req.headers.cookie)[auth.SESSION_COOKIE_NAME];
+  const isEditor = auth.isValidSession(sessionId);
+  const device = req.query?.device_token ? store.getDeviceByToken(String(req.query.device_token)) : null;
+  const allowed = deviceAllowsEntity(device, entityId);
+  if (!isEditor && !allowed) return reply.code(403).send({ error: 'Device is not authorized to read this entity' });
   try {
     const res = await fetch(`${cleanUrl}/api/states/${entityId}`, {
       headers: {
@@ -360,11 +379,33 @@ app.post('/api/proxy/ha/services/:domain/:service', async (req, reply) => {
   }
   const cleanUrl = url.replace(/\/$/, '');
   const { domain, service } = req.params;
+  if (!(domain === 'weather' && service === 'get_forecasts') && !(domain === 'homeassistant' && service === 'toggle')) {
+    return reply.code(403).send({ error: 'Service is not available through the display proxy' });
+  }
+  const outboundBody = homeAssistantPayload(domain, service, req.body || {});
+  if (domain === 'homeassistant') {
+    const token = String(req.body?.device_token || '');
+    const device = token ? store.getDeviceByToken(token) : null;
+    const entityId = String(req.body?.entity_id || '');
+    const allowed = deviceAllowsEntity(device, entityId, { toggle: true });
+    if (!allowed) return reply.code(403).send({ error: 'Device is not authorized to control this entity' });
+  } else {
+    const sessionId = auth.parseCookies(req.headers.cookie)[auth.SESSION_COOKIE_NAME];
+    if (auth.isValidSession(sessionId)) {
+      // An authenticated editor may preview weather cards without a display token.
+    } else {
+    const token = String(req.body?.device_token || '');
+    const device = token ? store.getDeviceByToken(token) : null;
+    const entityId = String(req.body?.entity_id || '');
+    const allowed = entityId.startsWith('weather.') && deviceAllowsEntity(device, entityId);
+    if (!allowed) return reply.code(403).send({ error: 'Device is not authorized to read this forecast' });
+    }
+  }
   // Forwarded as-is — e.g. paneo.homeassistant's weather forecast card needs
   // `?return_response` on weather/get_forecasts (HA's response-returning
   // services convention); nothing else currently uses query params here, but
   // there's no reason to hardcode just that one case into a generic proxy.
-  const qs = new URLSearchParams(req.query || {}).toString();
+  const qs = domain === 'weather' && Object.hasOwn(req.query || {}, 'return_response') ? 'return_response=' : '';
   try {
     const res = await fetch(`${cleanUrl}/api/services/${domain}/${service}${qs ? `?${qs}` : ''}`, {
       method: 'POST',
@@ -372,7 +413,7 @@ app.post('/api/proxy/ha/services/:domain/:service', async (req, reply) => {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(req.body || {})
+      body: JSON.stringify(outboundBody)
     });
     if (!res.ok) throw new Error(`HA returned ${res.status}`);
     const data = await res.json();

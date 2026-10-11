@@ -95,6 +95,13 @@ test('paneo.text renders plain configured text', (t) => {
   assert.equal(el.querySelector('.w-text').textContent, 'Hello Paneo');
 });
 
+test('paneo.todo treats configured item text as text, not markup', (t) => {
+  const el = mount(t);
+  renderWidget(el, 'paneo.todo', { todoItems: [{ text: '<img src=x onerror=alert(1)>', done: false }] }, {});
+  assert.equal(el.querySelector('.todo-text')?.textContent, '<img src=x onerror=alert(1)>');
+  assert.equal(el.querySelector('.todo-text img'), null);
+});
+
 test('paneo.calendar.month dims other-month date numbers in 3-week view', (t) => {
   // Early March — the 3-week strip includes late-February days.
   t.mock.timers.enable({ now: new Date('2026-03-03T12:00:00') });

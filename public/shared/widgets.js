@@ -1642,7 +1642,7 @@ export const widgets = {
           const res = await fetch(`/api/proxy/ha/services/weather/get_forecasts?return_response`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity_id: entityId, type: 'daily' }),
+            body: JSON.stringify({ entity_id: entityId, type: 'daily', device_token: ctx.deviceToken }),
           });
           if (!res.ok) return null;
           const json = await res.json();
@@ -1754,6 +1754,11 @@ export const widgets = {
 
         if (isControl) {
           const btn = el.querySelector('.ha-toggle-btn');
+          if (ctx.preview) {
+            btn.disabled = true;
+            btn.title = translate('paneo.homeassistant.previewReadOnly', locale, 'Controls are disabled in preview');
+            return;
+          }
           btn.addEventListener('click', async (e) => {
             e.stopPropagation();
             btn.disabled = true;
@@ -1762,12 +1767,12 @@ export const widgets = {
               const res = await fetch(`/api/proxy/ha/services/homeassistant/toggle`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entity_id: entityId })
+                body: JSON.stringify({ entity_id: entityId, device_token: ctx.deviceToken })
               });
               if (!res.ok) throw new Error();
 
               // 제어 후 즉시 상태 재조회
-              const stateRes = await fetch(`/api/proxy/ha/states/${entityId}`);
+              const stateRes = await fetch(`/api/proxy/ha/states/${entityId}?device_token=${encodeURIComponent(ctx.deviceToken || '')}`);
               const newState = await stateRes.json();
               renderData(newState);
             } catch {
@@ -1800,7 +1805,7 @@ export const widgets = {
       }
 
       pollJson(
-        el, `/api/proxy/ha/states/${entityId}`, pollInterval(30_000, ctx),
+        el, `/api/proxy/ha/states/${entityId}?device_token=${encodeURIComponent(ctx.deviceToken || '')}`, pollInterval(30_000, ctx),
         renderData,
         (err) => errorBox(el, err.message)
       );
@@ -1956,7 +1961,7 @@ export const widgets = {
       const rows = entries.map(({ done, text, index }) =>
         `<div class="todo-row ${done ? 'todo-done' : ''}" data-todo-index="${index}">
           <span class="todo-check">${done ? '✔' : '○'}</span>
-          <span class="todo-text">${text}</span>
+          <span class="todo-text">${escapeHtml(text)}</span>
           ${interactive ? '<button type="button" class="todo-delete" aria-label="delete">×</button>' : ''}
         </div>`
       ).join('');
