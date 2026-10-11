@@ -1656,6 +1656,30 @@ if (deviceTokenCopyBtn) {
   });
 }
 
+const deviceTokenRotateBtn = document.getElementById('device-token-rotate-btn');
+if (deviceTokenRotateBtn) {
+  deviceTokenRotateBtn.addEventListener('click', async () => {
+    if (!device || !confirm(t('tokenRotateConfirm'))) return;
+    const targetDeviceId = device.id;
+    deviceTokenRotateBtn.disabled = true;
+    try {
+      const rotated = await api(`/api/devices/${targetDeviceId}/rotate-token`, { method: 'POST' });
+      // The user may have switched devices while the request was pending. Never
+      // apply the old device's new token to whichever device is selected now.
+      if (device?.id !== targetDeviceId) return;
+      device.token = rotated.token;
+      loadDeviceToken();
+      openDisplay.href = `/d/${device.token}`;
+      syncDeviceMetaUI();
+      toast(t('tokenRotated'));
+    } catch (err) {
+      toast(`${t('authErrorGeneric')} ${err.message}`);
+    } finally {
+      deviceTokenRotateBtn.disabled = false;
+    }
+  });
+}
+
 // ---- backup / restore (layout + device settings; §D53) ----
 // HA credentials are deliberately excluded: the URL is global (not
 // per-device — see /api/settings/ha) and the token is never sent to the

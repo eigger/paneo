@@ -145,6 +145,7 @@ const displayTranslations = {
     step_done: '업데이트 완료',
     connected: '● 연결됨',
     reconnecting: '○ 재연결 중…',
+    pairingRequired: '기기 토큰이 변경되었습니다. 새 디스플레이 URL을 열어 다시 연결하세요. Raspberry Pi는 PANEO_MODE=display와 새 PANEO_TOKEN으로 설치를 다시 실행해야 합니다.',
   },
   en: {
     updating: 'Updating…',
@@ -166,6 +167,7 @@ const displayTranslations = {
     step_done: 'Update complete',
     connected: '● Connected',
     reconnecting: '○ Reconnecting…',
+    pairingRequired: 'This device token was rotated. Open the new display URL to pair again. On Raspberry Pi, rerun the installer in PANEO_MODE=display with the new PANEO_TOKEN.',
   },
 };
 
@@ -292,7 +294,26 @@ function connect() {
       showNotify(msg);
     }
   };
-  ws.onclose = () => { setStatus(dt('reconnecting'), 'offline', false); setTimeout(connect, 2000); };
+  ws.onclose = (event) => {
+    if (event.code === 4001 || event.code === 1008) {
+      localStorage.removeItem(CACHE_KEY);
+      document.getElementById('page-indicator')?.remove();
+      stage.querySelectorAll('.widget-content').forEach((content) => content._cleanup?.());
+      stage.innerHTML = '';
+      stage.style.display = 'grid';
+      stage.style.gridTemplateColumns = '1fr';
+      stage.style.gridTemplateRows = '1fr';
+      lastLayout = null;
+      const message = document.createElement('div');
+      message.className = 'pairing-required';
+      message.textContent = dt('pairingRequired');
+      stage.appendChild(message);
+      setStatus(dt('pairingRequired'), 'offline', false);
+      return;
+    }
+    setStatus(dt('reconnecting'), 'offline', false);
+    setTimeout(connect, 2000);
+  };
   ws.onerror = () => ws.close();
 }
 connect();

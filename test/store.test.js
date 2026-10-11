@@ -17,8 +17,23 @@ test('load leaves an empty database empty (no auto-seeded placeholder device)', 
 test('createDevice persists a new display', async () => {
   const device = await store.createDevice('Test Display');
   assert.equal(device.name, 'Test Display');
-  assert.ok(device.token);
+  assert.match(device.token, /^[a-f0-9]{64}$/);
   assert.equal(store.getDevice(device.id)?.name, 'Test Display');
+});
+
+test('device token rotation is explicit, unique, and replaces the previous token', async () => {
+  const device = await store.createDevice('Token Rotation Test');
+  const other = await store.createDevice('Token Uniqueness Test');
+  const oldToken = device.token;
+  assert.equal(store.getDeviceByToken(oldToken)?.id, device.id);
+
+  const rotated = await store.rotateDeviceToken(device.id);
+  assert.match(rotated.token, /^[a-f0-9]{64}$/);
+  assert.notEqual(rotated.token, oldToken);
+  assert.notEqual(rotated.token, other.token);
+  assert.equal(store.getDeviceByToken(oldToken), null);
+  assert.equal(store.getDeviceByToken(rotated.token)?.id, device.id);
+  assert.equal(await store.rotateDeviceToken('missing-device'), null);
 });
 
 test('publish copies draft layout to published', async () => {

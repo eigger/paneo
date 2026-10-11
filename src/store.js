@@ -2,7 +2,7 @@
 // (fits the self-host/single-container principle, docs/design.md §10). Swapped in for the M0
 // JSON file; exported function signatures are unchanged so server.js didn't need edits.
 import { DatabaseSync } from 'node:sqlite';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
 import { mkdirSync, existsSync, readFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
 
@@ -109,16 +109,23 @@ const stmt = {
     locale = @locale, timezone = @timezone, resolutionW = @resolutionW, resolutionH = @resolutionH,
     groupId = @groupId, powerSchedule = @powerSchedule WHERE id = @id`),
   updateAgentPresent: db.prepare('UPDATE devices SET agentPresent = ? WHERE id = ?'),
+  updateToken: db.prepare('UPDATE devices SET token = ? WHERE id = ?'),
   getSetting: db.prepare('SELECT value FROM settings WHERE key = ?'),
   setSetting: db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'),
 };
+
+function generateDeviceToken() {
+  let token;
+  do { token = randomBytes(32).toString('hex'); } while (stmt.byToken.get(token));
+  return token;
+}
 
 function newDeviceRow(name) {
   const layout = JSON.stringify(defaultLayout());
   return {
     id: randomUUID(),
     name,
-    token: randomUUID().slice(0, 8),
+    token: generateDeviceToken(),
     performanceProfile: 'high', // §4.3 — high | low | auto
     locale: 'ko-KR', // §4.4 — display locale (date/time/number formatting)
     timezone: null, // null → display uses its own local timezone
@@ -197,6 +204,13 @@ export async function createDevice(name) {
   const row = newDeviceRow(name || '새 화면');
   stmt.insert.run(row);
   return getDevice(row.id);
+}
+
+export async function rotateDeviceToken(id) {
+  if (!getDevice(id)) return null;
+  const token = generateDeviceToken();
+  stmt.updateToken.run(token, id);
+  return getDevice(id);
 }
 
 export async function updateDevice(id, patch) {

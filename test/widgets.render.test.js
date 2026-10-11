@@ -102,6 +102,67 @@ test('paneo.todo treats configured item text as text, not markup', (t) => {
   assert.equal(el.querySelector('.todo-text img'), null);
 });
 
+test('paneo.photo matches selected local filenames when returned URLs include device_token', async (t) => {
+  const el = mount(t);
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ['/api/proxy/photos/local/file/selected.jpg?device_token=paired-token'],
+  });
+  t.after(() => { globalThis.fetch = previousFetch; });
+
+  renderWidget(el, 'paneo.photo', {
+    source: 'local', localSelectedFiles: ['selected.jpg'],
+    interval: 60, transition: 'none', useEffects: false,
+  }, { deviceToken: 'paired-token' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(el.querySelector('.w-image'), 'selected local image should be painted');
+  assert.match(el.innerHTML, /selected\.jpg/);
+});
+
+test('paneo.homeassistant escapes hostile config and normal-state values', async (t) => {
+  const el = mount(t);
+  const previousFetch = globalThis.fetch;
+  const attack = '<img src=x onerror=alert(1)>';
+  const entityId = `input_boolean.demo"><img src=x onerror=alert(2)>`;
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ state: attack, attributes: { friendly_name: attack, unit_of_measurement: attack } }) });
+  t.after(() => { globalThis.fetch = previousFetch; });
+
+  renderWidget(el, 'paneo.homeassistant', { entityId, title: attack, icon: attack, showToggle: true }, { preview: true });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(el.querySelector('img'), null);
+  assert.equal(el.querySelector('.ha-title')?.textContent, attack);
+  assert.equal(el.querySelector('.ha-icon')?.textContent, attack);
+  assert.equal(el.querySelector('.ha-toggle-btn')?.dataset.entityId, entityId);
+  assert.equal(el.querySelector('.ha-toggle-btn')?.disabled, true);
+  assert.equal(el.querySelector('.ha-toggle-btn')?.textContent, attack);
+
+  const stateEl = mount(t);
+  renderWidget(stateEl, 'paneo.homeassistant', { entityId: 'sensor.demo', title: attack, icon: attack }, {});
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(stateEl.querySelector('img'), null);
+  assert.equal(stateEl.querySelector('.ha-state-val')?.textContent, `${attack}${attack}`);
+  assert.equal(stateEl.querySelector('.ha-title')?.textContent, attack);
+});
+
+test('paneo.homeassistant.weather escapes hostile names, state, and units', async (t) => {
+  const el = mount(t);
+  const previousFetch = globalThis.fetch;
+  const attack = '<svg onload=alert(1)>';
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({
+    state: attack,
+    attributes: { friendly_name: attack, temperature: 18, temperature_unit: attack, humidity: attack, wind_speed: attack, wind_speed_unit: attack },
+  }) });
+  t.after(() => { globalThis.fetch = previousFetch; });
+
+  renderWidget(el, 'paneo.homeassistant', { entityId: 'weather.home', title: attack }, {});
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(el.querySelector('svg'), null);
+  assert.equal(el.querySelector('.ha-title')?.textContent, attack);
+  assert.equal(el.querySelector('.ha-weather-cond')?.textContent, attack);
+  assert.equal(el.querySelector('.ha-weather-temp')?.textContent, `18${attack}`);
+});
+
 test('paneo.calendar.month dims other-month date numbers in 3-week view', (t) => {
   // Early March — the 3-week strip includes late-February days.
   t.mock.timers.enable({ now: new Date('2026-03-03T12:00:00') });
@@ -116,4 +177,23 @@ test('paneo.calendar.month dims other-month date numbers in 3-week view', (t) =>
   );
   assert.equal(el.querySelector('.cal-m-past-day'), null, 'whole-day past dimming should not be used');
   t.mock.timers.reset();
+});
+
+test('paneo.calendar.month includes its device token exactly once in the proxy URL', async (t) => {
+  const el = mount(t);
+  const previousFetch = globalThis.fetch;
+  let requestedUrl = '';
+  globalThis.fetch = async (url) => {
+    requestedUrl = String(url);
+    return { ok: true, json: async () => ({ events: [] }) };
+  };
+  t.after(() => { globalThis.fetch = previousFetch; });
+
+  renderWidget(el, 'paneo.calendar.month', { icsUrls: ['https://calendar.example/events.ics'] }, {
+    locale: 'en-US', deviceToken: 'device-token-123',
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  const parsed = new URL(requestedUrl, 'http://localhost');
+  assert.equal(parsed.searchParams.getAll('device_token').length, 1);
+  assert.equal(parsed.searchParams.get('device_token'), 'device-token-123');
 });

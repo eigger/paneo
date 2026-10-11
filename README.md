@@ -121,6 +121,7 @@ Since the editor is password-protected, exposing it directly over HTTP is insecu
 1. **Proxy Setup**: Direct incoming port 443 (HTTPS) traffic from your reverse proxy to Paneo's local port 4321.
 2. **Reverse Proxy SSL**: Set up Let's Encrypt or your own SSL certificates at the reverse proxy layer.
 3. **Security**: Ensure client browsers connect securely so session cookies (`paneo_session`) cannot be intercepted over the network.
+4. **Client IP rate limits**: By default Paneo ignores forwarded IP headers. If token-guess limits should distinguish users behind a reverse proxy, set `PANEO_TRUST_PROXY` to the proxy's actual source IP or a narrow CIDR (for example `127.0.0.1` when a same-host proxy connects over loopback). Multiple trusted proxies can be comma-separated. Paneo then uses Fastify's validated `req.ip` for rate limits. Configure the proxy to overwrite `X-Forwarded-For` and prevent direct untrusted access to Paneo; never set this to a public/untrusted range or `0.0.0.0/0` / `::/0`. Leave it unset when the proxy address is not stable or cannot be restricted.
 
 
 ## Tests

@@ -175,6 +175,10 @@ const catalogs = {
     deviceTokenHint: '이 값 하나로 기기 식별과 인증을 함께 처리합니다 — Home Assistant rest_command 등에서 device id 대신 명령 URL(/api/devices/<토큰>/command)에 그대로 사용하세요. 별도 API 토큰/헤더는 필요 없습니다.',
     tokenCopyBtn: '복사',
     tokenCopied: '토큰이 복사되었습니다',
+    tokenRotateBtn: '토큰 회전 및 다시 페어링',
+    tokenRotateHint: '회전 후 새 디스플레이 URL을 열어 다시 페어링하세요. Raspberry Pi에서는 새 PANEO_TOKEN으로 PANEO_MODE=display 설치 명령을 다시 실행하세요. 키오스크 실행기와 systemd 서비스가 함께 갱신됩니다.',
+    tokenRotateConfirm: '토큰을 지금 회전할까요? 연결된 화면과 에이전트가 끊깁니다. 새 디스플레이 URL을 열고, Raspberry Pi에서는 새 PANEO_TOKEN으로 PANEO_MODE=display 설치 명령을 다시 실행해 키오스크 실행기와 서비스를 갱신해야 합니다.',
+    tokenRotated: '토큰을 회전했습니다. 새 URL로 화면을 다시 페어링하고, Raspberry Pi에서는 새 PANEO_TOKEN으로 PANEO_MODE=display 설치 명령을 다시 실행하세요.',
   },
   en: {
     tag: 'editor',
@@ -346,6 +350,10 @@ const catalogs = {
     deviceTokenHint: 'One value handles both identifying and authorizing — use it in place of the device id in an automation\'s command URL (e.g. Home Assistant rest_command: /api/devices/<token>/command). No separate API token or header needed.',
     tokenCopyBtn: 'Copy',
     tokenCopied: 'Token copied',
+    tokenRotateBtn: 'Rotate token and re-pair',
+    tokenRotateHint: 'After rotation, open the new display URL to pair the screen again. On the Pi, rerun the installer in PANEO_MODE=display with the new PANEO_TOKEN; this updates both the kiosk launcher and systemd service.',
+    tokenRotateConfirm: 'Rotate this token now? The connected display and agent will disconnect. Open the new display URL, then rerun the Pi installer in PANEO_MODE=display with the new PANEO_TOKEN to update the kiosk launcher and systemd service.',
+    tokenRotated: 'Token rotated. Re-pair the display with its new URL, then rerun the Pi installer in PANEO_MODE=display with the new PANEO_TOKEN.',
   },
   ja: {
     tag: 'エディタ',
@@ -513,6 +521,10 @@ const catalogs = {
     deviceTokenHint: 'この1つの値だけでデバイスの識別と認証を兼ねます — Home Assistantのrest_commandなどで、device idの代わりにコマンドURL(/api/devices/<トークン>/command)にそのまま使用してください。別途APIトークンやヘッダーは不要です。',
     tokenCopyBtn: 'コピー',
     tokenCopied: 'トークンをコピーしました',
+    tokenRotateBtn: 'トークンを更新して再ペアリング',
+    tokenRotateHint: '更新後、新しいディスプレイURLを開いて再ペアリングしてください。Raspberry Piでは、新しいPANEO_TOKENでPANEO_MODE=displayのインストーラーを再実行し、キオスク起動設定とsystemdサービスを更新してください。',
+    tokenRotateConfirm: '今すぐトークンを更新しますか？接続中の画面とエージェントは切断されます。新しい画面URLを開き、Raspberry Piでは新しいPANEO_TOKENでPANEO_MODE=displayインストーラーを再実行してキオスク起動設定とサービスを更新してください。',
+    tokenRotated: 'トークンを更新しました。新しいURLで再ペアリングし、Raspberry Piでは新しいPANEO_TOKENでPANEO_MODE=displayインストーラーを再実行してください。',
   },
   de: {
     tag: 'Editor',
@@ -680,6 +692,10 @@ const catalogs = {
     deviceTokenHint: 'Ein einziger Wert übernimmt Identifikation und Autorisierung zugleich — anstelle der device id direkt in der Befehls-URL einer Automatisierung verwenden (z. B. Home Assistant rest_command: /api/devices/<Token>/command). Kein separates API-Token oder Header nötig.',
     tokenCopyBtn: 'Kopieren',
     tokenCopied: 'Token kopiert',
+    tokenRotateBtn: 'Token erneuern und neu koppeln',
+    tokenRotateHint: 'Öffnen Sie nach der Erneuerung die neue Display-URL. Führen Sie auf dem Pi den Installer erneut mit PANEO_MODE=display und dem neuen PANEO_TOKEN aus; dadurch werden Kiosk-Launcher und systemd-Dienst aktualisiert.',
+    tokenRotateConfirm: 'Token jetzt erneuern? Display und Agent werden getrennt. Öffnen Sie die neue Display-URL und führen Sie auf dem Pi den Installer erneut mit PANEO_MODE=display und neuem PANEO_TOKEN aus.',
+    tokenRotated: 'Token erneuert. Koppeln Sie das Display mit der neuen URL und führen Sie auf dem Pi den Installer erneut mit PANEO_MODE=display und neuem PANEO_TOKEN aus.',
   },
   fr: {
     tag: 'Éditeur',
@@ -847,6 +863,10 @@ const catalogs = {
     deviceTokenHint: 'Une seule valeur identifie et autorise à la fois — à utiliser à la place du device id dans l’URL de commande d’une automatisation (ex. rest_command Home Assistant : /api/devices/<jeton>/command). Aucun jeton API ni en-tête séparé n’est nécessaire.',
     tokenCopyBtn: 'Copier',
     tokenCopied: 'Jeton copié',
+    tokenRotateBtn: 'Renouveler le jeton et réassocier',
+    tokenRotateHint: 'Après le renouvellement, ouvrez la nouvelle URL de l’écran. Sur le Pi, relancez l’installateur en PANEO_MODE=display avec le nouveau PANEO_TOKEN : cela met à jour le lanceur kiosque et le service systemd.',
+    tokenRotateConfirm: 'Renouveler ce jeton ? L’écran et l’agent seront déconnectés. Ouvrez la nouvelle URL puis relancez sur le Pi l’installateur en PANEO_MODE=display avec le nouveau PANEO_TOKEN.',
+    tokenRotated: 'Jeton renouvelé. Réassociez l’écran avec sa nouvelle URL et relancez l’installateur du Pi en PANEO_MODE=display avec le nouveau PANEO_TOKEN.',
   },
   es: {
     tag: 'Editor',
@@ -1014,6 +1034,10 @@ const catalogs = {
     deviceTokenHint: 'Un solo valor identifica y autoriza a la vez — úsalo en lugar del device id en la URL de comando de una automatización (p. ej. rest_command de Home Assistant: /api/devices/<token>/command). No hace falta un token de API ni una cabecera aparte.',
     tokenCopyBtn: 'Copiar',
     tokenCopied: 'Token copiado',
+    tokenRotateBtn: 'Rotar token y volver a emparejar',
+    tokenRotateHint: 'Después de rotarlo, abre la nueva URL. En la Pi, vuelve a ejecutar el instalador con PANEO_MODE=display y el nuevo PANEO_TOKEN; así se actualizan el iniciador del kiosco y el servicio systemd.',
+    tokenRotateConfirm: '¿Rotar este token ahora? La pantalla y el agente se desconectarán. Abre la nueva URL y vuelve a ejecutar el instalador de la Pi con PANEO_MODE=display y el nuevo PANEO_TOKEN.',
+    tokenRotated: 'Token rotado. Empareja la pantalla con la nueva URL y vuelve a ejecutar el instalador de la Pi con PANEO_MODE=display y el nuevo PANEO_TOKEN.',
   },
 };
 
