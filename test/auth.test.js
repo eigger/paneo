@@ -63,12 +63,17 @@ test('isRateLimited allows a normal login attempt rate and blocks a rapid-fire l
 });
 
 test('HA entity authorization supports legacy flat published layouts and toggle opt-in', () => {
-  const device = { published: { widgets: [{ type: 'paneo.homeassistant', config: { entityId: 'light.desk', showToggle: true } }] } };
+  const device = { published: { widgets: [{ type: 'paneo.homeassistant', config: { entityId: ' light.desk ', showToggle: true } }] } };
   assert.equal(deviceAllowsEntity(device, 'light.desk'), true);
   assert.equal(deviceAllowsEntity(device, 'light.desk', { toggle: true }), true);
   assert.equal(deviceAllowsEntity(device, 'light.other'), false);
+  device.published.widgets[0].config.entityId = ' sensor.desk ';
+  assert.equal(deviceAllowsEntity(device, 'sensor.desk'), true);
+  assert.equal(deviceAllowsEntity(device, 'sensor.desk', { toggle: true }), false);
+  device.published.widgets[0].config.entityId = ' input_boolean.focus ';
+  assert.equal(deviceAllowsEntity(device, 'input_boolean.focus', { toggle: true }), true);
   device.published.widgets[0].config.showToggle = false;
-  assert.equal(deviceAllowsEntity(device, 'light.desk', { toggle: true }), false);
+  assert.equal(deviceAllowsEntity(device, 'input_boolean.focus', { toggle: true }), false);
 });
 
 test('HA service payloads forward only explicitly supported fields', () => {

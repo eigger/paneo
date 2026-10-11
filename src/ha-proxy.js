@@ -6,9 +6,11 @@ export function layoutWidgets(layout) {
 }
 
 export function deviceAllowsEntity(device, entityId, { toggle = false } = {}) {
-  if (!device || !entityId) return false;
+  const requestedEntityId = String(entityId || '').trim();
+  if (!device || !requestedEntityId) return false;
+  if (toggle && !/^(switch|light|input_boolean)\./.test(requestedEntityId)) return false;
   return layoutWidgets(device.published).some((widget) =>
-    widget?.type === 'paneo.homeassistant' && widget.config?.entityId === entityId && (!toggle || widget.config?.showToggle));
+    widget?.type === 'paneo.homeassistant' && String(widget.config?.entityId || '').trim() === requestedEntityId && (!toggle || widget.config?.showToggle));
 }
 
 // Construct outbound bodies from an explicit allowlist. Never forward pairing
