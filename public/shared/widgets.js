@@ -342,6 +342,73 @@ function weatherCodeIcon(code) {
   return WEATHER_CODE_ICON[code] ?? '🌡️';
 }
 
+// ---- In-page article viewer (RSS) ------------------------------------------
+// A kiosk display has no address bar / back button, so following a feed link
+// by real navigation would strand it on the external site. Instead the article
+// is shown in a sandboxed iframe overlay with an explicit back button; it also
+// closes by itself after ARTICLE_IDLE_SEC without a tap on the top bar (taps
+// inside the cross-origin frame can't be observed). Sites that forbid framing
+// (X-Frame-Options / CSP frame-ancestors) show the browser's blocked-frame
+// page inside the overlay — the back button still works.
+const ARTICLE_IDLE_SEC = 60;
+const ARTICLE_I18N = {
+  ko: { back: '← 돌아가기', hint: '자동으로 닫힙니다' },
+  en: { back: '← Back', hint: 'closes automatically' },
+  ja: { back: '← 戻る', hint: '自動で閉じます' },
+  de: { back: '← Zurück', hint: 'schließt automatisch' },
+  fr: { back: '← Retour', hint: 'se ferme automatiquement' },
+  es: { back: '← Volver', hint: 'se cierra automáticamente' },
+};
+let articleOverlay = null;
+
+function closeArticleOverlay() {
+  if (!articleOverlay) return;
+  const { root, timer, onKey } = articleOverlay;
+  clearInterval(timer);
+  document.removeEventListener('keydown', onKey, true);
+  root.remove();
+  articleOverlay = null;
+}
+
+function openArticleOverlay(rawUrl, title, locale) {
+  const url = safeHttpUrl(rawUrl);
+  if (!url || typeof document === 'undefined') return;
+  closeArticleOverlay();
+  const t = ARTICLE_I18N[String(locale || 'ko').slice(0, 2)] || ARTICLE_I18N.en;
+  const root = document.createElement('div');
+  root.className = 'article-overlay';
+  root.innerHTML = `
+    <div class="article-bar">
+      <button type="button" class="article-back">${escapeHtml(t.back)}</button>
+      <span class="article-title">${escapeHtml(title || '')}</span>
+      <span class="article-timer"></span>
+    </div>
+    <iframe class="article-frame" referrerpolicy="no-referrer"></iframe>`;
+  const frame = root.querySelector('.article-frame');
+  // allow-same-origin only for foreign origins: combined with allow-scripts on
+  // a same-origin page it would let the framed page remove its own sandbox.
+  const foreign = new URL(url).origin !== window.location.origin;
+  frame.setAttribute('sandbox', `allow-scripts allow-forms${foreign ? ' allow-same-origin' : ''}`);
+  frame.src = url;
+  document.body.appendChild(root);
+
+  let remaining = ARTICLE_IDLE_SEC;
+  const timerEl = root.querySelector('.article-timer');
+  const paint = () => { timerEl.textContent = `${remaining}s · ${t.hint}`; };
+  paint();
+  const timer = setInterval(() => {
+    remaining -= 1;
+    if (remaining <= 0) { closeArticleOverlay(); return; }
+    paint();
+  }, 1000);
+  const onKey = (ev) => { if (ev.key === 'Escape') closeArticleOverlay(); };
+  document.addEventListener('keydown', onKey, true);
+  const bar = root.querySelector('.article-bar');
+  bar.addEventListener('pointerdown', () => { remaining = ARTICLE_IDLE_SEC; paint(); });
+  root.querySelector('.article-back').addEventListener('click', closeArticleOverlay);
+  articleOverlay = { root, timer, onKey };
+}
+
 export const widgets = {
   'paneo.clock': {
     version: '1.1.0',
@@ -1370,8 +1437,15 @@ export const widgets = {
 
       function itemHtml(it, showDate) {
         const dateHtml = (showDate && it.isoDate) ? `<span class="rss-date">${dateFmt.format(new Date(it.isoDate))}</span>` : '';
+        // The link keeps a real href (semantics, right-click copy) but a click
+        // is intercepted: the display is a kiosk with no browser chrome, so the
+        // article opens in an in-page overlay that has its own back button.
         const href = safeHttpUrl(it.link);
-        return `<li><a href="${escapeAttr(href)}" target="_blank" rel="noopener">${escapeHtml(it.title)}</a>${dateHtml}</li>`;
+        const title = escapeHtml(it.title);
+        const inner = href
+          ? `<a href="${escapeAttr(href)}" rel="noopener">${title}</a>`
+          : title;
+        return `<li>${inner}${dateHtml}</li>`;
       }
 
       function scheduleStep() {
@@ -1442,6 +1516,12 @@ export const widgets = {
         el.innerHTML = `<ul class="w-rss">${html || '<li>-</li>'}</ul>`;
         if (!html) return;
         const ulEl = el.querySelector('.w-rss');
+        ulEl.addEventListener('click', (ev) => {
+          const a = ev.target.closest?.('a[href]');
+          if (!a) return;
+          ev.preventDefault();
+          openArticleOverlay(a.href, a.textContent, ctx.locale);
+        });
         const dwellMs = DWELL_MS[config.scrollSpeed] ?? DWELL_MS.normal;
         if (dwellMs <= 0) return; // 'off' — static list, no ticking
         if (ulEl.scrollHeight <= ulEl.clientHeight + 4) return; // fits — nothing to tick through
