@@ -342,6 +342,49 @@ function weatherCodeIcon(code) {
   return WEATHER_CODE_ICON[code] ?? '🌡️';
 }
 
+// ---- Calendar day-detail popup -----------------------------------------------
+// Tapping a day cell in the calendar grid shows that day's events in full
+// (grid cells only fit a clipped title). Tap anywhere on the popup, press Esc
+// or wait CAL_POPUP_IDLE_SEC and it goes away. One popup at a time, page-global.
+const CAL_POPUP_IDLE_SEC = 20;
+let dayPopup = null;
+
+function closeDayPopup() {
+  if (!dayPopup) return;
+  clearTimeout(dayPopup.timer);
+  document.removeEventListener('keydown', dayPopup.onKey, true);
+  dayPopup.root.remove();
+  dayPopup = null;
+}
+
+function openDayPopup({ title, events, urlColors, timeFmt, locale }) {
+  if (typeof document === 'undefined') return;
+  closeDayPopup();
+  const sorted = events.slice().sort((a, b) => new Date(a.start) - new Date(b.start));
+  const rows = sorted.length
+    ? sorted.map((e) => {
+        const color = urlColors[e.source] || '';
+        const style = color ? ` style="border-left-color:${escapeAttr(color)}"` : '';
+        let when = translate('paneo.calendar.allDay', locale);
+        if (!e.allDay) {
+          when = timeFmt.format(new Date(e.start));
+          if (e.end) when += ` – ${timeFmt.format(new Date(e.end))}`;
+        }
+        const loc = e.location ? `<div class="cal-pop-loc">📍 ${escapeHtml(e.location)}</div>` : '';
+        const desc = e.description ? `<div class="cal-pop-desc">${escapeHtml(e.description)}</div>` : '';
+        return `<div class="cal-pop-item"${style}><div class="cal-pop-time">${escapeHtml(when)}</div><div class="cal-pop-summary">${escapeHtml(e.summary)}</div>${loc}${desc}</div>`;
+      }).join('')
+    : `<div class="cal-pop-empty">${translate('paneo.calendar.noEvents', locale)}</div>`;
+  const root = document.createElement('div');
+  root.className = 'cal-popup';
+  root.innerHTML = `<div class="cal-pop-card"><div class="cal-pop-title">${escapeHtml(title)}</div><div class="cal-pop-list">${rows}</div></div>`;
+  root.addEventListener('click', closeDayPopup);
+  document.body.appendChild(root);
+  const onKey = (ev) => { if (ev.key === 'Escape') closeDayPopup(); };
+  document.addEventListener('keydown', onKey, true);
+  dayPopup = { root, onKey, timer: setTimeout(closeDayPopup, CAL_POPUP_IDLE_SEC * 1000) };
+}
+
 // ---- In-page article viewer (RSS) ------------------------------------------
 // A kiosk display has no address bar / back button, so following a feed link
 // by real navigation would strand it on the external site. Instead the article
@@ -1274,7 +1317,7 @@ export const widgets = {
             }).join('');
             const moreCount = events.length > 3 ? `<div class="cal-m-more">+${events.length - 3}</div>` : '';
 
-            bodyRows += `<div class="${cls}">
+            bodyRows += `<div class="${cls}" data-date="${ds}">
               <div class="cal-m-dnum">${d.getDate()}</div>
               ${eventHtml}${moreCount}
             </div>`;
@@ -1289,6 +1332,7 @@ export const widgets = {
         </div>`;
       }
 
+      let latestByDate = {}; // events of the current paint, indexed by local date — read by the day-tap popup
       let currentView = null;
       let showEventTime = false;
       let ro = null;
@@ -1308,6 +1352,7 @@ export const widgets = {
         const cells = cellsForView(currentView, now);
 
         function renderAll(eventsByDate = {}) {
+          latestByDate = eventsByDate;
           if (currentView === 'day') renderDayView(now, eventsByDate);
           else renderGridView(currentView, now, cells, eventsByDate, showEventTime);
         }
@@ -1355,6 +1400,21 @@ export const widgets = {
         pollCleanup = el._cleanup;
         el._cleanup = teardown;
       }
+
+      const popupDateFmt = new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short', timeZone: 'UTC' });
+      el.addEventListener('click', (ev) => {
+        const cell = ev.target.closest?.('.cal-m-day[data-date]');
+        if (!cell) return;
+        const ds = cell.dataset.date;
+        const [y, m, d] = ds.split('-').map(Number);
+        openDayPopup({
+          // Noon UTC formatted in UTC: the date is a plain calendar date, so it
+          // must not shift across a day boundary under the device timezone.
+          title: popupDateFmt.format(new Date(Date.UTC(y, m - 1, d, 12))),
+          events: latestByDate[ds] || [],
+          urlColors, timeFmt, locale,
+        });
+      });
 
       ro = new ResizeObserver((entries) => {
         const { width, height } = entries[0].contentRect;

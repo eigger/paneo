@@ -170,6 +170,14 @@ function fromRRuleQuirkSpace(date) {
 // source attaches parameters to it (e.g. Apple's calendars use
 // `SUMMARY;LANGUAGE=ko:...`), in which case it's `{ params, val }` instead —
 // without unwrapping `.val`, that object would render as "[object Object]".
+// Optional free-text VEVENT fields shown in the display's day-detail popup.
+// Capped so a huge DESCRIPTION can't bloat every poll response.
+function icalDetailFields(e) {
+  const location = icalTextValue(e.location).trim().slice(0, 200);
+  const description = icalTextValue(e.description).trim().slice(0, 600);
+  return { ...(location && { location }), ...(description && { description }) };
+}
+
 function icalTextValue(v) {
   if (v == null) return '';
   return typeof v === 'string' ? v : String(v.val ?? v);
@@ -220,6 +228,7 @@ export async function fetchCalendarSource(url, range) {
           end: durationMs ? new Date(occStart.getTime() + durationMs).toISOString() : undefined,
           source: url,
           allDay,
+          ...icalDetailFields(e),
         });
       }
     } else {
@@ -229,6 +238,7 @@ export async function fetchCalendarSource(url, range) {
         end: e.end?.toISOString(),
         source: url,
         allDay: !!e.start.dateOnly,
+        ...icalDetailFields(e),
       });
     }
   }

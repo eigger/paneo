@@ -364,3 +364,15 @@ html, body { height: 100%; overflow: hidden; background: #0b0f19;
     -1px 1px 0 var(--paneo-text-halo),
     1px 1px 0 var(--paneo-text-halo);
 }
+
+/* Calendar day-detail popup (tap a day cell) */
+.cal-m-day { cursor: pointer; }
+.cal-popup { position: fixed; inset: 0; z-index: 900; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); }
+.cal-pop-card { width: min(520px, 92vw); max-height: 80vh; display: flex; flex-direction: column; background: #1e1e1e; color: #fff; border-radius: 14px; padding: 18px 20px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6); }
+.cal-pop-title { font-size: 22px; font-weight: 600; margin-bottom: 12px; flex: none; }
+.cal-pop-list { overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.cal-pop-item { border-left: 4px solid rgba(255, 255, 255, 0.35); padding: 4px 0 4px 12px; }
+.cal-pop-time { font-size: 14px; opacity: 0.65; font-variant-numeric: tabular-nums; }
+.cal-pop-summary { font-size: 19px; overflow-wrap: anywhere; }
+.cal-pop-loc, .cal-pop-desc { font-size: 15px; opacity: 0.75; margin-top: 2px; overflow-wrap: anywhere; white-space: pre-line; }
+.cal-pop-empty { opacity: 0.5; padding: 12px 0; }

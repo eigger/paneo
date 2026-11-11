@@ -111,7 +111,7 @@ test.after(() => rruleServer.close());
 const PARAM_SUMMARY_ICS_BODY = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Paneo//Test//EN\r\n` +
   `BEGIN:VEVENT\r\nUID:paramtest\r\nDTSTAMP:${icsTimestamp(offsets.future1h)}\r\n` +
   `DTSTART:${icsTimestamp(offsets.future1h)}\r\nDTEND:${icsTimestamp(offsets.future1h + HOUR)}\r\n` +
-  `SUMMARY;LANGUAGE=ko:새해\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`;
+  `SUMMARY;LANGUAGE=ko:새해\r\nLOCATION:회의실 A\r\nDESCRIPTION:안건\\n메모\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`;
 
 const paramSummaryServer = createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/calendar' });
@@ -124,6 +124,8 @@ test('fetchCalendarSource unwraps a parameterized SUMMARY (e.g. SUMMARY;LANGUAGE
   const events = await fetchCalendarSource(paramSummaryUrl);
   assert.equal(events.length, 1);
   assert.equal(events[0].summary, '새해');
+  assert.equal(events[0].location, '회의실 A');
+  assert.match(events[0].description, /안건/);
 });
 
 test.after(() => paramSummaryServer.close());

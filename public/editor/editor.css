@@ -215,6 +215,7 @@ main { flex: 1; display: flex; min-height: 0; }
 .cal-time { opacity: 0.6; margin-right: 6px; font-variant-numeric: tabular-nums; }
 .cal-empty { opacity: 0.4; }
 .w-rss a { color: inherit; text-decoration: none; pointer-events: none; }
+.cal-m-day { pointer-events: none; }
 .rss-date { display: block; font-size: clamp(9px, 6cqmin, 18px); opacity: 0.5; margin-top: 1px; font-variant-numeric: tabular-nums; }
 
 .w-cal-list { width: 100%; height: 100%; display: flex; flex-direction: column; box-sizing: border-box; }

@@ -270,3 +270,43 @@ test('paneo.rss: Escape closes the overlay', async (t) => {
   document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   assert.equal(document.querySelector('.article-overlay'), null);
 });
+
+// ---- Calendar day-detail popup ------------------------------------------------
+test('paneo.calendar.month: tapping a day opens a detail popup; tapping it again closes it', async (t) => {
+  const el = mount(t);
+  el.getBoundingClientRect = () => ({ width: 400, height: 300, top: 0, left: 0, right: 400, bottom: 300 });
+  const previousFetch = globalThis.fetch;
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 9, 0).toISOString();
+  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 10, 0).toISOString();
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ events: [
+    { summary: 'Standup <b>x</b>', start, end, allDay: false, source: 's', location: 'Room 1', description: 'Agenda' },
+  ] }) });
+  t.after(() => { globalThis.fetch = previousFetch; document.querySelector('.cal-popup')?.click(); });
+  renderWidget(el, 'paneo.calendar.month', { icsUrls: ['https://calendar.example/e.ics'] }, { locale: 'en-US' });
+  for (let i = 0; i < 50 && !el.querySelector('.cal-m-event'); i++) await new Promise((r) => setTimeout(r, 10));
+
+  const ds = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  el.querySelector(`.cal-m-day[data-date="${ds}"]`).dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  const popup = document.querySelector('.cal-popup');
+  assert.ok(popup, 'popup opened');
+  assert.match(popup.textContent, /Room 1/);
+  assert.match(popup.textContent, /Agenda/);
+  assert.equal(popup.querySelector('b'), null, 'summary is escaped');
+
+  popup.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  assert.equal(document.querySelector('.cal-popup'), null, 'tap closes it');
+});
+
+test('paneo.calendar.month: day popup auto-closes after its idle timeout', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'], now: new Date('2026-03-03T12:00:00') });
+  const el = mount(t);
+  el.getBoundingClientRect = () => ({ width: 400, height: 300, top: 0, left: 0, right: 400, bottom: 300 });
+  renderWidget(el, 'paneo.calendar.month', { icsUrls: [] }, { locale: 'en-US' });
+  el.querySelector('.cal-m-day[data-date]').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  assert.ok(document.querySelector('.cal-popup'));
+  assert.match(document.querySelector('.cal-popup').textContent, /No events/);
+  t.mock.timers.tick(20_000);
+  assert.equal(document.querySelector('.cal-popup'), null);
+  t.mock.timers.reset();
+});
