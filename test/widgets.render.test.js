@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
-const dom = new JSDOM('<!doctype html><html><body></body></html>');
+const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost/' });
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
 globalThis.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
@@ -225,4 +225,48 @@ test('paneo.calendar.month moves the today highlight (and grid) across local mid
   t.mock.timers.tick(60_000);
   assert.equal(today()?.querySelector('.cal-m-dnum').textContent, '1');
   t.mock.timers.reset();
+});
+
+// ---- RSS article overlay ----------------------------------------------------
+async function mountRss(t, items) {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ items }), { headers: { 'content-type': 'application/json' } });
+  const el = mount(t);
+  renderWidget(el, 'paneo.rss', { feedUrls: ['https://feed.test/rss'], scrollSpeed: 'off' }, { locale: 'en-US' });
+  for (let i = 0; i < 50 && !el.querySelector('.w-rss'); i++) await new Promise((r) => setTimeout(r, 10));
+  globalThis.fetch = realFetch;
+  t.after(() => document.querySelector('.article-back')?.click());
+  return el;
+}
+
+test('paneo.rss: non-http links render as plain text without an anchor', async (t) => {
+  const el = await mountRss(t, [{ title: 'bad', link: 'javascript:alert(1)' }]);
+  assert.ok(el.querySelector('.w-rss li'), 'item rendered');
+  assert.equal(el.querySelector('.w-rss a'), null);
+  assert.match(el.querySelector('.w-rss li').textContent, /bad/);
+});
+
+test('paneo.rss: clicking a headline opens a sandboxed overlay; back closes it', async (t) => {
+  const el = await mountRss(t, [{ title: 'one', link: 'https://example.com/a' }]);
+  const a = el.querySelector('.w-rss a');
+  const ev = new dom.window.MouseEvent('click', { bubbles: true, cancelable: true });
+  a.dispatchEvent(ev);
+  assert.equal(ev.defaultPrevented, true);
+  const frame = document.querySelector('.article-overlay iframe');
+  assert.ok(frame);
+  assert.equal(frame.getAttribute('src'), 'https://example.com/a');
+  assert.equal(frame.getAttribute('sandbox'), 'allow-scripts allow-forms'); // never allow-same-origin
+  // A second open replaces the first rather than stacking.
+  a.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  assert.equal(document.querySelectorAll('.article-overlay').length, 1);
+  document.querySelector('.article-back').click();
+  assert.equal(document.querySelector('.article-overlay'), null);
+});
+
+test('paneo.rss: Escape closes the overlay', async (t) => {
+  const el = await mountRss(t, [{ title: 'one', link: 'https://example.com/a' }]);
+  el.querySelector('.w-rss a').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  assert.ok(document.querySelector('.article-overlay'));
+  document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(document.querySelector('.article-overlay'), null);
 });

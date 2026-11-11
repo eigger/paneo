@@ -346,11 +346,12 @@ function weatherCodeIcon(code) {
 // A kiosk display has no address bar / back button, so following a feed link
 // by real navigation would strand it on the external site. Instead the article
 // is shown in a sandboxed iframe overlay with an explicit back button; it also
-// closes by itself after ARTICLE_IDLE_SEC without a tap on the top bar (taps
-// inside the cross-origin frame can't be observed). Sites that forbid framing
+// closes by itself after ARTICLE_IDLE_SEC without activity (a tap on the top
+// bar, or focus moving into the frame; later taps inside the cross-origin
+// frame can't be observed). Sites that forbid framing
 // (X-Frame-Options / CSP frame-ancestors) show the browser's blocked-frame
 // page inside the overlay — the back button still works.
-const ARTICLE_IDLE_SEC = 60;
+const ARTICLE_IDLE_SEC = 180;
 const ARTICLE_I18N = {
   ko: { back: '← 돌아가기', hint: '자동으로 닫힙니다' },
   en: { back: '← Back', hint: 'closes automatically' },
@@ -360,11 +361,14 @@ const ARTICLE_I18N = {
   es: { back: '← Volver', hint: 'se cierra automáticamente' },
 };
 let articleOverlay = null;
+// Lets page-level handlers (swipe navigation) stand down while an article is up.
+export function isArticleOverlayOpen() { return articleOverlay !== null; }
 
 function closeArticleOverlay() {
   if (!articleOverlay) return;
-  const { root, timer, onKey } = articleOverlay;
+  const { root, timer, onKey, onBlur } = articleOverlay;
   clearInterval(timer);
+  window.removeEventListener('blur', onBlur);
   document.removeEventListener('keydown', onKey, true);
   root.remove();
   articleOverlay = null;
@@ -385,10 +389,10 @@ function openArticleOverlay(rawUrl, title, locale) {
     </div>
     <iframe class="article-frame" referrerpolicy="no-referrer"></iframe>`;
   const frame = root.querySelector('.article-frame');
-  // allow-same-origin only for foreign origins: combined with allow-scripts on
-  // a same-origin page it would let the framed page remove its own sandbox.
-  const foreign = new URL(url).origin !== window.location.origin;
-  frame.setAttribute('sandbox', `allow-scripts allow-forms${foreign ? ' allow-same-origin' : ''}`);
+  // Deliberately no allow-same-origin: the sandbox flags stick to the frame
+  // across navigations, so even if the article navigated itself to a Paneo URL
+  // it would stay in an opaque origin and could not touch the display.
+  frame.setAttribute('sandbox', 'allow-scripts allow-forms');
   frame.src = url;
   document.body.appendChild(root);
 
@@ -401,12 +405,23 @@ function openArticleOverlay(rawUrl, title, locale) {
     if (remaining <= 0) { closeArticleOverlay(); return; }
     paint();
   }, 1000);
-  const onKey = (ev) => { if (ev.key === 'Escape') closeArticleOverlay(); };
+  const reset = () => { remaining = ARTICLE_IDLE_SEC; paint(); };
+  const onKey = (ev) => {
+    if (ev.key === 'Escape') { closeArticleOverlay(); return; }
+    // Keep arrow keys from switching dashboard pages behind the overlay.
+    if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') ev.stopPropagation();
+    reset();
+  };
   document.addEventListener('keydown', onKey, true);
-  const bar = root.querySelector('.article-bar');
-  bar.addEventListener('pointerdown', () => { remaining = ARTICLE_IDLE_SEC; paint(); });
-  root.querySelector('.article-back').addEventListener('click', closeArticleOverlay);
-  articleOverlay = { root, timer, onKey };
+  // Focus moving into the cross-origin frame (the user tapped the article) is
+  // the one reading signal available from the parent.
+  const onBlur = () => { if (document.activeElement === frame) reset(); };
+  window.addEventListener('blur', onBlur);
+  root.querySelector('.article-bar').addEventListener('pointerdown', reset);
+  const back = root.querySelector('.article-back');
+  back.addEventListener('click', closeArticleOverlay);
+  back.focus({ preventScroll: true });
+  articleOverlay = { root, timer, onKey, onBlur };
 }
 
 export const widgets = {
