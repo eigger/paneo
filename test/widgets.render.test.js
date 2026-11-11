@@ -310,3 +310,64 @@ test('paneo.calendar.month: day popup auto-closes after its idle timeout', (t) =
   assert.equal(document.querySelector('.cal-popup'), null);
   t.mock.timers.reset();
 });
+
+function fakeCalendarFetch(t, events) {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ events }) });
+  t.after(() => { globalThis.fetch = previousFetch; document.querySelector('.cal-popup')?.click(); });
+}
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const click = (node, init = {}) => node.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, ...init }));
+
+test('paneo.calendar.month: popup closes on Escape and when the widget is torn down', async (t) => {
+  const el = mount(t);
+  el.getBoundingClientRect = () => ({ width: 400, height: 300, top: 0, left: 0, right: 400, bottom: 300 });
+  renderWidget(el, 'paneo.calendar.month', { icsUrls: [] }, { locale: 'en-US' });
+  click(el.querySelector('.cal-m-day[data-date]'));
+  assert.ok(document.querySelector('.cal-popup'));
+  document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(document.querySelector('.cal-popup'), null);
+
+  click(el.querySelector('.cal-m-day[data-date]'));
+  assert.ok(document.querySelector('.cal-popup'));
+  el._cleanup();
+  assert.equal(document.querySelector('.cal-popup'), null, 'teardown closes the popup');
+});
+
+test('paneo.calendar.month: a swipe inside a cell does not open the popup; editor preview never does', async (t) => {
+  const el = mount(t);
+  el.getBoundingClientRect = () => ({ width: 400, height: 300, top: 0, left: 0, right: 400, bottom: 300 });
+  renderWidget(el, 'paneo.calendar.month', { icsUrls: [] }, { locale: 'en-US' });
+  const cell = el.querySelector('.cal-m-day[data-date]');
+  cell.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, clientX: 10, clientY: 10 }));
+  click(cell, { clientX: 120, clientY: 12 });
+  assert.equal(document.querySelector('.cal-popup'), null, 'moved >10px = swipe, not a tap');
+  cell.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, clientX: 10, clientY: 10 }));
+  click(cell, { clientX: 12, clientY: 11 });
+  assert.ok(document.querySelector('.cal-popup'), 'stationary press is a tap');
+  document.querySelector('.cal-popup').click();
+
+  const ed = mount(t);
+  ed.getBoundingClientRect = el.getBoundingClientRect;
+  renderWidget(ed, 'paneo.calendar.month', { icsUrls: [] }, { locale: 'en-US', preview: true });
+  click(ed.querySelector('.cal-m-day[data-date]'));
+  assert.equal(document.querySelector('.cal-popup'), null);
+});
+
+test('paneo.calendar.month: popup shows All day, and the end date when an event crosses midnight', async (t) => {
+  const el = mount(t);
+  el.getBoundingClientRect = () => ({ width: 400, height: 300, top: 0, left: 0, right: 400, bottom: 300 });
+  const today = new Date();
+  const at = (dd, h) => new Date(today.getFullYear(), today.getMonth(), today.getDate() + dd, h, 0).toISOString();
+  fakeCalendarFetch(t, [
+    { summary: 'Holiday', start: at(0, 0), allDay: true, source: 's' },
+    { summary: 'Night', start: at(0, 22), end: at(1, 2), allDay: false, source: 's' },
+  ]);
+  renderWidget(el, 'paneo.calendar.month', { icsUrls: ['https://c.example/e.ics'] }, { locale: 'en-US' });
+  for (let i = 0; i < 50 && !el.querySelector('.cal-m-event'); i++) await new Promise((r) => setTimeout(r, 10));
+  click(el.querySelector(`.cal-m-day[data-date="${ymd(today)}"]`));
+  const text = document.querySelector('.cal-popup').textContent;
+  assert.match(text, /All day/);
+  const times = [...document.querySelectorAll('.cal-pop-time')].map((n) => n.textContent);
+  assert.ok(times.some((x) => /–\s*\S+\s+\d/.test(x) && x.split('–')[1].trim().split(/\s+/).length > 2), `end carries a date: ${times}`);
+});

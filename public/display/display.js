@@ -1,4 +1,4 @@
-import { widgets, renderWidget, loadPlugins, isArticleOverlayOpen } from '/shared/widgets.js';
+import { widgets, renderWidget, loadPlugins, isArticleOverlayOpen, isDayPopupOpen } from '/shared/widgets.js';
 import { applyGridContainer, applyGridItem, applyCustomCss, buildWidgetContentClass, pageSurfaceColor } from '/shared/gridlayout.js';
 import { attachSwipeNavigation } from '/shared/swipe.js';
 
@@ -321,7 +321,7 @@ connect();
 window.addEventListener('resize', () => applyLayout(lastLayout));
 
 function switchDisplayPage(delta) {
-  if (isArticleOverlayOpen()) return; // an article viewer is on top; don't page behind it
+  if (isArticleOverlayOpen() || isDayPopupOpen()) return; // an article viewer is on top; don't page behind it
   if (!lastLayout || !lastLayout.pages || lastLayout.pages.length <= 1) return;
   const count = lastLayout.pages.length;
   currentPageIndex = (currentPageIndex + delta + count) % count;

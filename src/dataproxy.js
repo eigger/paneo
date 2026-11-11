@@ -170,17 +170,33 @@ function fromRRuleQuirkSpace(date) {
 // source attaches parameters to it (e.g. Apple's calendars use
 // `SUMMARY;LANGUAGE=ko:...`), in which case it's `{ params, val }` instead —
 // without unwrapping `.val`, that object would render as "[object Object]".
-// Optional free-text VEVENT fields shown in the display's day-detail popup.
-// Capped so a huge DESCRIPTION can't bloat every poll response.
-function icalDetailFields(e) {
-  const location = icalTextValue(e.location).trim().slice(0, 200);
-  const description = icalTextValue(e.description).trim().slice(0, 600);
-  return { ...(location && { location }), ...(description && { description }) };
-}
-
 function icalTextValue(v) {
   if (v == null) return '';
   return typeof v === 'string' ? v : String(v.val ?? v);
+}
+
+// Google Calendar (and some others) store DESCRIPTION as HTML. The popup shows
+// plain text, so turn <br>/block ends into newlines, drop remaining tags and
+// decode the handful of entities that survive.
+function stripHtmlToText(str) {
+  return str
+    .replace(/<\s*br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li)\s*>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
+// Optional free-text VEVENT fields shown in the display's day-detail popup.
+// Capped (and only attached to range requests, which are what the calendar
+// grid uses) so a boilerplate DESCRIPTION repeated across every occurrence of
+// a recurring event can't bloat responses or the in-memory cache.
+function icalDetailFields(e, range) {
+  if (!range) return {};
+  const location = icalTextValue(e.location).trim().slice(0, 200);
+  const description = stripHtmlToText(icalTextValue(e.description)).trim().slice(0, 300);
+  return { ...(location && { location }), ...(description && { description }) };
 }
 
 export async function fetchCalendarSource(url, range) {
@@ -228,7 +244,7 @@ export async function fetchCalendarSource(url, range) {
           end: durationMs ? new Date(occStart.getTime() + durationMs).toISOString() : undefined,
           source: url,
           allDay,
-          ...icalDetailFields(e),
+          ...icalDetailFields(e, range),
         });
       }
     } else {
@@ -238,7 +254,7 @@ export async function fetchCalendarSource(url, range) {
         end: e.end?.toISOString(),
         source: url,
         allDay: !!e.start.dateOnly,
-        ...icalDetailFields(e),
+        ...icalDetailFields(e, range),
       });
     }
   }
