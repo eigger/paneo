@@ -150,22 +150,6 @@ async function fetchAirQuality(location, locale) {
 // walking arbitrarily far into an unbounded (no COUNT/UNTIL) recurring rule.
 const RECURRING_LOOKAHEAD_MS = 90 * 24 * 3600 * 1000;
 
-// node-ical/rrule quirk: when the server's local timezone isn't UTC, expanded
-// occurrences come back shifted by the local UTC offset (verified: correct
-// under TZ=UTC, off by exactly +9h under TZ=Asia/Seoul) — it reads the
-// DTSTART's *local* calendar fields internally instead of its UTC fields.
-// These convert between real UTC time and that shifted "quirk space" so a
-// query window can be translated in, and raw results translated back out.
-// Exact for any timezone without DST; for one that does, at worst off by an
-// hour right around a transition — accepted rather than reimplementing
-// rrule's date handling ourselves.
-function toRRuleQuirkSpace(date) {
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-}
-function fromRRuleQuirkSpace(date) {
-  return new Date(date.getTime() + date.getTimezoneOffset() * 60_000);
-}
-
 // node-ical returns a text property as a plain string, *except* when the ICS
 // source attaches parameters to it (e.g. Apple's calendars use
 // `SUMMARY;LANGUAGE=ko:...`), in which case it's `{ params, val }` instead —
@@ -227,8 +211,8 @@ export async function fetchCalendarSource(url, range) {
       // recurrence that starts just before the window but overlaps into it
       // isn't missed — `rrule.between()` only bounds by occurrence *start*.
       const occurrences = e.rrule.between(
-        toRRuleQuirkSpace(new Date(windowFrom.getTime() - durationMs)),
-        toRRuleQuirkSpace(windowTo),
+        new Date(windowFrom.getTime() - durationMs),
+        windowTo,
         true,
       );
       // dateOnly comes from the *master* VEVENT's DTSTART (node-ical flags a
@@ -237,7 +221,7 @@ export async function fetchCalendarSource(url, range) {
       // their own, so this has to be read off `e.start`, not `occStart`.
       const allDay = !!e.start.dateOnly;
       for (const rawStart of occurrences) {
-        const occStart = fromRRuleQuirkSpace(rawStart);
+        const occStart = new Date(rawStart);
         all.push({
           summary: icalTextValue(e.summary) || '(제목 없음)',
           start: occStart.toISOString(),
