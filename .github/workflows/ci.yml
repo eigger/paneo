@@ -30,6 +30,11 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # The runners are UTC, which hides timezone bugs (recurring-event expansion
+      # was once shifted by the server's UTC offset) — rerun the calendar tests elsewhere.
+      - name: Run calendar proxy tests in a non-UTC timezone
+        run: TZ=Asia/Seoul node --test test/dataproxy.test.js
+
       - name: Syntax check server and agent
         run: |
           node --check src/server.js
