@@ -342,6 +342,60 @@ function weatherCodeIcon(code) {
   return WEATHER_CODE_ICON[code] ?? '🌡️';
 }
 
+// ---- Calendar day-detail popup -----------------------------------------------
+// Tapping a day cell in the calendar grid shows that day's events in full
+// (grid cells only fit a clipped title). Tap anywhere on the popup, press Esc
+// or wait CAL_POPUP_IDLE_SEC and it goes away. One popup at a time, page-global.
+const CAL_POPUP_IDLE_SEC = 20;
+let dayPopup = null;
+export function isDayPopupOpen() { return dayPopup !== null; }
+
+function closeDayPopup() {
+  if (!dayPopup) return;
+  clearTimeout(dayPopup.timer);
+  document.removeEventListener('keydown', dayPopup.onKey, true);
+  dayPopup.root.remove();
+  dayPopup = null;
+}
+
+function openDayPopup({ title, events, urlColors, timeFmt, locale, tz }) {
+  if (typeof document === 'undefined') return;
+  const shortDateFmt = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', timeZone: tz });
+  closeDayPopup();
+  const sorted = events.slice().sort((a, b) => new Date(a.start) - new Date(b.start));
+  const rows = sorted.length
+    ? sorted.map((e) => {
+        const color = urlColors[e.source] || '';
+        const style = color ? ` style="border-left-color:${escapeAttr(color)}"` : '';
+        let when = translate('paneo.calendar.allDay', locale);
+        if (!e.allDay) {
+          when = timeFmt.format(new Date(e.start));
+          if (e.end) {
+            // Ends on a later local day: say which, or "22:00 – 02:00" reads as same-day.
+            const sameDay = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(e.start))
+              === new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(e.end));
+            when += ` – ${sameDay ? '' : `${shortDateFmt.format(new Date(e.end))} `}${timeFmt.format(new Date(e.end))}`;
+          }
+        }
+        const loc = e.location ? `<div class="cal-pop-loc">📍 ${escapeHtml(e.location)}</div>` : '';
+        const desc = e.description ? `<div class="cal-pop-desc">${escapeHtml(e.description)}</div>` : '';
+        return `<div class="cal-pop-item"${style}><div class="cal-pop-time">${escapeHtml(when)}</div><div class="cal-pop-summary">${escapeHtml(e.summary)}</div>${loc}${desc}</div>`;
+      }).join('')
+    : `<div class="cal-pop-empty">${translate('paneo.calendar.noEvents', locale)}</div>`;
+  const root = document.createElement('div');
+  root.className = 'cal-popup';
+  root.innerHTML = `<div class="cal-pop-card"><div class="cal-pop-title">${escapeHtml(title)}</div><div class="cal-pop-list">${rows}</div></div>`;
+  root.addEventListener('click', closeDayPopup);
+  document.body.appendChild(root);
+  const onKey = (ev) => {
+    if (ev.key === 'Escape') closeDayPopup();
+    // Arrow keys must not page the dashboard behind the popup.
+    else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') ev.stopPropagation();
+  };
+  document.addEventListener('keydown', onKey, true);
+  dayPopup = { root, onKey, timer: setTimeout(closeDayPopup, CAL_POPUP_IDLE_SEC * 1000) };
+}
+
 // ---- In-page article viewer (RSS) ------------------------------------------
 // A kiosk display has no address bar / back button, so following a feed link
 // by real navigation would strand it on the external site. Instead the article
@@ -1274,7 +1328,7 @@ export const widgets = {
             }).join('');
             const moreCount = events.length > 3 ? `<div class="cal-m-more">+${events.length - 3}</div>` : '';
 
-            bodyRows += `<div class="${cls}">
+            bodyRows += `<div class="${cls}" data-date="${ds}">
               <div class="cal-m-dnum">${d.getDate()}</div>
               ${eventHtml}${moreCount}
             </div>`;
@@ -1289,13 +1343,20 @@ export const widgets = {
         </div>`;
       }
 
+      let latestByDate = {}; // events of the current paint, indexed by local date — read by the day-tap popup
       let currentView = null;
       let showEventTime = false;
       let ro = null;
       let pollCleanup = null; // pollJson's interval/abort teardown for the current paint
       let paintedDay = null; // isoDate of the `now` the current paint was built from
       let cancelDayTick = null;
-      const teardown = () => { pollCleanup?.(); ro?.disconnect(); cancelDayTick?.(); };
+      let onDayDownRef = null; let onDayClickRef = null; // set once the handlers below exist
+      const teardown = () => {
+        pollCleanup?.(); ro?.disconnect(); cancelDayTick?.();
+        if (onDayDownRef) el.removeEventListener('pointerdown', onDayDownRef);
+        if (onDayClickRef) el.removeEventListener('click', onDayClickRef);
+        closeDayPopup(); // its day belongs to a widget that is going away
+      };
 
       function paintAndFetch() {
         // Drop the previous paint's poll first — its onData closes over that
@@ -1308,6 +1369,7 @@ export const widgets = {
         const cells = cellsForView(currentView, now);
 
         function renderAll(eventsByDate = {}) {
+          latestByDate = eventsByDate;
           if (currentView === 'day') renderDayView(now, eventsByDate);
           else renderGridView(currentView, now, cells, eventsByDate, showEventTime);
         }
@@ -1354,6 +1416,33 @@ export const widgets = {
         // teardown can stop it, and keep the ResizeObserver/day-tick cleanup.
         pollCleanup = el._cleanup;
         el._cleanup = teardown;
+      }
+
+      // A swipe that begins and ends inside one cell also fires `click`; only a
+      // (near-)stationary press counts as a tap. Not wired up in the editor
+      // preview, where clicks select/drag the widget instead.
+      let downPos = null;
+      const onDayDown = (ev) => { downPos = { x: ev.clientX, y: ev.clientY }; };
+      const onDayClick = (ev) => {
+        if (!el.isConnected) return;
+        if (downPos && Math.hypot(ev.clientX - downPos.x, ev.clientY - downPos.y) > 10) return;
+        const cell = ev.target.closest?.('.cal-m-day[data-date]');
+        if (!cell) return;
+        const ds = cell.dataset.date;
+        const [y, m, d] = ds.split('-').map(Number);
+        openDayPopup({
+          // Noon UTC formatted in UTC: the date is a plain calendar date, so it
+          // must not shift across a day boundary under the device timezone.
+          title: popupDateFmt.format(new Date(Date.UTC(y, m - 1, d, 12))),
+          events: latestByDate[ds] || [],
+          urlColors, timeFmt, locale, tz,
+        });
+      };
+      const popupDateFmt = new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short', timeZone: 'UTC' });
+      if (!ctx.preview) {
+        el.addEventListener('pointerdown', onDayDown);
+        el.addEventListener('click', onDayClick);
+        onDayDownRef = onDayDown; onDayClickRef = onDayClick;
       }
 
       ro = new ResizeObserver((entries) => {

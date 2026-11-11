@@ -111,7 +111,7 @@ test.after(() => rruleServer.close());
 const PARAM_SUMMARY_ICS_BODY = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Paneo//Test//EN\r\n` +
   `BEGIN:VEVENT\r\nUID:paramtest\r\nDTSTAMP:${icsTimestamp(offsets.future1h)}\r\n` +
   `DTSTART:${icsTimestamp(offsets.future1h)}\r\nDTEND:${icsTimestamp(offsets.future1h + HOUR)}\r\n` +
-  `SUMMARY;LANGUAGE=ko:새해\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`;
+  `SUMMARY;LANGUAGE=ko:새해\r\nLOCATION:회의실 A\r\nDESCRIPTION:안건\\n메모\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`;
 
 const paramSummaryServer = createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/calendar' });
@@ -183,3 +183,34 @@ test('fetchQrCode clamps size to the [64, 1000] range', async () => {
   assert.match(tooSmall.dataUrl, /^data:image\/png;base64,/);
   assert.match(tooBig.dataUrl, /^data:image\/png;base64,/);
 });
+
+// Popup detail fields: location/description ride along on range requests only,
+// are capped, HTML-stripped, and carried onto each recurring occurrence.
+const DETAIL_ICS_BODY = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Paneo//Test//EN\r\n` +
+  `BEGIN:VEVENT\r\nUID:detail\r\nDTSTAMP:${icsTimestamp(offsets.future1h)}\r\n` +
+  `DTSTART:${icsTimestamp(offsets.future1h)}\r\nDTEND:${icsTimestamp(offsets.future1h + HOUR)}\r\n` +
+  `RRULE:FREQ=DAILY;COUNT=2\r\nSUMMARY:Sync\r\nLOCATION:회의실 A\r\n` +
+  `DESCRIPTION:<p>Agenda&nbsp;&amp;<br>notes</p><a href="x">link</a>${'z'.repeat(500)}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`;
+const detailServer = createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/calendar' }); res.end(DETAIL_ICS_BODY); });
+await new Promise((resolve) => detailServer.listen(0, resolve));
+const detailUrl = `http://localhost:${detailServer.address().port}/d.ics`;
+
+test('fetchCalendarSource: range requests carry capped, HTML-stripped location/description on every occurrence', async () => {
+  const events = await fetchCalendarSource(detailUrl, { from: offsets.future1h - DAY, to: offsets.future1h + 3 * DAY });
+  assert.equal(events.length, 2);
+  for (const e of events) {
+    assert.equal(e.location, '회의실 A');
+    assert.ok(e.description.startsWith('Agenda &\nnotes'), e.description);
+    assert.ok(!/[<>]/.test(e.description));
+    assert.ok(e.description.length <= 300);
+  }
+});
+
+test('fetchCalendarSource: non-range (upcoming list) requests omit detail fields', async () => {
+  const events = await fetchCalendarSource(detailUrl);
+  assert.ok(events.length >= 1);
+  assert.equal(events[0].location, undefined);
+  assert.equal(events[0].description, undefined);
+});
+
+test.after(() => detailServer.close());
