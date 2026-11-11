@@ -1,6 +1,6 @@
 {
   "name": "paneo",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "private": true,
   "type": "module",
   "description": "Paneo — web-editable dashboards for Raspberry Pi / ambient displays",
